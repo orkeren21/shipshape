@@ -168,6 +168,47 @@ for forbidden in coveralls codecov snyk sonar; do
     "no badge claims $forbidden, which nothing in this repo runs"
 done
 
+# --- the README's three jobs, checked against the tree -----------------------
+#
+# It exists to say how ShipShape differs, how to install it, and how to use it.
+# The install half is checked above. This is the use half: the skills table is
+# the visitor's map, and a row naming a skill that does not ship sends them to
+# `/shipshape:something` and an error. The hand-off to DETAILS.md is checked as
+# a link to a file that exists, because a README promising a document nobody
+# wrote is worse than one that promises nothing.
+
+assert_contains "$readme_body" "(DETAILS.md)" "the README links to DETAILS.md rather than only naming it"
+assert_file "$SHIPSHAPE_REPO_ROOT/DETAILS.md" "DETAILS.md is there to be linked to"
+
+# First column of every row in the skills table. The table is the only place in
+# the README where a backticked bare word means "a skill you can invoke".
+#
+# Flattened to one space-separated line, because the membership test below is a
+# `case` glob on " $listed_skills " — with newlines in it, only the first and
+# last names would ever match a " $name " pattern.
+listed_skills="$(printf '%s' "$readme_body" \
+  | grep -oE '^\| `[a-z0-9-]+` \|' \
+  | tr -d '|` ' | sort -u | tr '\n' ' ')"
+assert_ne "" "$listed_skills" "the README has a skills table for this check to read"
+
+missing=""
+for name in $listed_skills; do
+  [ -f "$SHIPSHAPE_REPO_ROOT/skills/$name/SKILL.md" ] || missing="$missing $name"
+done
+assert_eq "" "$missing" "every skill the README's table names actually ships"
+
+# And the other direction, so a new skill cannot ship unlisted. tests/prose
+# checks the same thing by a different route; this one names the table.
+unlisted=""
+for dir in "$SHIPSHAPE_REPO_ROOT"/skills/*/; do
+  name="$(basename "$dir")"
+  case " $listed_skills " in
+    *" $name "*) : ;;
+    *) unlisted="$unlisted $name" ;;
+  esac
+done
+assert_eq "" "$unlisted" "every shipped skill has a row in the README's table"
+
 # --- CLAUDE.md describes the tree a cloner actually gets ---------------------
 #
 # It is the first file Claude Code loads in this repo and the last one anybody
@@ -186,6 +227,14 @@ claude_body="$(cat "$claude_md")"
 
 assert_contains "$claude_body" "docs/superpowers/" \
   "CLAUDE.md's layout accounts for the internal-docs directory"
+
+# The prose standard has one home, and CLAUDE.md is where a contributor's
+# session goes looking for it. It named a gitignored design note once; the
+# pointer is pinned to the tracked file so it cannot drift back.
+assert_contains "$claude_body" "skills/writing-skills/SKILL.md" \
+  "CLAUDE.md points at the tracked home of the prose standard"
+assert_file "$SHIPSHAPE_REPO_ROOT/skills/writing-skills/SKILL.md" \
+  "that file is there to be pointed at"
 assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/.gitignore")" "docs/superpowers/" \
   "and this repo's own .gitignore is what keeps it out of a clone, not one machine's global ignore"
 
