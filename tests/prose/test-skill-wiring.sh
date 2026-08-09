@@ -78,6 +78,22 @@ assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/bin/shipshape-pr-open")"  "pr-armed
 assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/bin/shipshape-ci-watch")" "ci-status" "shipshape-ci-watch writes ci-status"
 assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/bin/shipshape-smoke")"    "smoke.log" "shipshape-smoke writes smoke.log"
 
+# --- the context nudge points at a skill that exists -------------------------
+#
+# The nudge tells the session to invoke write-handoff. If that skill is ever
+# renamed, the nudge becomes an instruction to do something impossible at
+# exactly the moment the session is under pressure.
+
+nudge="$(cat "$SHIPSHAPE_REPO_ROOT/hooks/context-watch.sh")"
+assert_contains "$nudge" "write-handoff" "the context nudge names write-handoff"
+assert_file "$skills/write-handoff/SKILL.md" "write-handoff exists to be invoked"
+assert_file "$skills/read-handoff/SKILL.md" "read-handoff exists for the successor"
+
+# The nudge is worded as an action rather than an alarm — surfacing context
+# pressure is itself what makes a model start winding down.
+assert_contains "$nudge" "continue working" "the nudge tells the session to keep going"
+assert_contains "$nudge" "do not stop" "and says so explicitly"
+
 # --- the escapes ledger is the tracked exception -----------------------------
 
 ledger="$(cat "$skills/writing-retros/escapes-ledger.md")"
