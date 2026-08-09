@@ -18,6 +18,42 @@ for name in $referenced; do
     || fail "prose references shipshape:$name, but skills/$name/SKILL.md does not exist"
 done
 
+# --- there is exactly one router ---------------------------------------------
+#
+# The session-start hook injects the entrypoint skill, and `/shipshape` invokes
+# the same file by hand. A second routing table beside it would drift from this
+# one, and a router that sends a session to the wrong skill is worse than no
+# router at all — so the hook's target and the routing table are pinned to each
+# other, and the table is allowed exactly one home.
+
+router="$skills/shipshape/SKILL.md"
+assert_file "$router" "the entrypoint skill exists at the name /shipshape invokes"
+assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/hooks/session-start.sh")" \
+  "skills/shipshape/SKILL.md" "the session-start hook injects that same file"
+
+router_header='| Where you are | Start with |'
+homes=0
+for f in "$skills"/*/SKILL.md; do
+  grep -qF "$router_header" "$f" || continue
+  homes=$((homes + 1))
+  case "$f" in
+    */shipshape/*) : ;;
+    *) fail "a second routing table lives in ${f#"$SHIPSHAPE_REPO_ROOT"/} — routing belongs to the entrypoint skill alone" ;;
+  esac
+done
+assert_eq "1" "$homes" "the routing table is stated in exactly one skill"
+
+# Every destination the router names has to be reachable. The generic
+# shipshape:<name> check above proves the skill exists; this proves the router
+# actually covers the pipeline's entry points rather than a stale subset.
+router_body="$(cat "$router")"
+for dest in systematic-debugging brainstorming direct-implementation \
+            subagent-driven-development finishing-with-evidence \
+            write-handoff read-handoff writing-skills \
+            epic-architecture dispatching-parallel-agents; do
+  assert_contains "$router_body" "shipshape:$dest" "the router routes to $dest"
+done
+
 # --- the pipeline is wired end to end ----------------------------------------
 #
 # Each mode has to reach the review and the finish, or a session following it

@@ -1,9 +1,14 @@
 MIT License
 
+Copyright (c) 2025 Jesse Vincent
 Copyright (c) 2026 Or Keren
 
-Portions derived from obra/superpowers, Copyright (c) Jesse Vincent,
-and pcvelz/superpowers, both MIT licensed.
+Whole skill directories in this repository are derived from
+obra/superpowers (https://github.com/obra/superpowers), whose copyright
+notice is preserved above, and from pcvelz/superpowers
+(https://github.com/pcvelz/superpowers), a fork of it that carries the same
+notice and contributed the task-metadata-fence pattern ShipShape's gates
+read. Both are MIT licensed.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

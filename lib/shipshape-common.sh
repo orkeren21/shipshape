@@ -389,7 +389,24 @@ shipshape_newer_than_head() {
   [ "$file_epoch" -ge "$head_epoch" ]
 }
 
-# stat's flags differ between BSD (macOS) and GNU. Try both.
+# stat's flags differ between BSD (macOS) and GNU, and the two disagree about
+# what -f means: on BSD it is the output format, on GNU it is --file-system. So
+# `stat -f %m` on Linux does not fail over to the GNU form — it *succeeds*,
+# printing a block-and-inode report for the containing filesystem. Every caller
+# then compares that against an epoch, the comparison errors, and staleness
+# stops being detected at all.
+#
+# GNU form first, then BSD, and the answer has to be digits either way. Order
+# alone is not enough: only the digit check makes a wrong-platform success
+# indistinguishable from a failure, which is what it needs to be.
 shipshape_mtime() {
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
+  local out
+  out="$(stat -c %Y "$1" 2>/dev/null)" || out=""
+  case "$out" in
+    '' | *[!0-9]*) out="$(stat -f %m "$1" 2>/dev/null)" || out="" ;;
+  esac
+  case "$out" in
+    '' | *[!0-9]*) return 1 ;;
+  esac
+  printf '%s' "$out"
 }

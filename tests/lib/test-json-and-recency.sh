@@ -83,4 +83,55 @@ git -C "$repo" commit -q -am "a fix lands after the evidence was captured"
 (cd "$work" && shipshape_newer_than_head "$stale_then_fresh") \
   || fail "with no git repo, recency fails open"
 
+# --- shipshape_mtime, against both stats -------------------------------------
+#
+# Every recency check in this repo rests on this one reader, and it is the
+# easiest place in the codebase to be wrong on one platform and green on the
+# other. BSD's `stat -f` is an output format; GNU's is --file-system. So the
+# BSD form on Linux does not fail over to the GNU form — it succeeds, printing
+# a block-and-inode report, and the caller compares that against an epoch. CI
+# found exactly this: every staleness check silently stopped checking on Linux
+# while macOS stayed green.
+
+now="$(shipshape_mtime "$stale_then_fresh")"
+case "$now" in
+  '' | *[!0-9]*) fail "shipshape_mtime returns an epoch on this platform, got [$now]" ;;
+esac
+
+shipshape_mtime "$work/never-existed" >/dev/null 2>&1 \
+  && fail "shipshape_mtime reports failure for a file that is not there"
+
+# Both stats, simulated, so this test fails on the platform it is not running
+# on. Each stub answers its own flag and behaves like the real tool for the
+# other one — GNU's -f succeeding with a filesystem report is the whole point.
+stub_dir="$work/stub-bin"
+mkdir -p "$stub_dir"
+
+cat > "$stub_dir/stat" <<'GNU'
+#!/usr/bin/env bash
+# GNU coreutils stat: -c is the format, -f is --file-system and succeeds.
+case "$1" in
+  -c) [ -e "$3" ] || exit 1; printf '%s' "$SHIPSHAPE_FAKE_EPOCH"; exit 0 ;;
+  -f) printf '  File: "%s"\n  ID: 1 Namelen: 255 Type: ext2/ext3\n' "$3"; exit 0 ;;
+esac
+exit 1
+GNU
+chmod +x "$stub_dir/stat"
+assert_eq "1700000001" \
+  "$(PATH="$stub_dir:$PATH" SHIPSHAPE_FAKE_EPOCH=1700000001 shipshape_mtime "$stale_then_fresh")" \
+  "against GNU stat, the epoch comes back rather than a filesystem report"
+
+cat > "$stub_dir/stat" <<'BSD'
+#!/usr/bin/env bash
+# BSD stat: -f is the format, -c is not a flag it has.
+case "$1" in
+  -f) [ -e "$3" ] || exit 1; printf '%s' "$SHIPSHAPE_FAKE_EPOCH"; exit 0 ;;
+esac
+exit 1
+BSD
+chmod +x "$stub_dir/stat"
+assert_eq "1700000002" \
+  "$(PATH="$stub_dir:$PATH" SHIPSHAPE_FAKE_EPOCH=1700000002 shipshape_mtime "$stale_then_fresh")" \
+  "against BSD stat, the GNU form is tried first and falls through cleanly"
+
 finish

@@ -25,7 +25,7 @@ hooks that gate on those artifacts, and skills whose prose assumes the hooks exi
 | `hooks/` | Hook scripts plus `hooks.json` registration. |
 | `skills/` | Skill directories, copied whole (reference sub-files included). |
 | `tests/` | Hermetic shell tests, one directory per group. |
-| `docs/superpowers/` | Internal docs — globally gitignored, never committed. |
+| `docs/superpowers/` | Internal docs — gitignored and absent from the published tree, so nothing here may cite them as a source of truth. |
 
 ## Conventions
 
@@ -35,5 +35,8 @@ hooks that gate on those artifacts, and skills whose prose assumes the hooks exi
   Nothing writes outside its own temp directory.
 - Run the suite with `tests/run-tests.sh`, or one group with
   `tests/run-tests.sh <group>`.
-- Skill prose standards live in `docs/superpowers/design.md` §6 and are enforced
+- Skill prose standards live in `skills/writing-skills/SKILL.md` and are enforced
   by the `prose` test group.
+- The entrypoint skill is `skills/shipshape/SKILL.md`. It is what the
+  session-start hook injects and what `/shipshape` invokes, and it is the only
+  place a routing table lives.

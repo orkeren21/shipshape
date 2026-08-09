@@ -5,8 +5,8 @@
 #
 # The scoped smoke is the developer reflex of "did my change actually work":
 # start the thing, exercise the flows the branch touched, look at the output.
-# It is not an end-to-end suite, and it is not Shakedown — that has its own
-# cadence and is never invoked per pull request.
+# It is not an end-to-end suite; an end-to-end suite has its own cadence and is
+# never invoked per pull request.
 #
 # The log accumulates, because a smoke is several commands rather than one — but
 # only within one commit. It records the HEAD it was gathered against, and
