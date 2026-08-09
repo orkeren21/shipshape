@@ -1,0 +1,46 @@
+# The whole suite, on every pull request and every push to main.
+#
+# ShipShape is shell, so CI is shell: check out the repo and run the same
+# command a developer runs. There is no toolchain to install — `jq` and
+# `python3` are already on the hosted runners, `gh` is stubbed by the tests
+# themselves, and the git fixtures configure their own identity.
+#
+# Both operating systems run, and that is not redundancy. BSD and GNU
+# implementations of `find`, `stat` and `date` take different flags, and the
+# failure mode when they diverge is a check that silently stops checking
+# rather than an error. This repo has already shipped that bug once.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record the shell and tool versions
+        run: |
+          bash --version | head -1
+          git --version
+          jq --version
+          python3 --version
+
+      - name: Run the suite
+        run: tests/run-tests.sh
