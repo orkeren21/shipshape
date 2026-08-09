@@ -180,6 +180,14 @@ assert_eq "" "$(hook_field "$out" decision)" \
 assert_contains "$(hook_field "$out" systemMessage)" "$(git -C "$repo" rev-parse --abbrev-ref HEAD >/dev/null; echo some-other-lane)" \
   "but the outstanding evidence is still surfaced, naming both branches"
 
+# The downgrade leaves a marker, and only the downgrade does. A validation lane
+# greps its trace for it; if it ever fires in real use, this path is closed and
+# becomes a hard block. A marker that could be produced by any other path, or
+# that could be renamed without a test noticing, would not be worth grepping
+# for — so both properties are pinned here.
+assert_contains "$(cat "$scratch/trace.log")" "DOWNGRADE-BRANCH-MISMATCH" \
+  "the downgrade records a distinct marker a lane can grep for"
+
 # Back on the armed branch, the hard block returns — it did not disarm.
 git -C "$repo" checkout -q -
 out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
@@ -218,5 +226,40 @@ assert_eq "0" "$(hook_status)" "an unreadable payload fails open"
 assert_eq "" "$(hook_field "$out" decision)" "an unreadable payload blocks nothing"
 
 assert_contains "$(cat "$scratch/trace.log")" "done-gate" "the gate leaves a trace of what it decided"
+
+# --- the downgrade marker means one thing only --------------------------------
+#
+# Its whole value is that seeing it in a lane's trace is unambiguous. If an
+# ordinary block or nudge also emitted it, a lane would close a path that never
+# actually fired.
+
+# Deliberately not wrapped in a subshell: an assertion that fails inside one
+# increments a counter that dies with it, so the test reports a pass. The
+# scratch root is saved and restored by hand instead.
+fresh="$work/marker-repo"
+make_repo "$fresh"
+outer_root="$SHIPSHAPE_SCRATCH_ROOT"
+export SHIPSHAPE_SCRATCH_ROOT="$fresh"
+marker_scratch="$fresh/.shipshape/$session"
+mkdir -p "$marker_scratch"
+printf 'url=https://x/pull/1\nbranch=%s\nepoch=%s\n' \
+  "$(git -C "$fresh" rev-parse --abbrev-ref HEAD)" "$(date -u +%s)" > "$marker_scratch/pr-armed"
+
+# A hard block on the armed branch.
+run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$fresh" >/dev/null
+# A soft nudge on the armed branch.
+run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$fresh" >/dev/null
+# A satisfied gate.
+printf '# Review\n\n**Ready to merge?** Yes\n' > "$marker_scratch/review-1.md"
+printf 'result=green\nchecks_exit=0\nmerge_state=CLEAN\n' > "$marker_scratch/ci-status"
+printf 'head=%s\n\n=== $ x\nok\n=== exit 0\n\n' "$(git -C "$fresh" rev-parse HEAD)" > "$marker_scratch/smoke.log"
+run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$fresh" >/dev/null
+
+assert_contains "$(cat "$marker_scratch/trace.log")" "done-gate" \
+  "the three ordinary paths did run and traced"
+assert_not_contains "$(cat "$marker_scratch/trace.log")" "DOWNGRADE-BRANCH-MISMATCH" \
+  "blocking, nudging and passing never emit the downgrade marker"
+
+export SHIPSHAPE_SCRATCH_ROOT="$outer_root"
 
 finish

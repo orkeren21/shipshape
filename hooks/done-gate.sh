@@ -149,7 +149,20 @@ if printf '%s' "$last" | grep -qiE "all done|we'?re done|we are done|it'?s done|
 fi
 
 if [ "$claim" = yes ] && [ "$elsewhere" = yes ]; then
-  shipshape_trace done-gate "completion claim on $current_branch while armed for $armed_branch; nudging rather than blocking"
+  # DOWNGRADE-BRANCH-MISMATCH is a deliberate tripwire, not a status line.
+  #
+  # This branch is the one remaining place where a completion claim meets a
+  # softer answer than a refusal, and it was left in rather than closed on the
+  # argument that claiming a *different* branch is done should not be refused
+  # by this pull request's gate. That argument is untested optimism.
+  #
+  # Standing rule for the validation lanes: if this marker appears even once in
+  # a lane's trace, the downgrade is closed and this path becomes a hard block,
+  # in the same class as the bare `gh pr create` and the arming kill switch.
+  # The trace decides, not our confidence in the reasoning.
+  #
+  #   grep -c DOWNGRADE-BRANCH-MISMATCH .shipshape/*/trace.log
+  shipshape_trace done-gate "DOWNGRADE-BRANCH-MISMATCH completion claim on $current_branch while armed for $armed_branch; nudged instead of blocking"
   shipshape_emit_system_message "ShipShape — the pull request opened from $armed_branch still owes evidence:
 
 $missing
