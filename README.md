@@ -59,7 +59,7 @@ record behind as a side effect. The record cannot exist without the work.
 | Hook | Event | What it does |
 |---|---|---|
 | `done-gate` | `Stop` | Arms when a pull request exists. Disarms only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD**. Soft nudge every turn; hard block on a completion claim. On a branch other than the one it was armed from it nudges but does not block, and it never disarms. |
-| `review-capture` | `PostToolUse` | Writes the reviewer subagent's return verbatim. The hook writes it, so the artifact proves a real fresh-context review happened. |
+| `review-capture` | `PostToolUse` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:`. The hook writing it, rather than the session, is what makes the artifact mean something (see *Where enforcement stops*). |
 | `task-capture` | `TaskCreated` | Remembers each task's metadata fence. |
 | `task-completion-gate` | `TaskCompleted` | A fenced task closes only on a fresh, passing verify record. |
 | `blockedby-gate` | `PreToolUse` | Refuses a task whose dependencies are open. |
