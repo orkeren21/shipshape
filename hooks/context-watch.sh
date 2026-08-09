@@ -38,17 +38,31 @@ fi
 scratch="$(shipshape_scratch_dir)"
 
 # The highest threshold this session has crossed and not yet been nudged about.
+# Mark every threshold already passed, not just the highest. A session whose
+# first ending turn lands above 85% has crossed both, and marking only 85 would
+# make it nudge again for 70 on the next turn.
 crossed=""
 for threshold in $THRESHOLDS; do
-  if [ "$pct" -ge "$threshold" ] && [ ! -f "$scratch/context-nudged-$threshold" ]; then
-    crossed="$threshold"
+  if [ "$pct" -ge "$threshold" ]; then
+    if [ ! -f "$scratch/context-nudged-$threshold" ]; then
+      : > "$scratch/context-nudged-$threshold"
+      crossed="$threshold"
+    fi
   fi
 done
 
 [ -n "$crossed" ] || exit 0
 
-: > "$scratch/context-nudged-$crossed"
 shipshape_trace context-watch "nudged at ${pct}% (crossing ${crossed}%)"
 
-shipshape_emit_block "Context is at ${pct}%. Invoke write-handoff now, then continue working. You have ample context; do not stop, summarize, or suggest a new session on account of limits."
+# Advisory, as the design has it: the turn ends normally. additionalContext
+# reaches the model before its next turn, which is what a nudge phrased as an
+# instruction needs; systemMessage puts the same thing in front of the operator.
+#
+# It is deliberately not a block. Refusing to end a turn to deliver advice
+# would interrupt whatever the session was actually answering.
+NUDGE="Context is at ${pct}%. Invoke write-handoff now, then continue working. You have ample context; do not stop, summarize, or suggest a new session on account of limits."
+
+printf '{"systemMessage":%s,"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":%s}}\n' \
+  "$(shipshape_json_escape "$NUDGE")" "$(shipshape_json_escape "$NUDGE")"
 exit 0

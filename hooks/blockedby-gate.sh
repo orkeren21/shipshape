@@ -23,21 +23,28 @@ shipshape_enabled BLOCKEDBY_GATE || exit 0
 task_id="$(shipshape_field tool_input.taskId)"
 [ -n "$task_id" ] || exit 0
 
-safe_task_id="$(printf '%s' "$task_id" | tr -c 'A-Za-z0-9_-' '-')"
+safe_task_id="$(shipshape_safe_id "$task_id")"
 scratch="$(shipshape_scratch_dir)"
 fence_file="$scratch/tasks/$safe_task_id.json"
 [ -f "$fence_file" ] || exit 0
 
 fence="$(cat "$fence_file")"
-fence_id="$(shipshape_json_get "$fence" id)"
+fence_id="$(shipshape_safe_id "$(shipshape_json_get "$fence" id)" "this task")"
 blocked_by="$(shipshape_json_get "$fence" blockedBy)"
 
+# Globbing off: a dependency entry is a name, and an unquoted expansion would
+# otherwise let a * in a plan document match whatever is in the working
+# directory.
+set -f
 unmet=""
 for dep in $(printf '%s' "$blocked_by" | tr -d '[]"' | tr ',' ' '); do
+  [ -n "$dep" ] || continue
+  dep="$(shipshape_safe_id "$dep" "")"
   [ -n "$dep" ] || continue
   [ -f "$scratch/tasks/completed/$dep" ] && continue
   unmet="${unmet}${unmet:+, }$dep"
 done
+set +f
 
 if [ -z "$unmet" ]; then
   exit 0

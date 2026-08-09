@@ -41,13 +41,20 @@ ORDINARY="Parser is done; moving on to the formatter."
 # ---------------------------------------------------------------------------
 
 : > "$PCT_LOG"
+# The nudge is advisory: it reaches the model through additionalContext and the
+# operator through systemMessage, and the turn ends normally. Refusing to end a
+# turn in order to deliver advice would interrupt whatever was being answered.
+nudged() { hook_field "$1" hookSpecificOutput.additionalContext; }
+
 out="$(PCT_VALUE=42 run_hook context-watch.sh "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "well under the threshold, context-watch says nothing"
+assert_eq "" "$(nudged "$out")" "well under the threshold, context-watch says nothing"
 assert_eq "1" "$(wc -l < "$PCT_LOG" | tr -d ' ')" "it asked the shared helper for the number"
 
 out="$(PCT_VALUE=70 run_hook context-watch.sh "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
-assert_eq "block" "$(hook_field "$out" decision)" "at 70% the nudge fires"
-reason="$(hook_field "$out" reason)"
+assert_ne "" "$(nudged "$out")" "at 70% the nudge fires"
+assert_eq "" "$(hook_field "$out" decision)" "and it does not stop the turn to say so"
+assert_ne "" "$(hook_field "$out" systemMessage)" "the operator sees it too"
+reason="$(nudged "$out")"
 assert_contains "$reason" "$NUDGE" "the nudge is worded as an action, verbatim from the design"
 assert_contains "$reason" "70" "and says where the session actually is"
 
@@ -60,18 +67,26 @@ done
 # --- once per threshold, not once per turn -----------------------------------
 
 out="$(PCT_VALUE=72 run_hook context-watch.sh "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "having nudged once at 70, it does not nudge again every turn"
+assert_eq "" "$(nudged "$out")" "having nudged once at 70, it does not nudge again every turn"
 
 out="$(PCT_VALUE=86 run_hook context-watch.sh "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
-assert_eq "block" "$(hook_field "$out" decision)" "the higher threshold gets its own single nudge"
+assert_ne "" "$(nudged "$out")" "the higher threshold gets its own single nudge"
 out="$(PCT_VALUE=88 run_hook context-watch.sh "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "and it, too, fires only once"
+assert_eq "" "$(nudged "$out")" "and it, too, fires only once"
+
+# A session whose first ending turn is already past both thresholds has crossed
+# both, and must not be nudged again on the next turn for the lower one.
+rm -f "$scratch"/context-nudged-*
+out="$(PCT_VALUE=90 run_hook context-watch.sh "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
+assert_ne "" "$(nudged "$out")" "arriving above both thresholds nudges once"
+out="$(PCT_VALUE=91 run_hook context-watch.sh "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
+assert_eq "" "$(nudged "$out")" "and does not nudge again for the threshold it skipped past"
 
 # --- unknown -----------------------------------------------------------------
 
 rm -f "$scratch"/context-nudged-*
 out="$(PCT_VALUE=-1 run_hook context-watch.sh "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "an unknown percentage nudges nobody"
+assert_eq "" "$(nudged "$out")" "an unknown percentage nudges nobody"
 assert_contains "$(cat "$scratch/trace.log")" "unknown" "and the unknown is recorded rather than hidden"
 
 # --- loop guard and kill switch ----------------------------------------------
@@ -80,12 +95,12 @@ rm -f "$scratch"/context-nudged-*
 payload="$(printf '{"session_id":"%s","transcript_path":"%s","hook_event_name":"Stop","last_assistant_message":%s,"stop_hook_active":true}' \
   "$session" "$transcript" "$(json_string "$ORDINARY")")"
 out="$(PCT_VALUE=90 run_hook context-watch.sh "$payload" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "it stands down while a Stop hook is already running"
+assert_eq "" "$(nudged "$out")" "it stands down while a Stop hook is already running"
 
 rm -f "$scratch"/context-nudged-*
 out="$(SHIPSHAPE_CONTEXT_WATCH=0 PCT_VALUE=90 run_hook context-watch.sh \
   "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "the kill switch silences it"
+assert_eq "" "$(nudged "$out")" "the kill switch silences it"
 
 # ---------------------------------------------------------------------------
 # deflection guard
@@ -127,14 +142,15 @@ for value in 30 69 70 71 95; do
   guard_out="$(PCT_VALUE=$value run_hook deflection-guard.sh \
     "$(stop_payload "$session" "$transcript" "$DEFLECTION")" "$repo")"
 
-  watch_fired="$(hook_field "$watch_out" decision)"
+  watch_fired=""
+  [ -n "$(nudged "$watch_out")" ] && watch_fired="fired"
   guard_blocked="$(hook_field "$guard_out" decision)"
 
-  if [ "$watch_fired" = "block" ] && [ "$guard_blocked" = "block" ]; then
+  if [ "$watch_fired" = "fired" ] && [ "$guard_blocked" = "block" ]; then
     fail "at $value% context-watch demands a handoff while the guard refuses to let the session leave"
   fi
   if [ "$value" -ge 70 ]; then
-    assert_eq "block" "$watch_fired" "at $value% a handoff is asked for"
+    assert_eq "fired" "$watch_fired" "at $value% a handoff is asked for"
     assert_eq "" "$guard_blocked" "at $value% leaving is permitted"
   else
     assert_eq "" "$watch_fired" "at $value% no handoff is demanded"

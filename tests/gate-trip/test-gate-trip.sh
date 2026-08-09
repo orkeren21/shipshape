@@ -39,7 +39,7 @@ stop() { run_hook done-gate.sh "$(stop_payload lane-g1 "$work/t.jsonl" "$1")" "$
 
 fence() { printf 'Work.\n\n```json:metadata\n%s\n```\n' "$1"; }
 create() {
-  run_hook task-capture.sh "$(printf '{"session_id":"lane-g1","hook_event_name":"TaskCreated","task_id":"%s","task_title":"t","task_description":%s}' \
+  run_hook task-capture.sh "$(printf '{"session_id":"lane-g1","hook_event_name":"TaskCreated","task_id":"%s","task_subject":"t","task_description":%s}' \
     "$1" "$(json_string "$(fence "$2")")")" "$repo" >/dev/null
 }
 
@@ -55,7 +55,7 @@ assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
 # Gate 2 — task completion. Skip: close the task without running its verify.
 # ===========================================================================
 
-close1='{"session_id":"lane-g1","hook_event_name":"TaskCompleted","task_id":"1","task_title":"t"}'
+close1='{"session_id":"lane-g1","hook_event_name":"TaskCompleted","task_id":"1","task_subject":"t"}'
 out="$(run_hook task-completion-gate.sh "$close1" "$repo")"
 assert_eq "block" "$(hook_field "$out" decision)" \
   "TRIPPED: closing g1a with no verify record is refused"
@@ -78,7 +78,7 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
 
 (cd "$repo" && shipshape-verify g1b true >/dev/null 2>&1)
 run_hook task-completion-gate.sh \
-  '{"session_id":"lane-g1","hook_event_name":"TaskCompleted","task_id":"2","task_title":"t"}' "$repo" >/dev/null
+  '{"session_id":"lane-g1","hook_event_name":"TaskCompleted","task_id":"2","task_subject":"t"}' "$repo" >/dev/null
 
 # ===========================================================================
 # Gate 3 — the done gate. Skip: declare the branch finished.
@@ -113,18 +113,21 @@ assert_contains "$(hook_field "$out" systemMessage)" "smoke" \
 
 # An ordinary subagent return is not a review, however useful it was.
 run_hook review-capture.sh \
-  "$(printf '{"session_id":"lane-g1","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"Explore the parser"},"tool_output":"Three call sites."}' )" \
+  "$(printf '{"session_id":"lane-g1","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"Explore the parser"},"tool_response":{"status":"completed","content":[{"type":"text","text":"Three call sites."}]}}' )" \
   "$repo" >/dev/null
 assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
   "TRIPPED: an unmarked subagent return does not count as the whole-branch review"
 
 # The honest path: a marked dispatch, whose return the hook writes down.
 run_hook review-capture.sh \
-  "$(printf '{"session_id":"lane-g1","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"whole-branch-review: lane g1"},"tool_output":%s}' \
+  "$(printf '{"session_id":"lane-g1","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"whole-branch-review: lane g1"},"tool_response":{"status":"completed","content":[{"type":"text","text":%s}]}}' \
      "$(json_string "# Review
 
 ## Minor
-- Naming drift in src.txt.")")" "$repo" >/dev/null
+- Naming drift in src.txt.
+
+### Assessment
+Ready to merge: With fixes")")" "$repo" >/dev/null
 [ -n "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" ] \
   || fail "PASSES: a marked reviewer return is captured"
 
@@ -191,8 +194,10 @@ out="$(PCT_VALUE=88 run_hook deflection-guard.sh "$(stop_payload lane-g1 "$work/
 assert_eq "" "$(hook_field "$out" decision)" "PASSES: at 88% the same proposal is reasonable"
 
 out="$(PCT_VALUE=74 run_hook context-watch.sh "$(stop_payload lane-g1 "$work/t.jsonl" "still working")" "$repo")"
-assert_eq "block" "$(hook_field "$out" decision)" "TRIPPED: past 70% the handoff nudge fires"
-assert_contains "$(hook_field "$out" reason)" "write-handoff" "and names the skill to invoke"
+nudge="$(hook_field "$out" hookSpecificOutput.additionalContext)"
+assert_ne "" "$nudge" "TRIPPED: past 70% the handoff nudge fires"
+assert_contains "$nudge" "write-handoff" "and names the skill to invoke"
+assert_eq "" "$(hook_field "$out" decision)" "advisory: it does not stop the turn to deliver advice"
 
 # ===========================================================================
 # Every gate is individually switchable off
@@ -219,7 +224,8 @@ assert_eq "" "$(hook_field "$out" decision)" "SHIPSHAPE_DEFLECTION_GUARD=0 stand
 rm -f "$scratch"/context-nudged-*
 out="$(SHIPSHAPE_CONTEXT_WATCH=0 PCT_VALUE=95 run_hook context-watch.sh \
   "$(stop_payload lane-g1 "$work/t.jsonl" "still working")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "SHIPSHAPE_CONTEXT_WATCH=0 silences the nudge"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.additionalContext)" \
+  "SHIPSHAPE_CONTEXT_WATCH=0 silences the nudge"
 
 # And every decision it made is answerable after the fact.
 trace="$(cat "$scratch/trace.log")"

@@ -55,6 +55,34 @@ assert_contains "$(cat "$scratch/verify/t5")" "exit=0" \
 "$verify" '../escape' true >/dev/null 2>&1
 assert_no_file "$work/.shipshape/escape" "a task id cannot write outside the verify directory"
 
+# --- a verifyCommand is a shell line, not an argv vector ----------------------
+#
+# Plans write verifyCommand as a shell line, and several in ShipShape's own plan
+# use &&. Passed as one argument it has to reach a shell — otherwise the
+# caller's shell splits at the &&, the wrapper records only the first half with
+# its exit code, and the gate closes the task on a record describing half the
+# verification.
+
+out="$("$verify" t20 'echo first && echo second' 2>&1)"
+assert_eq "0" "$?" "a shell line that succeeds throughout exits 0"
+assert_contains "$out" "first" "the first command ran"
+assert_contains "$out" "second" "and so did the second"
+record="$(cat "$scratch/verify/t20")"
+assert_contains "$record" "second" "the record covers the whole command, not just its first half"
+assert_contains "$record" "echo first && echo second" "and quotes the command as written"
+
+"$verify" t21 'true && false' >/dev/null 2>&1
+assert_ne "0" "$?" "a shell line whose later half fails is reported as a failure"
+assert_contains "$(cat "$scratch/verify/t21")" "exit=1" "and the record shows it"
+
+"$verify" t22 'false && echo unreachable' >/dev/null 2>&1
+assert_contains "$(cat "$scratch/verify/t22")" "exit=1" "a shell line failing at its first half fails too"
+
+# Several arguments still execute directly, with no shell in the way.
+out="$("$verify" t23 printf 'literal $NOT_EXPANDED
+' 2>&1)"
+assert_contains "$out" 'literal $NOT_EXPANDED' "multiple arguments are executed without a shell"
+
 # --- usage -------------------------------------------------------------------
 
 assert_status 64 "calling with no command is a usage error" -- "$verify" t9

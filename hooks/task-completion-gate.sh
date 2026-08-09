@@ -26,14 +26,23 @@ shipshape_enabled TASK_COMPLETION_GATE || exit 0
 task_id="$(shipshape_field task_id)"
 [ -n "$task_id" ] || exit 0
 
-safe_task_id="$(printf '%s' "$task_id" | tr -c 'A-Za-z0-9_-' '-')"
+safe_task_id="$(shipshape_safe_id "$task_id")"
 scratch="$(shipshape_scratch_dir)"
 fence_file="$scratch/tasks/$safe_task_id.json"
 [ -f "$fence_file" ] || exit 0
 
 fence="$(cat "$fence_file")"
-fence_id="$(shipshape_json_get "$fence" id)"
+# The fence id comes out of a plan document and becomes a filename twice over,
+# so it is sanitised the same way shipshape-verify sanitises it. If the two
+# disagreed, the wrapper would write a record under one name and this gate
+# would look for another — a task that can never be closed.
+fence_id="$(shipshape_safe_id "$(shipshape_json_get "$fence" id)" "")"
 verify_command="$(shipshape_json_get "$fence" verifyCommand)"
+
+if [ -z "$fence_id" ]; then
+  shipshape_trace task-completion-gate "task $task_id has a fence with no usable id; nothing to check"
+  exit 0
+fi
 
 if [ -z "$verify_command" ]; then
   mkdir -p "$scratch/tasks/completed" 2>/dev/null
@@ -65,10 +74,25 @@ fi
 record_epoch="$(grep '^epoch=' "$record" 2>/dev/null | head -1 | cut -d= -f2)"
 if [ -n "$record_epoch" ]; then
   files="$(shipshape_json_get "$fence" files)"
-  # files comes back as a JSON array; pull the strings out of it.
+  # files comes back as a JSON array. Split on commas rather than whitespace so
+  # a path containing a space stays one path, and turn globbing off so a * in a
+  # plan document cannot expand against the working directory.
   moved=""
-  for path in $(printf '%s' "$files" | tr -d '[]"' | tr ',' ' '); do
+  set -f
+  old_ifs="$IFS"
+  IFS='
+'
+  for path in $(printf '%s' "$files" | sed -e 's/^\[//' -e 's/\]$//' -e 's/","/\n/g' -e 's/^"//' -e 's/"$//' | tr ',' '\n' | sed -e 's/^ *"*//' -e 's/"* *$//'); do
     [ -n "$path" ] || continue
+    # A directory in the list is checked by its newest member, since a fence may
+    # legitimately name a whole directory as the thing a task produces.
+    if [ -d "$path" ]; then
+      newest="$(find "$path" -type f -newermt "@$record_epoch" 2>/dev/null | head -1)"
+      if [ -n "$newest" ]; then
+        moved="${moved}${moved:+, }$newest"
+      fi
+      continue
+    fi
     [ -f "$path" ] || continue
     mtime="$(shipshape_mtime "$path")"
     [ -n "$mtime" ] || continue
@@ -76,6 +100,8 @@ if [ -n "$record_epoch" ]; then
       moved="${moved}${moved:+, }$path"
     fi
   done
+  IFS="$old_ifs"
+  set +f
   if [ -n "$moved" ]; then
     shipshape_trace task-completion-gate "$fence_id blocked: $moved changed after the verify ran"
     shipshape_emit_block "Task $fence_id was verified, then these files changed: $moved

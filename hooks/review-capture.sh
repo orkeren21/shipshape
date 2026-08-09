@@ -39,21 +39,39 @@ case "$description$prompt" in
   *) exit 0 ;;
 esac
 
-report="$(shipshape_field tool_output)"
+# A backgrounded dispatch has not produced a report yet, and no later event
+# carries one — so its report can never be captured. Say that plainly in the
+# trace rather than logging it as a reviewer that returned nothing, because the
+# fix is different: dispatch the reviewer synchronously.
+if shipshape_agent_is_async; then
+  shipshape_trace review-capture \
+    "marked dispatch was launched in the background; no report to capture — dispatch the reviewer synchronously"
+  exit 0
+fi
+
+report="$(shipshape_agent_text)"
 if [ -z "$report" ]; then
-  shipshape_trace review-capture "marked dispatch returned nothing; no report written"
+  shipshape_trace review-capture "marked dispatch returned no text; no report written"
   exit 0
 fi
 
 scratch="$(shipshape_scratch_dir)"
 # One file per round: a re-review of the fix diff is a second report, not an
 # overwrite of the first, and the retro wants both.
-target="$scratch/review-$(date -u +%Y%m%dT%H%M%SZ).md"
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+target="$scratch/review-$stamp.md"
 suffix=1
-while [ -e "$target" ]; do
-  target="$scratch/review-$(date -u +%Y%m%dT%H%M%SZ)-$suffix.md"
+# Two reviews inside one second is already unusual; a hundred means something
+# is looping, and writing a hundred-and-first file will not help. Bounded, and
+# the cap is logged when it is reached.
+while [ -e "$target" ] && [ "$suffix" -le 99 ]; do
+  target="$scratch/review-$stamp-$(printf '%02d' "$suffix").md"
   suffix=$((suffix + 1))
 done
+if [ -e "$target" ]; then
+  shipshape_trace review-capture "100 reports already written this second; discarding this one"
+  exit 0
+fi
 
 printf '%s' "$report" > "$target"
 shipshape_trace review-capture "wrote $(basename "$target") ($(printf '%s' "$report" | wc -c | tr -d ' ') bytes)"

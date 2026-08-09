@@ -36,11 +36,25 @@ shipshape_session_id() {
   # outside a safe alphabet — separators, dots, whitespace — becomes a dash, so
   # no id can produce '..', a hidden directory, or an escape from the scratch
   # dir. Runs of dashes then collapse to keep the result readable.
+  shipshape_safe_id "$id" "unknown"
+}
+
+# Reduce any string to something safe to use as a single path segment.
+#
+# Every id ShipShape puts in a path — the session id, a native task id, a fence
+# id, a blockedBy entry — arrives from a JSON payload or a plan document. An
+# unsanitised one can walk out of the scratch directory, and the completion
+# gate truncates the file it lands on.
+#
+# One helper, used everywhere, so the wrapper that writes a record and the gate
+# that reads it can never disagree about what the record is called.
+shipshape_safe_id() {
+  local id="$1" fallback="${2:-unnamed}"
   id="$(printf '%s' "$id" | tr -c 'A-Za-z0-9_-' '-')"
   while [ "${id}" != "${id//--/-}" ]; do id="${id//--/-}"; done
   id="${id#-}"
   id="${id%-}"
-  [ -n "$id" ] || id="unknown"
+  [ -n "$id" ] || id="$fallback"
   printf '%s\n' "$id"
 }
 
@@ -170,6 +184,63 @@ shipshape_read_payload() {
 # Field access on the payload this hook was handed.
 shipshape_field() {
   shipshape_json_get "$SHIPSHAPE_PAYLOAD" "$1"
+}
+
+# The text a subagent returned, out of a PostToolUse payload.
+#
+# The result is an object, not a string: {status, content:[{type,text}], ...}.
+# A background dispatch is a different shape again — status "async_launched",
+# an agentId, and no content, because the agent has not finished. There is no
+# later event carrying the result, so a background reviewer is one whose report
+# can never be captured. Prints nothing in that case; the caller says so.
+shipshape_agent_text() {
+  local payload="${1:-$SHIPSHAPE_PAYLOAD}"
+  if command -v jq >/dev/null 2>&1; then
+    local out status
+    out="$(printf '%s' "$payload" | jq -r '
+      .tool_response as $r
+      | if ($r | type) == "string" then $r
+        elif ($r | type) == "object" then
+          ( [ ($r.content // [])[]? | select(.type == "text") | .text ] | join("\n") )
+        else "" end
+    ' 2>/dev/null)"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+      printf '%s' "$out"
+      return 0
+    fi
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    SHIPSHAPE_JSON="$payload" python3 -c '
+import json, os, sys
+try:
+    payload = json.loads(os.environ["SHIPSHAPE_JSON"])
+except Exception:
+    sys.exit(0)
+response = payload.get("tool_response")
+if isinstance(response, str):
+    sys.stdout.write(response)
+elif isinstance(response, dict):
+    parts = [
+        block.get("text", "")
+        for block in (response.get("content") or [])
+        if isinstance(block, dict) and block.get("type") == "text"
+    ]
+    sys.stdout.write("\n".join(p for p in parts if p))
+' 2>/dev/null
+  fi
+  return 0
+}
+
+# Did this PostToolUse payload describe an agent that was merely launched?
+shipshape_agent_is_async() {
+  local payload="${1:-$SHIPSHAPE_PAYLOAD}"
+  local status
+  status="$(shipshape_json_get "$payload" tool_response.status)"
+  case "$status" in
+    async_launched|remote_launched) return 0 ;;
+  esac
+  [ "$(shipshape_json_get "$payload" tool_response.isAsync)" = "true" ]
 }
 
 # ---------------------------------------------------------------------------

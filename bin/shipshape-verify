@@ -2,6 +2,14 @@
 # Run a task's verifyCommand and record that it ran.
 #
 #   shipshape-verify <task-id> <command> [args...]
+#   shipshape-verify <task-id> "cmd one && cmd two"
+#
+# A single argument is run through the shell, because a verifyCommand in a plan
+# fence is written as a shell line and often contains && or a pipe. Several
+# arguments are executed directly, with no shell involved. Getting this wrong
+# is quiet and bad: the caller's shell would split at the &&, the wrapper would
+# record only the first half, and the gate would close the task on a record
+# describing half the verification.
 #
 # Transparent: output and exit code are the command's. The record at
 # .shipshape/<session>/verify/<task-id> is what the task-completion gate reads,
@@ -21,20 +29,24 @@ MAX_LINES="${SHIPSHAPE_VERIFY_MAX_LINES:-200}"
 
 if [ "$#" -lt 2 ]; then
   echo "usage: shipshape-verify <task-id> <command> [args...]" >&2
+  echo "       shipshape-verify <task-id> \"cmd one && cmd two\"" >&2
   exit 64
 fi
 
 task_id="$1"
 shift
 
-# The id becomes a filename; flatten anything that could leave the directory.
-safe_id="$(printf '%s' "$task_id" | tr -c 'A-Za-z0-9_-' '-')"
-while [ "$safe_id" != "${safe_id//--/-}" ]; do safe_id="${safe_id//--/-}"; done
-safe_id="${safe_id#-}"
-safe_id="${safe_id%-}"
-[ -n "$safe_id" ] || safe_id="unnamed"
+# The id becomes a filename. Sanitised through the shared helper, which is the
+# same one the completion gate uses to find this record again.
+safe_id="$(shipshape_safe_id "$task_id")"
 
-out="$("$@" 2>&1)"
+if [ "$#" -eq 1 ]; then
+  recorded="$1"
+  out="$(sh -c "$1" 2>&1)"
+else
+  recorded="$*"
+  out="$("$@" 2>&1)"
+fi
 status=$?
 
 printf '%s\n' "$out"
@@ -56,7 +68,7 @@ fi
 
 {
   printf 'task=%s\n' "$safe_id"
-  printf 'command=%s\n' "$*"
+  printf 'command=%s\n' "$recorded"
   printf 'exit=%s\n' "$status"
   printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'epoch=%s\n' "$(date -u +%s)"

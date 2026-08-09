@@ -41,7 +41,7 @@ scratch="$repo/.shipshape/$session"
 
 description="$(printf 'Implement it.\n\n```json:metadata\n%s\n```\n' "$fence")"
 
-payload="$(printf '{"session_id":"%s","hook_event_name":"TaskCreated","task_id":"41","task_title":"t","task_description":%s}' \
+payload="$(printf '{"session_id":"%s","hook_event_name":"TaskCreated","task_id":"41","task_subject":"t","task_description":%s}' \
   "$session" "$(json_string "$description")")"
 run_hook task-capture.sh "$payload" "$repo" >/dev/null
 
@@ -69,7 +69,7 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
 
 # --- the completion gate reads verifyCommand and files -----------------------
 
-completed="$(printf '{"session_id":"%s","hook_event_name":"TaskCompleted","task_id":"41","task_title":"t"}' "$session")"
+completed="$(printf '{"session_id":"%s","hook_event_name":"TaskCompleted","task_id":"41","task_subject":"t"}' "$session")"
 out="$(run_hook task-completion-gate.sh "$completed" "$repo")"
 assert_eq "block" "$(hook_field "$out" decision)" \
   "the completion gate reads verifyCommand out of the documented fence and holds the task"

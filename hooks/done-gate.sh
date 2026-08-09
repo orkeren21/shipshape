@@ -38,24 +38,55 @@ shipshape_enabled DONE_GATE || exit 0
 scratch="$(shipshape_scratch_dir)"
 [ -f "$scratch/pr-armed" ] || exit 0
 
+# The gate belongs to the branch the pull request was opened from. A session
+# that ships one branch and starts another is not owing evidence for work that
+# has no pull request yet.
+armed_branch="$(grep '^branch=' "$scratch/pr-armed" 2>/dev/null | head -1 | cut -d= -f2-)"
+current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+if [ -n "$armed_branch" ] && [ -n "$current_branch" ] && [ "$armed_branch" != "$current_branch" ]; then
+  shipshape_trace done-gate "armed for $armed_branch but now on $current_branch; standing down"
+  exit 0
+fi
+
 missing=""
 add() { missing="${missing}  - $1
 "; }
 
 # --- the review report -------------------------------------------------------
+#
+# Newest by modification time, not by name: a re-review written in the same
+# second gets a suffix that sorts after the original, and picking the
+# lexically-last file would then judge recency on the wrong one.
 
-review="$(find "$scratch" -maxdepth 1 -name 'review-*.md' -size +0 2>/dev/null | sort | tail -1)"
+review=""
+newest_mtime=0
+for candidate in "$scratch"/review-*.md; do
+  [ -f "$candidate" ] || continue
+  [ -s "$candidate" ] || continue
+  candidate_mtime="$(shipshape_mtime "$candidate")"
+  [ -n "$candidate_mtime" ] || continue
+  if [ "$candidate_mtime" -ge "$newest_mtime" ]; then
+    newest_mtime="$candidate_mtime"
+    review="$candidate"
+  fi
+done
+
 if [ -z "$review" ]; then
-  add "review report — no whole-branch review has been captured. Dispatch the reviewer with \"whole-branch-review:\" in the description; the hook writes the report."
+  add "review report — no whole-branch review has been captured. Dispatch the reviewer synchronously with \"whole-branch-review:\" in the description; the hook writes the report from what it returns."
 elif ! shipshape_newer_than_head "$review"; then
   add "review report — stale: it predates the current HEAD commit, so it did not see the code being shipped. Re-review the branch."
+elif ! grep -qi 'ready to merge' "$review" 2>/dev/null; then
+  # The reviewer template ends with an explicit verdict. A report without one
+  # is a reviewer that did not finish, or a file that did not come from a
+  # reviewer at all.
+  add "review report — no verdict in it. The reviewer template ends with \"Ready to merge?\"; a report without that line is not a completed review."
 fi
 
 # --- CI ----------------------------------------------------------------------
 
 if [ ! -f "$scratch/ci-status" ]; then
   add "ci-status — CI has not been watched to a verdict. Run shipshape-ci-watch."
-elif ! grep -q '^result=green$' "$scratch/ci-status" 2>/dev/null; then
+elif ! grep -qE '^result=green(-pending-review)?$' "$scratch/ci-status" 2>/dev/null; then
   state="$(grep '^merge_state=' "$scratch/ci-status" 2>/dev/null | head -1 | cut -d= -f2)"
   add "ci-status — not green (merge state ${state:-unknown}). Diagnose, fix, and run shipshape-ci-watch again."
 elif ! shipshape_newer_than_head "$scratch/ci-status"; then

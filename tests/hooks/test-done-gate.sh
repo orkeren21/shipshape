@@ -24,8 +24,9 @@ mkdir -p "$scratch"
 transcript="$work/t.jsonl"
 : > "$transcript"
 
-arm()          { printf 'url=https://x/pull/1\nepoch=%s\n' "$(date -u +%s)" > "$scratch/pr-armed"; }
-give_review()  { printf '# Review\n\nNo blocking findings.\n' > "$scratch/review-1.md"; }
+arm()          { printf 'url=https://x/pull/1\nbranch=%s\nepoch=%s\n' \
+                   "$(git -C "$repo" rev-parse --abbrev-ref HEAD)" "$(date -u +%s)" > "$scratch/pr-armed"; }
+give_review()  { printf '# Review\n\nNo blocking findings.\n\n### Assessment\n\n**Ready to merge?** Yes\n' > "$scratch/review-1.md"; }
 give_ci()      { printf 'result=green\nchecks_exit=0\nmerge_state=CLEAN\n' > "$scratch/ci-status"; }
 give_smoke()   { printf '=== $ ./app --version\n1.2.3\n=== exit 0\n' > "$scratch/smoke.log"; }
 give_all()     { give_review; give_ci; give_smoke; }
@@ -114,6 +115,41 @@ assert_eq "" "$(hook_field "$out" decision)" "re-capturing evidence after the co
 : > "$scratch/review-1.md"
 out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
 assert_eq "block" "$(hook_field "$out" decision)" "an empty review file does not count as a review"
+
+# --- a report with no verdict is an unfinished review ------------------------
+#
+# The reviewer template ends with an explicit verdict. A file without one is a
+# reviewer that did not finish — or something that never came from a reviewer.
+
+give_all
+printf '# Review\n\nI had a look around.\n' > "$scratch/review-1.md"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
+assert_eq "block" "$(hook_field "$out" decision)" "a review report with no verdict does not satisfy the gate"
+assert_contains "$(hook_field "$out" reason)" "verdict" "and the gate says what is missing from it"
+
+# --- the gate belongs to the branch it was armed on --------------------------
+#
+# A session that ships one branch and starts another is not owing evidence for
+# work that has no pull request yet.
+
+give_all
+git -C "$repo" checkout -q -b some-other-lane
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
+assert_eq "" "$(hook_field "$out" decision)" "on a different branch the gate stands down"
+git -C "$repo" checkout -q -
+
+# --- CI blocked only on a human approval -------------------------------------
+#
+# Checks green, merge bar blocked because nobody has approved yet. That is not
+# something the session can fix, and refusing to let the branch finish would
+# make the gate unsatisfiable on any repository that requires review.
+
+give_all
+printf 'result=green-pending-review\nchecks_exit=0\nmerge_state=BLOCKED\nreview_decision=REVIEW_REQUIRED\n' > "$scratch/ci-status"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
+assert_eq "" "$(hook_field "$out" decision)" \
+  "a pull request waiting only on an approving review satisfies the CI half of the gate"
+give_ci
 
 # --- loop guard --------------------------------------------------------------
 

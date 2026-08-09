@@ -39,7 +39,7 @@ if [ -z "$fence_id" ]; then
   exit 0
 fi
 
-safe_task_id="$(printf '%s' "$task_id" | tr -c 'A-Za-z0-9_-' '-')"
+safe_task_id="$(shipshape_safe_id "$task_id")"
 scratch="$(shipshape_scratch_dir)"
 mkdir -p "$scratch/tasks" 2>/dev/null
 printf '%s\n' "$fence" > "$scratch/tasks/$safe_task_id.json"

@@ -27,9 +27,18 @@ REPORT='# Whole-branch review
 ## Minor
 - Naming drift between `getUser` and `fetch_user`.'
 
-payload() { # payload <tool_name> <description> <output>
-  printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"%s","tool_input":{"description":%s,"subagent_type":"general-purpose"},"tool_output":%s}' \
+# The real PostToolUse payload: the result is tool_response, an object whose
+# content is a list of typed blocks — not a string, and not tool_output.
+payload() { # payload <tool_name> <description> <returned text>
+  printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"%s","tool_input":{"description":%s,"subagent_type":"general-purpose"},"tool_response":{"status":"completed","agentId":"abc123","content":[{"type":"text","text":%s}]}}' \
     "$session" "$1" "$(json_string "$2")" "$(json_string "$3")"
+}
+
+# A backgrounded dispatch: launched, no result yet, and no later event will
+# carry one.
+async_payload() { # async_payload <description>
+  printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":%s},"tool_response":{"status":"async_launched","agentId":"abc123","isAsync":true}}' \
+    "$session" "$(json_string "$1")"
 }
 
 # --- a marked reviewer return is captured ------------------------------------
@@ -64,7 +73,7 @@ assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
 # Agent dispatches carry the marker in the description; some carry it in the
 # prompt instead. Both are the same dispatch.
 
-prompt_payload="$(printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Task","tool_input":{"prompt":%s},"tool_output":%s}' \
+prompt_payload="$(printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Task","tool_input":{"prompt":%s},"tool_response":{"status":"completed","content":[{"type":"text","text":%s}]}}' \
   "$session" "$(json_string "whole-branch-review: review the diff at /tmp/diff")" "$(json_string "$REPORT")")"
 run_hook review-capture.sh "$prompt_payload" "$repo" >/dev/null
 [ -n "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" ] \
@@ -86,6 +95,29 @@ rm -f "$scratch"/review-*.md
 run_hook review-capture.sh "$(payload Agent "whole-branch-review: silent" "")" "$repo" >/dev/null
 assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
   "a reviewer that returned nothing leaves no report to point at"
+
+# --- a backgrounded reviewer -------------------------------------------------
+#
+# Agent dispatches run in the background by default. There is no later event
+# carrying the result, so a background reviewer is one whose report can never
+# be captured — and the session has to be told that, not left believing a
+# review happened.
+
+rm -f "$scratch"/review-*.md
+run_hook review-capture.sh "$(async_payload "whole-branch-review: backgrounded")" "$repo" >/dev/null
+assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
+  "a backgrounded dispatch captures nothing, because there is nothing yet to capture"
+assert_contains "$(cat "$scratch/trace.log")" "background" \
+  "and the trace says so, naming the cause rather than reporting a silent reviewer"
+
+# --- a plain-string result ---------------------------------------------------
+
+rm -f "$scratch"/review-*.md
+run_hook review-capture.sh \
+  "$(printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"whole-branch-review: plain"},"tool_response":%s}' \
+     "$session" "$(json_string "$REPORT")")" "$repo" >/dev/null
+captured="$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)"
+[ -n "$captured" ] || fail "a tool_response that is already a plain string is captured too"
 
 # --- kill switch and failing open --------------------------------------------
 

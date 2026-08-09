@@ -23,12 +23,12 @@ fenced_description() { # fenced_description <fence-json>
 }
 
 created_payload() { # created_payload <task_id> <description>
-  printf '{"session_id":"%s","hook_event_name":"TaskCreated","task_id":"%s","task_title":"a task","task_description":%s}' \
+  printf '{"session_id":"%s","hook_event_name":"TaskCreated","task_id":"%s","task_subject":"a task","task_description":%s}' \
     "$session" "$1" "$(json_string "$2")"
 }
 
 completed_payload() { # completed_payload <task_id>
-  printf '{"session_id":"%s","hook_event_name":"TaskCompleted","task_id":"%s","task_title":"a task"}' \
+  printf '{"session_id":"%s","hook_event_name":"TaskCompleted","task_id":"%s","task_subject":"a task"}' \
     "$session" "$1"
 }
 

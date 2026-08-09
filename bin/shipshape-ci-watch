@@ -27,7 +27,7 @@ lib="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../lib" && pwd)"
 MERGE_STATE_ATTEMPTS="${SHIPSHAPE_MERGE_STATE_ATTEMPTS:-3}"
 MERGE_STATE_DELAY="${SHIPSHAPE_MERGE_STATE_RETRY_DELAY:-5}"
 
-record() { # record <result> <checks_exit> <merge_state> <checks_output>
+record() { # record <result> <checks_exit> <merge_state> <checks_output> [review_decision]
   shipshape_enabled CI_WATCH || return 0
   local scratch
   scratch="$(shipshape_scratch_dir)"
@@ -35,6 +35,7 @@ record() { # record <result> <checks_exit> <merge_state> <checks_output>
     printf 'result=%s\n' "$1"
     printf 'checks_exit=%s\n' "$2"
     printf 'merge_state=%s\n' "$3"
+    printf 'review_decision=%s\n' "${5:-}"
     printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'epoch=%s\n' "$(date -u +%s)"
     printf -- '--- checks ---\n'
@@ -69,9 +70,9 @@ merge_state="UNKNOWN"
 attempt=1
 while [ "$attempt" -le "$MERGE_STATE_ATTEMPTS" ]; do
   if [ -n "$pr" ]; then
-    view_out="$(gh pr view "$pr" --json mergeStateStatus,url 2>/dev/null)"
+    view_out="$(gh pr view "$pr" --json mergeStateStatus,reviewDecision,url 2>/dev/null)"
   else
-    view_out="$(gh pr view --json mergeStateStatus,url 2>/dev/null)"
+    view_out="$(gh pr view --json mergeStateStatus,reviewDecision,url 2>/dev/null)"
   fi
   view_exit=$?
 
@@ -82,6 +83,7 @@ while [ "$attempt" -le "$MERGE_STATE_ATTEMPTS" ]; do
   fi
 
   merge_state="$(shipshape_json_get "$view_out" mergeStateStatus)"
+  review_decision="$(shipshape_json_get "$view_out" reviewDecision)"
   [ -n "$merge_state" ] || merge_state="UNKNOWN"
   [ "$merge_state" = "UNKNOWN" ] || break
 
@@ -103,9 +105,26 @@ fi
 result=red
 case "$checks_exit:$merge_state" in
   0:CLEAN|0:HAS_HOOKS) result=green ;;
+  # BLOCKED covers two very different situations. A required check that failed
+  # or never ran is CI's problem and the session's to fix. A pull request
+  # waiting on a human approval is neither — telling the session to "diagnose
+  # and fix CI" would send it after a problem CI cannot solve, and refusing to
+  # let the branch finish would make the gate unsatisfiable on any repository
+  # that requires review. Recorded distinctly, and treated as passing.
+  0:BLOCKED)
+    if [ "${review_decision:-}" = "REVIEW_REQUIRED" ]; then
+      result=green-pending-review
+    fi
+    ;;
 esac
 
-record "$result" "$checks_exit" "$merge_state" "$checks_out"
+record "$result" "$checks_exit" "$merge_state" "$checks_out" "${review_decision:-}"
+
+if [ "$result" = green-pending-review ]; then
+  shipshape_trace ci-watch "checks green; merge bar waiting on a human approval"
+  echo "shipshape-ci-watch: checks are green; the pull request is waiting on an approving review." >&2
+  exit 0
+fi
 
 if [ "$result" = green ]; then
   shipshape_trace ci-watch "green (merge state $merge_state)"
