@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Run a task's verifyCommand and record that it ran.
+#
+#   shipshape-verify <task-id> <command> [args...]
+#
+# Transparent: output and exit code are the command's. The record at
+# .shipshape/<session>/verify/<task-id> is what the task-completion gate reads,
+# and it exists only because the command actually ran.
+#
+# A failing command still writes a record. Red is evidence; absence is not.
+
+set -uo pipefail
+
+lib="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../lib" && pwd)"
+# shellcheck source=../lib/shipshape-common.sh
+. "$lib/shipshape-common.sh"
+
+# How much command output the record keeps. Enough to justify the claim,
+# bounded so a chatty suite cannot fill the scratch dir.
+MAX_LINES="${SHIPSHAPE_VERIFY_MAX_LINES:-200}"
+
+if [ "$#" -lt 2 ]; then
+  echo "usage: shipshape-verify <task-id> <command> [args...]" >&2
+  exit 64
+fi
+
+task_id="$1"
+shift
+
+# The id becomes a filename; flatten anything that could leave the directory.
+safe_id="$(printf '%s' "$task_id" | tr -c 'A-Za-z0-9_-' '-')"
+while [ "$safe_id" != "${safe_id//--/-}" ]; do safe_id="${safe_id//--/-}"; done
+safe_id="${safe_id#-}"
+safe_id="${safe_id%-}"
+[ -n "$safe_id" ] || safe_id="unnamed"
+
+out="$("$@" 2>&1)"
+status=$?
+
+printf '%s\n' "$out"
+
+if ! shipshape_enabled VERIFY; then
+  shipshape_trace verify "kill switch set; $safe_id ran but nothing recorded"
+  exit "$status"
+fi
+
+scratch="$(shipshape_scratch_dir)"
+mkdir -p "$scratch/verify" 2>/dev/null
+
+line_count="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
+truncated=""
+if [ "$line_count" -gt "$MAX_LINES" ]; then
+  truncated="(output truncated to the last $MAX_LINES of $line_count lines)"
+  shipshape_trace verify "$safe_id output truncated at $MAX_LINES lines"
+fi
+
+{
+  printf 'task=%s\n' "$safe_id"
+  printf 'command=%s\n' "$*"
+  printf 'exit=%s\n' "$status"
+  printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'epoch=%s\n' "$(date -u +%s)"
+  printf -- '--- output ---\n'
+  [ -n "$truncated" ] && printf '%s\n' "$truncated"
+  printf '%s\n' "$out" | tail -n "$MAX_LINES"
+} > "$scratch/verify/$safe_id"
+
+shipshape_trace verify "$safe_id exited $status"
+exit "$status"

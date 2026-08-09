@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Watch CI to a verdict, and record what the verdict was.
+#
+#   shipshape-ci-watch [pr-number-or-url] [extra gh pr checks arguments]
+#
+# Two questions, because they are not the same question:
+#
+#   1. Did the checks that ran pass?          gh pr checks --watch
+#   2. Is the pull request actually mergeable? gh pr view --json mergeStateStatus
+#
+# The second is the bar. A recorded incident had every check green and four
+# more required checks never scheduled — "everything I could see passed" read
+# as done, and it was not. GitHub's merge state already accounts for required
+# checks that have not run, so it is the honest answer to "is this shippable".
+#
+# Red is written down, never left as an absent file: a gate cannot tell "CI
+# failed" from "nobody ran CI" if failure means no artifact.
+
+set -uo pipefail
+
+lib="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../lib" && pwd)"
+# shellcheck source=../lib/shipshape-common.sh
+. "$lib/shipshape-common.sh"
+
+# GitHub reports UNKNOWN while it works out mergeability. Look again a few
+# times, with the bound written down and the cap logged when it is reached.
+MERGE_STATE_ATTEMPTS="${SHIPSHAPE_MERGE_STATE_ATTEMPTS:-3}"
+MERGE_STATE_DELAY="${SHIPSHAPE_MERGE_STATE_RETRY_DELAY:-5}"
+
+record() { # record <result> <checks_exit> <merge_state> <checks_output>
+  shipshape_enabled CI_WATCH || return 0
+  local scratch
+  scratch="$(shipshape_scratch_dir)"
+  {
+    printf 'result=%s\n' "$1"
+    printf 'checks_exit=%s\n' "$2"
+    printf 'merge_state=%s\n' "$3"
+    printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'epoch=%s\n' "$(date -u +%s)"
+    printf -- '--- checks ---\n'
+    printf '%s\n' "$4"
+  } > "$scratch/ci-status"
+}
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "shipshape-ci-watch: gh is not on PATH" >&2
+  shipshape_trace ci-watch "gh not found"
+  record unknown 127 UNAVAILABLE "gh is not on PATH"
+  exit 127
+fi
+
+pr=""
+case "${1:-}" in
+  ''|-*) : ;;
+  *) pr="$1"; shift ;;
+esac
+
+if [ -n "$pr" ]; then
+  checks_out="$(gh pr checks "$pr" --watch "$@" 2>&1)"
+else
+  checks_out="$(gh pr checks --watch "$@" 2>&1)"
+fi
+checks_exit=$?
+
+printf '%s\n' "$checks_out"
+
+# The merge bar, looked at until it settles or the cap is reached.
+merge_state="UNKNOWN"
+attempt=1
+while [ "$attempt" -le "$MERGE_STATE_ATTEMPTS" ]; do
+  if [ -n "$pr" ]; then
+    view_out="$(gh pr view "$pr" --json mergeStateStatus,url 2>/dev/null)"
+  else
+    view_out="$(gh pr view --json mergeStateStatus,url 2>/dev/null)"
+  fi
+  view_exit=$?
+
+  if [ "$view_exit" -ne 0 ]; then
+    merge_state="UNREADABLE"
+    shipshape_trace ci-watch "gh pr view exited $view_exit; merge bar unreadable"
+    break
+  fi
+
+  merge_state="$(shipshape_json_get "$view_out" mergeStateStatus)"
+  [ -n "$merge_state" ] || merge_state="UNKNOWN"
+  [ "$merge_state" = "UNKNOWN" ] || break
+
+  if [ "$attempt" -lt "$MERGE_STATE_ATTEMPTS" ]; then
+    [ "$MERGE_STATE_DELAY" -gt 0 ] 2>/dev/null && sleep "$MERGE_STATE_DELAY"
+  fi
+  attempt=$((attempt + 1))
+done
+
+if [ "$merge_state" = "UNKNOWN" ]; then
+  shipshape_trace ci-watch \
+    "merge state still UNKNOWN after $MERGE_STATE_ATTEMPTS looks — retry cap reached"
+fi
+
+# CLEAN and HAS_HOOKS are the mergeable states. BLOCKED means a required check
+# is missing or failing; BEHIND means the branch is out of date; DIRTY means
+# conflicts. None of those are green, and each is recorded by name so the
+# session is told what to fix rather than just that something is wrong.
+result=red
+case "$checks_exit:$merge_state" in
+  0:CLEAN|0:HAS_HOOKS) result=green ;;
+esac
+
+record "$result" "$checks_exit" "$merge_state" "$checks_out"
+
+if [ "$result" = green ]; then
+  shipshape_trace ci-watch "green (merge state $merge_state)"
+  exit 0
+fi
+
+echo "shipshape-ci-watch: not mergeable — checks exited $checks_exit, merge state $merge_state" >&2
+shipshape_trace ci-watch "not green: checks_exit=$checks_exit merge_state=$merge_state"
+[ "$checks_exit" -ne 0 ] && exit "$checks_exit"
+exit 1

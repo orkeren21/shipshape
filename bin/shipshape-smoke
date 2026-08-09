@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Run one step of the scoped smoke and append it to the smoke log.
+#
+#   shipshape-smoke <command> [args...]
+#
+# The scoped smoke is the developer reflex of "did my change actually work":
+# start the thing, exercise the flows the branch touched, look at the output.
+# It is not an end-to-end suite, and it is not Shakedown — that has its own
+# cadence and is never invoked per pull request.
+#
+# The log accumulates, because a smoke is several commands rather than one.
+
+set -uo pipefail
+
+lib="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../lib" && pwd)"
+# shellcheck source=../lib/shipshape-common.sh
+. "$lib/shipshape-common.sh"
+
+MAX_LINES="${SHIPSHAPE_SMOKE_MAX_LINES:-200}"
+
+if [ "$#" -lt 1 ]; then
+  echo "usage: shipshape-smoke <command> [args...]" >&2
+  exit 64
+fi
+
+out="$("$@" 2>&1)"
+status=$?
+
+printf '%s\n' "$out"
+
+if ! shipshape_enabled SMOKE; then
+  shipshape_trace smoke "kill switch set; command ran but nothing logged"
+  exit "$status"
+fi
+
+scratch="$(shipshape_scratch_dir)"
+
+line_count="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
+truncated=""
+if [ "$line_count" -gt "$MAX_LINES" ]; then
+  truncated="(output truncated to the last $MAX_LINES of $line_count lines)"
+  shipshape_trace smoke "output truncated at $MAX_LINES lines"
+fi
+
+{
+  printf '=== %s $ %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
+  [ -n "$truncated" ] && printf '%s\n' "$truncated"
+  printf '%s\n' "$out" | tail -n "$MAX_LINES"
+  printf '=== exit %s\n\n' "$status"
+} >> "$scratch/smoke.log"
+
+shipshape_trace smoke "exited $status: $*"
+exit "$status"

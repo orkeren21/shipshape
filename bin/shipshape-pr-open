@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Open the pull request, and arm the done gate as a side effect.
+#
+#   shipshape-pr-open [any gh pr create arguments]
+#
+# Transparent: the arguments, the output and the exit code are gh's. The only
+# addition is .shipshape/<session>/pr-armed, written when — and only when — a
+# PR was actually created.
+#
+# That file is what makes the done gate un-evadable by phrasing. The gate does
+# not look for the words "I opened a PR"; it looks for the artifact that
+# opening one leaves behind. No PR, no arming, nothing to satisfy. A PR, and
+# the session owes a review report, green CI and a smoke log regardless of how
+# it describes its own state.
+
+set -uo pipefail
+
+lib="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../lib" && pwd)"
+# shellcheck source=../lib/shipshape-common.sh
+. "$lib/shipshape-common.sh"
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "shipshape-pr-open: gh is not on PATH" >&2
+  shipshape_trace pr-open "gh not found; nothing armed"
+  exit 127
+fi
+
+out="$(gh pr create "$@" 2>&1)"
+status=$?
+
+printf '%s\n' "$out"
+
+if [ "$status" -ne 0 ]; then
+  shipshape_trace pr-open "gh pr create exited $status; nothing armed"
+  exit "$status"
+fi
+
+if ! shipshape_enabled PR_OPEN; then
+  shipshape_trace pr-open "kill switch set; PR created but gate not armed"
+  exit 0
+fi
+
+# gh prints the PR URL on success; keep the last URL-looking line.
+url="$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*' | tail -1)"
+
+scratch="$(shipshape_scratch_dir)"
+{
+  printf 'url=%s\n' "$url"
+  printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'epoch=%s\n' "$(date -u +%s)"
+} > "$scratch/pr-armed"
+
+shipshape_trace pr-open "armed done gate for $url"
+exit 0

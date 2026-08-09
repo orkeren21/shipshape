@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# shipshape-pr-open wraps `gh pr create`. Its side effect is the arming file
+# the done gate keys on: once a PR exists, the session owes evidence, whatever
+# words it uses about being finished.
+#
+# The arming file must be impossible to have without the PR. That is the whole
+# point of wrapping a real command instead of asking the session to declare it.
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+source "$here/../helpers.sh"
+source "$here/stub-gh.sh"
+
+pr_open="$SHIPSHAPE_REPO_ROOT/bin/shipshape-pr-open"
+
+work="$(test_workdir)"
+export SHIPSHAPE_SCRATCH_ROOT="$work"
+export SHIPSHAPE_SESSION_ID=pr-session
+scratch="$work/.shipshape/pr-session"
+
+stub="$work/stub"
+make_gh_stub "$stub"
+export PATH="$stub:$PATH"
+export GH_STUB_LOG="$work/gh.log"
+
+# --- the happy path ----------------------------------------------------------
+
+export GH_STUB_PR_URL="https://github.com/acme/widget/pull/42"
+out="$("$pr_open" --title "Add the thing" --body "why" 2>&1)"
+status=$?
+
+assert_eq "0" "$status" "the wrapper exits with gh's status"
+assert_contains "$out" "pull/42" "gh's output reaches the caller — the wrapper is transparent"
+
+assert_file "$scratch/pr-armed" "a successful PR creation arms the done gate"
+armed="$(cat "$scratch/pr-armed")"
+assert_contains "$armed" "https://github.com/acme/widget/pull/42" "the arming file records which PR"
+assert_contains "$armed" "epoch=" "the arming file records when"
+
+log="$(cat "$GH_STUB_LOG")"
+assert_contains "$log" "pr create" "gh pr create was actually invoked"
+assert_contains "$log" "Add the thing" "the caller's arguments were passed through untouched"
+
+# --- no PR, no arming --------------------------------------------------------
+
+rm -rf "$scratch" "$GH_STUB_LOG"
+GH_STUB_CREATE_EXIT=1 "$pr_open" --title "doomed" >/dev/null 2>&1
+status=$?
+
+assert_ne "0" "$status" "a failed PR creation is reported as a failure"
+assert_no_file "$scratch/pr-armed" \
+  "a failed PR creation arms nothing — evidence cannot exist without the work"
+
+# --- arming is idempotent ----------------------------------------------------
+
+rm -rf "$scratch"
+"$pr_open" --title "one" >/dev/null 2>&1
+first="$(cat "$scratch/pr-armed")"
+GH_STUB_PR_URL="https://github.com/acme/widget/pull/43" "$pr_open" --title "two" >/dev/null 2>&1
+second="$(cat "$scratch/pr-armed")"
+assert_contains "$second" "pull/43" "re-opening updates the arming file to the current PR"
+assert_ne "$first" "$second" "the arming file is refreshed rather than left stale"
+
+# --- kill switch -------------------------------------------------------------
+
+rm -rf "$scratch" "$GH_STUB_LOG"
+SHIPSHAPE_PR_OPEN=0 "$pr_open" --title "unarmed" >/dev/null 2>&1
+assert_no_file "$scratch/pr-armed" "the kill switch suppresses arming"
+assert_contains "$(cat "$GH_STUB_LOG")" "pr create" \
+  "the kill switch suppresses the artifact, never the underlying command"
+
+# --- gh missing --------------------------------------------------------------
+
+rm -rf "$scratch"
+nogh="$work/nogh"
+mkdir -p "$nogh"
+out="$(PATH="$nogh:/usr/bin:/bin" "$pr_open" --title "x" 2>&1)"
+status=$?
+assert_ne "0" "$status" "with no gh on PATH the wrapper fails rather than pretending"
+assert_no_file "$scratch/pr-armed" "a missing gh arms nothing"
+
+finish
