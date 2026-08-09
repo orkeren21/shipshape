@@ -1,0 +1,181 @@
+# shellcheck shell=bash
+# Shared by every ShipShape hook and wrapper. Sourced, never executed.
+#
+# Deliberately not `set -e`: hooks fail open. A helper that cannot do its job
+# returns a neutral answer and says so in the trace, rather than aborting the
+# script that sourced it and taking a gate down noisily.
+#
+# Targets bash 3.2 — macOS ships that, and hooks run under whatever bash the
+# machine has. No associative arrays, no ${var,,}, no mapfile.
+
+# ---------------------------------------------------------------------------
+# Session identity
+# ---------------------------------------------------------------------------
+
+# The session id is the only thing keeping two concurrent lanes from writing
+# over each other, so it is resolved from one chain and one place:
+#
+#   SHIPSHAPE_SESSION_ID   set by hooks from the session_id on their payload,
+#                          and by tests. Authoritative.
+#   CLAUDE_CODE_SESSION_ID present in the environment of every command Claude
+#                          Code runs, which is how bin/ wrappers find it.
+#   unknown                degraded but harmless: one shared bucket, still
+#                          isolated from the source tree.
+shipshape_session_id() {
+  local id=""
+  if [ -n "${SHIPSHAPE_SESSION_ID:-}" ]; then
+    id="$SHIPSHAPE_SESSION_ID"
+  elif [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+    id="$CLAUDE_CODE_SESSION_ID"
+  else
+    printf 'unknown\n'
+    return 0
+  fi
+
+  # The id becomes a path segment, and it arrives from a JSON payload. Anything
+  # outside a safe alphabet — separators, dots, whitespace — becomes a dash, so
+  # no id can produce '..', a hidden directory, or an escape from the scratch
+  # dir. Runs of dashes then collapse to keep the result readable.
+  id="$(printf '%s' "$id" | tr -c 'A-Za-z0-9_-' '-')"
+  while [ "${id}" != "${id//--/-}" ]; do id="${id//--/-}"; done
+  id="${id#-}"
+  id="${id%-}"
+  [ -n "$id" ] || id="unknown"
+  printf '%s\n' "$id"
+}
+
+# Where .shipshape/ lives. The git worktree root comes first so a lane working
+# in its own worktree keeps its artifacts beside the code they describe.
+shipshape_scratch_root() {
+  if [ -n "${SHIPSHAPE_SCRATCH_ROOT:-}" ]; then
+    printf '%s\n' "$SHIPSHAPE_SCRATCH_ROOT"
+    return 0
+  fi
+  local top
+  top="$(git rev-parse --show-toplevel 2>/dev/null)"
+  if [ -n "$top" ]; then
+    printf '%s\n' "$top"
+    return 0
+  fi
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    printf '%s\n' "$CLAUDE_PROJECT_DIR"
+    return 0
+  fi
+  pwd
+}
+
+# Prints .shipshape/<session-id>, creating it. Everything ShipShape writes
+# goes here: evidence artifacts, the task ledger, the trace log.
+shipshape_scratch_dir() {
+  local dir
+  dir="$(shipshape_scratch_root)/.shipshape/$(shipshape_session_id)"
+  mkdir -p "$dir" 2>/dev/null
+  printf '%s\n' "$dir"
+}
+
+# ---------------------------------------------------------------------------
+# Kill switches and tracing
+# ---------------------------------------------------------------------------
+
+# shipshape_enabled DONE_GATE -> 0 unless SHIPSHAPE_DONE_GATE is exactly "0".
+# Only the literal 0 disables, so a stray value never silently removes a gate.
+shipshape_enabled() {
+  local var="SHIPSHAPE_$1"
+  local value
+  eval "value=\${$var:-}"
+  [ "$value" = "0" ] && return 1
+  return 0
+}
+
+# One line per event, appended to the session's trace log. This is what makes a
+# fail-open gate answerable after the fact: it says what it saw and what it did.
+shipshape_trace() {
+  local hook="$1"
+  shift
+  local dir
+  dir="$(shipshape_scratch_dir 2>/dev/null)" || return 0
+  [ -d "$dir" ] || return 0
+  printf '%s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$hook" "$*" \
+    >> "$dir/trace.log" 2>/dev/null
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# JSON
+# ---------------------------------------------------------------------------
+
+# shipshape_json_get '<json>' 'a.b.c' -> the scalar at that path, or empty.
+#
+# Empty on anything unexpected — missing key, malformed payload, no JSON tool
+# on the box. A gate that cannot read its payload lets the session through.
+shipshape_json_get() {
+  local json="$1" path="$2"
+  local out status
+  # jq first when it is there and working. An installed-but-broken jq hands over
+  # to python3 rather than deciding the answer is empty — "no such key" and "my
+  # reader fell over" are different, and only the first should look empty.
+  if command -v jq >/dev/null 2>&1; then
+    out="$(printf '%s' "$json" | jq -r --arg p "$path" '
+      ($p | split(".")) as $parts
+      | reduce $parts[] as $k (.; if type == "object" then .[$k] else null end)
+      | if . == null then "" elif type == "string" then . else tostring end
+    ' 2>/dev/null)"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+      printf '%s' "$out"
+      return 0
+    fi
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    SHIPSHAPE_JSON="$json" SHIPSHAPE_PATH="$path" python3 -c '
+import json, os, sys
+try:
+    node = json.loads(os.environ["SHIPSHAPE_JSON"])
+except Exception:
+    sys.exit(0)
+for key in os.environ["SHIPSHAPE_PATH"].split("."):
+    if isinstance(node, dict) and key in node:
+        node = node[key]
+    else:
+        sys.exit(0)
+if node is None:
+    sys.exit(0)
+if isinstance(node, str):
+    sys.stdout.write(node)
+elif isinstance(node, bool):
+    sys.stdout.write("true" if node else "false")
+else:
+    sys.stdout.write(json.dumps(node))
+' 2>/dev/null
+    return 0
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Recency
+# ---------------------------------------------------------------------------
+
+# "Recent" means newer than the code it claims to describe, not newer than some
+# number of minutes. Smoke ran, then a fix landed: the smoke no longer describes
+# what is being shipped, and counts as missing.
+#
+# Fails open (reports recent) when there is no HEAD to compare against.
+shipshape_newer_than_head() {
+  local file="$1"
+  [ -f "$file" ] || return 1
+
+  local head_epoch file_epoch
+  head_epoch="$(git log -1 --format=%ct 2>/dev/null)"
+  [ -n "$head_epoch" ] || return 0
+
+  file_epoch="$(shipshape_mtime "$file")"
+  [ -n "$file_epoch" ] || return 0
+
+  [ "$file_epoch" -ge "$head_epoch" ]
+}
+
+# stat's flags differ between BSD (macOS) and GNU. Try both.
+shipshape_mtime() {
+  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
+}

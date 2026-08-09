@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# Print how full the session's context window is, as an integer 0-100.
+# Print -1 when that cannot be determined.
+#
+#   shipshape-context-pct [transcript-path]
+#
+# Hooks pass the transcript_path they were handed. Without an argument the
+# transcript is found by session id under ~/.claude/projects, which is how a
+# plain shell command reaches the same number.
+#
+# This is not an estimate. Every assistant entry in a Claude Code transcript
+# carries the API's own accounting for that request, and the context a request
+# occupies is exactly:
+#
+#     input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+#                  + output_tokens
+#
+# The last such entry that belongs to this session — subagent entries are
+# marked isSidechain and describe a different context — divided by the window.
+#
+# One source, two consumers: context-watch nudges from this number and the
+# deflection guard defends from it, so they can never disagree about whether
+# the session is under pressure.
+#
+# -1 is a real answer meaning "unknown", not an error, so the exit status stays
+# 0. Consumers treat it as unknown: context-watch stays silent, the deflection
+# guard fails open.
+
+set -uo pipefail
+
+unknown() { printf '%s\n' "-1"; exit 0; }
+
+window="${SHIPSHAPE_CONTEXT_WINDOW:-1000000}"
+case "$window" in
+  ''|*[!0-9]*) unknown ;;
+esac
+[ "$window" -gt 0 ] 2>/dev/null || unknown
+
+transcript="${1:-}"
+
+if [ -z "$transcript" ]; then
+  session="${SHIPSHAPE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+  [ -n "$session" ] || unknown
+  # ~/.claude/projects/<mangled-cwd>/<session-id>.jsonl — the directory encodes
+  # the project path, so search rather than reconstruct it.
+  transcript="$(find "${HOME}/.claude/projects" -maxdepth 2 -type f \
+                  -name "${session}.jsonl" 2>/dev/null | head -1)"
+fi
+
+[ -n "$transcript" ] || unknown
+[ -f "$transcript" ] || unknown
+
+# Two readers, tried in order. Each prints a token total or nothing; a reader
+# that is absent, broken, or finds no usable entry hands over to the next
+# rather than deciding the answer is unknown.
+read_with_python() {
+  command -v python3 >/dev/null 2>&1 || return 1
+  SHIPSHAPE_TRANSCRIPT="$transcript" python3 -c '
+import json, os, sys
+
+total = None
+with open(os.environ["SHIPSHAPE_TRANSCRIPT"], "r", errors="replace") as fh:
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("type") != "assistant":
+            continue
+        # A subagent runs in its own window; its usage says nothing about this
+        # session, and counting it would report pressure that is not there.
+        if entry.get("isSidechain"):
+            continue
+        usage = (entry.get("message") or {}).get("usage")
+        if not isinstance(usage, dict):
+            continue
+        fields = ("input_tokens", "cache_creation_input_tokens",
+                  "cache_read_input_tokens", "output_tokens")
+        try:
+            total = sum(int(usage.get(f, 0) or 0) for f in fields)
+        except Exception:
+            continue
+
+if total is None:
+    sys.exit(1)
+sys.stdout.write(str(total))
+' 2>/dev/null
+}
+
+read_with_jq() {
+  command -v jq >/dev/null 2>&1 || return 1
+  jq -rs '
+      [ .[]
+        | select(type == "object")
+        | select(.type == "assistant")
+        | select(.isSidechain != true)
+        | .message.usage
+        | select(type == "object")
+        | ((.input_tokens // 0) + (.cache_creation_input_tokens // 0)
+           + (.cache_read_input_tokens // 0) + (.output_tokens // 0))
+      ] | if length == 0 then empty else last end
+    ' "$transcript" 2>/dev/null
+}
+
+used="$(read_with_python)"
+case "$used" in
+  ''|*[!0-9]*) used="$(read_with_jq)" ;;
+esac
+case "$used" in
+  ''|*[!0-9]*) unknown ;;
+esac
+
+pct=$(( used * 100 / window ))
+[ "$pct" -gt 100 ] && pct=100
+[ "$pct" -lt 0 ] && pct=0
+printf '%s\n' "$pct"
