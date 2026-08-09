@@ -82,12 +82,15 @@ readme_body="$(cat "$readme")"
 # of missing fields rather than as the one thing that is actually wrong.
 
 assert_valid_json() { # assert_valid_json <json> <what>
+  local status=0
   if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$1" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null \
-      || fail "$2 is not valid JSON"
+    printf '%s' "$1" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null || status=$?
   else
-    printf '%s' "$1" | jq -e . >/dev/null 2>&1 || fail "$2 is not valid JSON"
+    printf '%s' "$1" | jq -e . >/dev/null 2>&1 || status=$?
   fi
+  # Through assert_eq rather than a bare fail, so a passing parse counts toward
+  # the tally like every other assertion in the file.
+  assert_eq "0" "$status" "$2 is valid JSON"
 }
 
 assert_valid_json "$plugin_json" "plugin.json"
@@ -179,38 +182,62 @@ claude_md="$SHIPSHAPE_REPO_ROOT/CLAUDE.md"
 assert_file "$claude_md" "CLAUDE.md exists"
 claude_body="$(cat "$claude_md")"
 
-assert_contains "$claude_body" "absent from the published tree" \
-  "CLAUDE.md says the internal-docs directory is not in a clone"
+assert_contains "$claude_body" "docs/superpowers/" \
+  "CLAUDE.md's layout accounts for the internal-docs directory"
 assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/.gitignore")" "docs/superpowers/" \
-  "and this repo's own .gitignore is what makes that true, not one machine's global ignore"
+  "and this repo's own .gitignore is what keeps it out of a clone, not one machine's global ignore"
 
-# Backticked spans that look like repo-relative paths. A leading slash means a
-# slash command rather than a path, a space or an angle bracket means a
-# placeholder, and a span with no slash is a bare filename or an env var.
+# Citing a file under the internal-docs directory, in any markup. Backticks, a
+# markdown link and bare prose all read the same to someone who then goes
+# looking for the file, so this one is matched on the path itself rather than on
+# the shape it was written in.
+cited_internal="$(printf '%s' "$claude_body" | grep -nE 'docs/superpowers/[A-Za-z0-9._-]' || true)"
+[ -z "$cited_internal" ] || fail "CLAUDE.md cites a file under docs/superpowers/, which no clone has:
+$(printf '%s' "$cited_internal" | sed 's/^/          /')"
+
+# Everything else it names has to be in the tree. Repo-relative paths appear
+# either in backticks or as a markdown link target; a leading slash means a
+# slash command rather than a path, and a space or an angle bracket means a
+# placeholder rather than a real file.
 cited_paths="$(printf '%s' "$claude_body" \
-  | grep -oE '`[A-Za-z0-9._][A-Za-z0-9._/-]*/[A-Za-z0-9._/-]*`' \
-  | tr -d '`' | sed 's:/*$::' | sort -u)"
+  | grep -oE '(`|\]\()[A-Za-z0-9._][A-Za-z0-9._/-]*/[A-Za-z0-9._/-]*(`|\))' \
+  | sed -e 's/^[`]//' -e 's/^](//' -e 's/[`)]$//' -e 's:/*$::' \
+  | sort -u)"
 
-for path in $cited_paths; do
-  case "$path" in
-    docs/*/*)
+# Without this, a reformat of CLAUDE.md that this regex stops matching turns the
+# whole loop below into a no-op, and a silent no-op looks exactly like a pass.
+assert_ne "" "$cited_paths" "CLAUDE.md names repo paths for this check to read"
+
+# Both loops below ask git what the tree contains. Off a checkout — a downloaded
+# tarball, an installed plugin copy — every answer is empty for a reason that
+# has nothing to do with the thing being checked: the path loop would report
+# every path as untracked, and the boundary loop would report clean. Ask once,
+# and say which it is.
+if git -C "$SHIPSHAPE_REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  for path in $cited_paths; do
+    case "$path" in
       # Naming the directory is how CLAUDE.md tells a session those notes are
-      # local-only. Naming a file inside it is citing something no clone has.
-      fail "CLAUDE.md cites $path, which is gitignored and absent from any clone" ;;
-    docs/*) : ;;
-    *)
-      [ -n "$(git -C "$SHIPSHAPE_REPO_ROOT" ls-files -- "$path" 2>/dev/null)" ] \
-        || fail "CLAUDE.md names $path, which git does not track — a cloner will not have it" ;;
-  esac
-done
+      # local-only, and it is the one path it may name that git will not have.
+      docs/superpowers) : ;;
+      *)
+        # The index rather than HEAD: a path staged but not yet committed is on
+        # its way into the tree, and failing it would turn every work in
+        # progress red. The claim this makes is "git tracks it", nothing more.
+        [ -n "$(git -C "$SHIPSHAPE_REPO_ROOT" ls-files -- "$path" 2>/dev/null)" ] \
+          || fail "CLAUDE.md names $path, which git does not track" ;;
+    esac
+  done
 
-# The boundary CLAUDE.md opens with, checked against the tree rather than
-# trusted. Nothing cross-platform ever enters this repo.
-for banned in .codex-plugin .cursor-plugin .kimi-plugin .opencode .pi \
-              gemini-extension.json GEMINI.md AGENTS.md; do
-  [ -z "$(git -C "$SHIPSHAPE_REPO_ROOT" ls-files -- "$banned" 2>/dev/null)" ] \
-    || fail "$banned is tracked — this fork is Claude Code only"
-done
+  # The boundary CLAUDE.md opens with, checked against the tree rather than
+  # trusted. Nothing cross-platform ever enters this repo.
+  for banned in .codex-plugin .cursor-plugin .kimi-plugin .opencode .pi \
+                gemini-extension.json GEMINI.md AGENTS.md; do
+    [ -z "$(git -C "$SHIPSHAPE_REPO_ROOT" ls-files -- "$banned" 2>/dev/null)" ] \
+      || fail "$banned is tracked — this fork is Claude Code only"
+  done
+else
+  fail "not a git checkout, so neither the CLAUDE.md path check nor the Claude Code-only boundary check could run"
+fi
 
 # --- attribution survives, because it is a licence obligation ----------------
 

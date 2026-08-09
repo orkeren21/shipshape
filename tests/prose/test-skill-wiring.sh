@@ -49,7 +49,8 @@ assert_eq "1" "$homes" "the routing table is stated in exactly one skill"
 router_body="$(cat "$router")"
 for dest in systematic-debugging brainstorming direct-implementation \
             subagent-driven-development finishing-with-evidence \
-            write-handoff read-handoff writing-skills; do
+            write-handoff read-handoff writing-skills \
+            epic-architecture dispatching-parallel-agents; do
   assert_contains "$router_body" "shipshape:$dest" "the router routes to $dest"
 done
 
