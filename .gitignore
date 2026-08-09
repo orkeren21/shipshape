@@ -1,0 +1,8 @@
+# Session-scoped scratch: evidence artifacts, trace logs, task ledger.
+# Written by ShipShape's own wrappers and hooks; never part of the source.
+.shipshape/
+
+# Test scratch
+tmp/
+
+.DS_Store

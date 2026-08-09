@@ -1,0 +1,16 @@
+{
+  "name": "shipshape",
+  "description": "Quality gates that catch real defects, enforced by hooks instead of prose. A Claude Code-only fork of obra/superpowers, rewritten for Opus 5 / Fable 5.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Or Keren"
+  },
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "tdd",
+    "code-review",
+    "workflow",
+    "hooks"
+  ]
+}
