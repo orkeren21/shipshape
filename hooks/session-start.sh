@@ -17,7 +17,7 @@ plugin_root="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"
 shipshape_read_payload
 shipshape_enabled SESSION_START || exit 0
 
-bootstrap="$plugin_root/skills/using-superpowers/SKILL.md"
+bootstrap="$plugin_root/skills/shipshape/SKILL.md"
 [ -f "$bootstrap" ] || exit 0
 
 content="$(cat "$bootstrap" 2>/dev/null)"
@@ -26,7 +26,7 @@ content="$(cat "$bootstrap" 2>/dev/null)"
 shipshape_trace session-start "injected the bootstrap skill"
 shipshape_emit_context SessionStart "You have ShipShape.
 
-The full content of your 'shipshape:using-superpowers' skill follows. For every other skill, use the Skill tool.
+The full content of your 'shipshape:shipshape' skill follows — it routes a situation to the skill that handles it. For every other skill, use the Skill tool.
 
 $content"
 exit 0

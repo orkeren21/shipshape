@@ -129,14 +129,19 @@ done
 assert_no_file "$skills_dir/writing-skills/persuasion-principles.md" \
   "persuasion-principles is not shipped — it teaches the style this fork removes"
 
-# --- the two skills with a stated length budget ------------------------------
+# --- the skill with a stated length budget -----------------------------------
+#
+# The bootstrap is injected verbatim into every session by the session-start
+# hook, so its length is a tax on every conversation. The budget covers the
+# routing table it carries as well as its prose; anything past that belongs in
+# the skill being routed to.
 
-boot="$skills_dir/using-superpowers/SKILL.md"
+boot="$skills_dir/shipshape/SKILL.md"
 assert_file "$boot" "the bootstrap skill exists"
 if [ -f "$boot" ]; then
   words="$(wc -w < "$boot" | tr -d ' ')"
-  [ "$words" -le 200 ] \
-    || fail "the bootstrap is $words words — it is injected into every session, so it stays short (~150)"
+  [ "$words" -le 260 ] \
+    || fail "the bootstrap is $words words — it is injected into every session, so it stays short (~220)"
 fi
 
 finish
