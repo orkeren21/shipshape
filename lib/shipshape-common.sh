@@ -153,6 +153,98 @@ else:
 }
 
 # ---------------------------------------------------------------------------
+# Hook entry
+# ---------------------------------------------------------------------------
+
+# Read the event payload from stdin into SHIPSHAPE_PAYLOAD and adopt the
+# session id it carries, so every artifact the hook touches lands in the same
+# scratch dir the wrappers write to.
+shipshape_read_payload() {
+  SHIPSHAPE_PAYLOAD="$(cat 2>/dev/null)"
+  local sid
+  sid="$(shipshape_json_get "$SHIPSHAPE_PAYLOAD" session_id)"
+  [ -n "$sid" ] && export SHIPSHAPE_SESSION_ID="$sid"
+  return 0
+}
+
+# Field access on the payload this hook was handed.
+shipshape_field() {
+  shipshape_json_get "$SHIPSHAPE_PAYLOAD" "$1"
+}
+
+# ---------------------------------------------------------------------------
+# Answering Claude Code
+# ---------------------------------------------------------------------------
+
+# Quote arbitrary text as a JSON string, including the surrounding quotes.
+shipshape_json_escape() {
+  local s="$1"
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$s" | jq -Rs . 2>/dev/null && return 0
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    SHIPSHAPE_RAW="$s" python3 -c \
+      'import json, os, sys; sys.stdout.write(json.dumps(os.environ["SHIPSHAPE_RAW"]))' \
+      2>/dev/null && return 0
+  fi
+  # Last resort: escape by hand. Enough for the text hooks actually emit.
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '"%s"' "$s"
+}
+
+# Stop / TaskCompleted / PostToolUse: refuse, and tell Claude why.
+shipshape_emit_block() {
+  printf '{"decision":"block","reason":%s}\n' "$(shipshape_json_escape "$1")"
+}
+
+# A visible note that does not stop anything. This is the soft tier: the user
+# sees what is still outstanding, and the turn ends normally.
+shipshape_emit_system_message() {
+  printf '{"systemMessage":%s}\n' "$(shipshape_json_escape "$1")"
+}
+
+# PreToolUse refuses through permissionDecision rather than a top-level decision.
+shipshape_emit_deny() {
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s}}\n' \
+    "$(shipshape_json_escape "$1")"
+}
+
+# Add context for Claude on an event that supports it.
+shipshape_emit_context() {
+  printf '{"hookSpecificOutput":{"hookEventName":%s,"additionalContext":%s}}\n' \
+    "$(shipshape_json_escape "$1")" "$(shipshape_json_escape "$2")"
+}
+
+# ---------------------------------------------------------------------------
+# Context pressure
+# ---------------------------------------------------------------------------
+
+# One number, one place it comes from. context-watch nudges from this and the
+# deflection guard defends from it; routing both through here is what stops one
+# demanding a handoff while the other refuses to let the session leave.
+#
+# SHIPSHAPE_CONTEXT_PCT_CMD replaces the helper, which is how tests pin the
+# number without having to fabricate a transcript.
+shipshape_context_pct() {
+  local transcript="${1:-}"
+  if [ -n "${SHIPSHAPE_CONTEXT_PCT_CMD:-}" ]; then
+    "$SHIPSHAPE_CONTEXT_PCT_CMD" "$transcript" 2>/dev/null || printf '%s\n' "-1"
+    return 0
+  fi
+  local dir
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+  if [ -x "$dir/shipshape-context-pct" ]; then
+    "$dir/shipshape-context-pct" "$transcript" 2>/dev/null || printf '%s\n' "-1"
+    return 0
+  fi
+  printf '%s\n' "-1"
+}
+
+# ---------------------------------------------------------------------------
 # Recency
 # ---------------------------------------------------------------------------
 
