@@ -5,4 +5,9 @@
 # Test scratch
 tmp/
 
+# Internal docs — design notes, audits, plans, retros. Excluded here rather than
+# only in the operator's global ignore file, so a fresh clone on any machine
+# cannot stage them by accident.
+docs/superpowers/
+
 .DS_Store

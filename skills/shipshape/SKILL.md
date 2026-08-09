@@ -16,6 +16,8 @@ does. Say which skill you are using and why, then follow it.
 | Implementation finished | `shipshape:finishing-with-evidence` |
 | Context around 70% | `shipshape:write-handoff` |
 | Picking up work from an earlier session | `shipshape:read-handoff` |
+| Scoping an epic across several sessions | `shipshape:epic-architecture` |
+| Independent work to fan out right now | `shipshape:dispatching-parallel-agents` |
 | Writing or editing a skill | `shipshape:writing-skills` |
 
 Some things are enforced rather than suggested. Hooks watch for the evidence a

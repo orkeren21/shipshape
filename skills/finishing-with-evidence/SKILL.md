@@ -51,8 +51,8 @@ Run the thing. Exercise the flows this branch touched. Look at the output.
 
 This is the developer reflex of "did my change actually work", and it is
 several small commands rather than one big one — start it, hit the path that
-changed, check what came back. It is explicitly **not an end-to-end suite** —
-that has its own cadence and is never invoked per pull request.
+changed, check what came back. It is explicitly **not an end-to-end suite**; an
+end-to-end suite has its own cadence and is never invoked per pull request.
 
 If a commit lands after the smoke, the smoke is stale and the gate will say so.
 Smoke last, or smoke again.

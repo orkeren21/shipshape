@@ -16,6 +16,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -35,12 +36,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Informational only. Every command tolerates its tool being absent, so a
+      # runner image that drops one turns a test red for its own reason rather
+      # than turning the build red here.
       - name: Record the shell and tool versions
         run: |
-          bash --version | head -1
-          git --version
-          jq --version
-          python3 --version
+          bash --version | head -1 || true
+          git --version || true
+          jq --version || true
+          python3 --version || true
 
       - name: Run the suite
         run: tests/run-tests.sh

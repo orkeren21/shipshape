@@ -1,6 +1,6 @@
 # ShipShape
 
-[![tests](https://github.com/orkeren21/shipshape/actions/workflows/tests.yml/badge.svg)](https://github.com/orkeren21/shipshape/actions/workflows/tests.yml)
+[![tests](https://github.com/orkeren21/shipshape/actions/workflows/tests.yml/badge.svg?branch=main&event=push)](https://github.com/orkeren21/shipshape/actions/workflows/tests.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![version 0.1.0](https://img.shields.io/badge/version-0.1.0-blue.svg)](.claude-plugin/plugin.json)
 
@@ -9,9 +9,8 @@ A Claude Code plugin that makes a branch prove it is finished.
 ShipShape is an opinionated take on [obra/superpowers](https://github.com/obra/superpowers),
 built for frontier models — Opus 5 and Fable 5 — and for the way one person
 works across a long single session that never compacts. It keeps the quality
-gates that catch real defects, drops the ceremony that was written for models
-that argued with their instructions, and moves enforcement out of prose and
-into hooks.
+gates that catch real defects, trims the process around them to what a frontier
+model still needs, and moves enforcement out of prose and into hooks.
 
 Named alongside Shakedown, its agent-driven end-to-end sibling (public soon):
 Shakedown proves the product works; ShipShape keeps the building of it in order.
@@ -127,9 +126,10 @@ whole design follows from:
 - Direct implementation with one whole-branch review finished lanes in a
   quarter to half the wall-clock of a per-task subagent pipeline, and used far
   fewer tokens, because nothing was re-derived across a brief boundary.
-- The whole-branch fresh-context review returned every Critical finding. It
-  earns that by reading across files, which is the one thing a session holding
-  the whole change in its head is worst at.
+- The whole-branch fresh-context review was the highest-value pass in every lane
+  that measured it, and in the lane that built this repo it returned every
+  Critical finding. It earns that by reading across files, which is the one
+  thing a session holding the whole change in its head is worst at.
 - The failure mode worth engineering against was **guardrail evaporation, not
   implementation quality**. Sessions skipped the review or the smoke unless
   something checked. One pull request was presented as mergeable with no review
@@ -148,7 +148,7 @@ toolkit; ShipShape is one narrow configuration of the same ideas.
 | **Wrappers that produce that evidence as a side effect** | The record exists because the work happened, so the gate has something to read that was never written to satisfy it. |
 | **Content checks, not presence checks** | An artifact's *existence* can be arranged by running the sanctioned command with a trivial argument. Reading the exit code, the command, and the commit closes that. |
 | **Direct implementation as the default mode** | Handing work across an agent-written brief is where defects were entering. One context that holds the whole change removes the boundary. |
-| **One whole-branch review, with the round policy written down** | Per-task review costs the most and catches the least; the cross-file pass catches the most. The policy states its own terminal state, so the loop cannot run forever. |
+| **One whole-branch review, with the round policy written down** | The cross-file pass is where the findings were, so the budget goes there rather than being spread thin across tasks. The policy states its own terminal state, so the loop cannot run forever. |
 | **A prose standard, enforced by a test group** | Frontier models do not need to be argued into following instructions, and the extra pass costs output quality. The standard lives in `skills/writing-skills/SKILL.md` and a grep keeps it honest. |
 | **Session-scoped scratch under `.shipshape/<session-id>/`** | Several lanes run against one repo at a time here. Nothing shared and mutable means nothing to collide over. |
 | **Handoff skills and a context nudge on both ends** | Sessions run to 1M context and never compact. The nudge is worded as an action, because surfacing context pressure is itself what makes a model start winding down. |

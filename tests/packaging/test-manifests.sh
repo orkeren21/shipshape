@@ -16,9 +16,18 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/helpers.sh"
 
 # The gates' own reader (shipshape_json_get) walks objects only, because a hook
 # payload has no arrays worth reaching into. A marketplace manifest does, so
-# this file carries a reader that indexes them — and refuses to run rather than
-# quietly passing when neither JSON tool is on the box, which is the difference
-# between a check and a decoration.
+# this file carries a reader that indexes them.
+#
+# The missing-tool check is here rather than inside the reader on purpose. Every
+# call site is a command substitution, so a `fail` raised inside the function
+# runs in a subshell and its tally is discarded — the test would print eight
+# complaints and count none of them. Checked once, at file scope, where the
+# failure actually lands.
+if ! command -v python3 >/dev/null 2>&1 && ! command -v jq >/dev/null 2>&1; then
+  fail "neither python3 nor jq is available — this test cannot read the manifests"
+  finish
+fi
+
 json_at() { # json_at <json> <dotted.path.with.0.indices>
   local json="$1" path="$2"
   if command -v python3 >/dev/null 2>&1; then
@@ -43,10 +52,7 @@ sys.stdout.write(node if isinstance(node, str) else json.dumps(node))
     local filter
     filter=".$(printf '%s' "$path" | sed -E 's/\.([0-9]+)/[\1]/g')"
     printf '%s' "$json" | jq -r "$filter // \"\" | if type == \"string\" then . else tostring end" 2>/dev/null
-    return 0
   fi
-  fail "neither python3 nor jq is available — this test cannot read the manifests"
-  return 0
 }
 
 repo_slug="orkeren21/shipshape"
@@ -69,6 +75,24 @@ market_json="$(cat "$market_manifest")"
 workflow_body="$(cat "$workflow")"
 readme_body="$(cat "$readme")"
 
+# --- both manifests parse ----------------------------------------------------
+#
+# Everything below reads through json_at, which returns empty on unparseable
+# input. Without this, a manifest broken by a stray comma reports as a fistful
+# of missing fields rather than as the one thing that is actually wrong.
+
+assert_valid_json() { # assert_valid_json <json> <what>
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$1" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null \
+      || fail "$2 is not valid JSON"
+  else
+    printf '%s' "$1" | jq -e . >/dev/null 2>&1 || fail "$2 is not valid JSON"
+  fi
+}
+
+assert_valid_json "$plugin_json" "plugin.json"
+assert_valid_json "$market_json" "marketplace.json"
+
 # --- the plugin manifest points somewhere real -------------------------------
 
 plugin_name="$(json_at "$plugin_json" name)"
@@ -90,10 +114,17 @@ assert_ne "" "$(json_at "$plugin_json" author.name)" "the manifest names an auth
 
 market_name="$(json_at "$market_json" name)"
 assert_ne "" "$market_name" "the marketplace states a name"
-assert_contains "$market_json" '"source": "./"' "the marketplace serves this repo as the plugin"
+assert_eq "./" "$(json_at "$market_json" plugins.0.source)" \
+  "the marketplace serves this repo as the plugin"
 
 listed_name="$(json_at "$market_json" plugins.0.name)"
 listed_version="$(json_at "$market_json" plugins.0.version)"
+
+# Both sides of the next two comparisons come from a reader that returns empty
+# on a path it cannot walk, so a malformed manifest would make them agree by
+# being equally blank. Pin each side non-empty before comparing them.
+assert_ne "" "$listed_name" "the marketplace lists a plugin"
+assert_ne "" "$listed_version" "the listed plugin states a version"
 assert_eq "$plugin_name" "$listed_name" "the marketplace lists the plugin under its real name"
 assert_eq "$plugin_version" "$listed_version" "the marketplace and the plugin agree on the version"
 
@@ -130,6 +161,55 @@ assert_contains "$readme_body" "license-MIT-" "the licence badge names MIT"
 for forbidden in coveralls codecov snyk sonar; do
   assert_not_contains "$readme_body" "$forbidden" \
     "no badge claims $forbidden, which nothing in this repo runs"
+done
+
+# --- CLAUDE.md describes the tree a cloner actually gets ---------------------
+#
+# It is the first file Claude Code loads in this repo and the last one anybody
+# edits. Its Layout table and its Conventions both name paths, and a path that
+# names a source of truth the published tree does not contain sends a
+# contributor's session looking for something that was never pushed — with no
+# way to tell a missing file from a stale pointer.
+#
+# `docs/` is the deliberate exception: internal notes, gitignored, absent from
+# any clone. The rule is that CLAUDE.md may describe that directory but may not
+# cite anything inside it, so every other path it names has to be tracked.
+
+claude_md="$SHIPSHAPE_REPO_ROOT/CLAUDE.md"
+assert_file "$claude_md" "CLAUDE.md exists"
+claude_body="$(cat "$claude_md")"
+
+assert_contains "$claude_body" "absent from the published tree" \
+  "CLAUDE.md says the internal-docs directory is not in a clone"
+assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/.gitignore")" "docs/superpowers/" \
+  "and this repo's own .gitignore is what makes that true, not one machine's global ignore"
+
+# Backticked spans that look like repo-relative paths. A leading slash means a
+# slash command rather than a path, a space or an angle bracket means a
+# placeholder, and a span with no slash is a bare filename or an env var.
+cited_paths="$(printf '%s' "$claude_body" \
+  | grep -oE '`[A-Za-z0-9._][A-Za-z0-9._/-]*/[A-Za-z0-9._/-]*`' \
+  | tr -d '`' | sed 's:/*$::' | sort -u)"
+
+for path in $cited_paths; do
+  case "$path" in
+    docs/*/*)
+      # Naming the directory is how CLAUDE.md tells a session those notes are
+      # local-only. Naming a file inside it is citing something no clone has.
+      fail "CLAUDE.md cites $path, which is gitignored and absent from any clone" ;;
+    docs/*) : ;;
+    *)
+      [ -n "$(git -C "$SHIPSHAPE_REPO_ROOT" ls-files -- "$path" 2>/dev/null)" ] \
+        || fail "CLAUDE.md names $path, which git does not track — a cloner will not have it" ;;
+  esac
+done
+
+# The boundary CLAUDE.md opens with, checked against the tree rather than
+# trusted. Nothing cross-platform ever enters this repo.
+for banned in .codex-plugin .cursor-plugin .kimi-plugin .opencode .pi \
+              gemini-extension.json GEMINI.md AGENTS.md; do
+  [ -z "$(git -C "$SHIPSHAPE_REPO_ROOT" ls-files -- "$banned" 2>/dev/null)" ] \
+    || fail "$banned is tracked — this fork is Claude Code only"
 done
 
 # --- attribution survives, because it is a licence obligation ----------------
