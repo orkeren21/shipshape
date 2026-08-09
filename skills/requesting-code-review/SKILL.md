@@ -1,94 +1,72 @@
 ---
 name: requesting-code-review
-description: Use when completing tasks, implementing major features, or before merging to verify work meets requirements
+description: Use when a branch is complete and before finishing it - dispatches the whole-branch review that catches what the implementer cannot see
 ---
 
-# Requesting Code Review
+# Requesting code review
 
-Dispatch a code reviewer subagent to catch issues before they cascade. The reviewer gets precisely crafted context for evaluation — never your session's history.
+One fresh-context review of the whole branch, at the end. It is the single
+highest-value pass in the process, and it earns that by doing the one thing an
+implementer holding the change in its head is worst at: reading across files.
 
-**Core principle:** Review early, review often.
+Defects the implementer catches come from *running* things. Defects the review
+catches come from *reading* — a contract two files disagree about, a case the
+tests never reach, an assumption that was true in one place and not the other.
+Those do not surface by running anything.
 
-## When to Request Review
+Per-task review is gone. It found defects that came from the brief boundary,
+and the brief boundary is gone too.
 
-**Mandatory:**
-- After each task in subagent-driven development
-- After completing major feature
-- Before merge to main
+## Dispatching
 
-**Optional but valuable:**
-- When stuck (fresh perspective)
-- Before refactoring (baseline check)
-- After fixing complex bug
+Get the range the branch actually spans:
 
-## How to Request
-
-**1. Get git SHAs:**
 ```bash
-BASE_SHA=$(git rev-parse HEAD~1)  # or origin/main
+BASE_SHA=$(git merge-base origin/main HEAD)
 HEAD_SHA=$(git rev-parse HEAD)
 ```
 
-**2. Dispatch code reviewer subagent:**
+Dispatch a `general-purpose` subagent using the template at
+[code-reviewer.md](code-reviewer.md). **Start the dispatch description with
+`whole-branch-review:`.** That marker is what the `review-capture` hook watches
+for; on a marked return, the hook writes the reviewer's report to the session
+scratch, and that artifact is what the done gate reads. Write the report
+yourself and the gate stays shut, which is the point — the file's existence is
+the proof a real fresh-context review happened.
 
-Dispatch a `general-purpose` subagent, filling the template at [code-reviewer.md](code-reviewer.md)
+Hand the reviewer a package: the diff, what the change was meant to do, where
+to look. Never your session history — history puts the reviewer on your
+thought process instead of the work product, which is the one thing you needed
+a second reader for.
 
-**Placeholders:**
-- `{DESCRIPTION}` - Brief summary of what you built
-- `{PLAN_OR_REQUIREMENTS}` - What it should do
-- `{BASE_SHA}` - Starting commit
-- `{HEAD_SHA}` - Ending commit
+**Never tell the reviewer to be conservative, to filter, or to report only what
+matters.** Under that instruction it reports less than it found, and what goes
+missing is not reliably the unimportant part. Ask for everything, with
+severities. Filtering is your job, not the reviewer's.
 
-**3. Act on feedback:**
-- Fix Critical issues immediately
-- Fix Important issues before proceeding
-- Note Minor issues for later
-- Push back if reviewer is wrong (with reasoning)
+## Acting on the findings
 
-## Example
+**Critical and Major block.** Fix them.
 
-```
-[Just completed Task 2: Add verification function]
+**Minor goes to the retro** as a follow-up. Not silently dropped, and not fixed
+reflexively at the end of a branch either.
 
-You: Let me request code review before proceeding.
+If the reviewer is wrong, say so with the technical reasoning and the code or
+test that settles it. A finding you disagree with still needs an answer —
+see `shipshape:receiving-code-review`.
 
-BASE_SHA=$(git log --oneline | grep "Task 1" | head -1 | awk '{print $1}')
-HEAD_SHA=$(git rev-parse HEAD)
+## Rounds, and where they stop
 
-[Dispatch code reviewer subagent]
-  DESCRIPTION: Added verifyIndex() and repairIndex() with 4 issue types
-  PLAN_OR_REQUIREMENTS: Task 2 from docs/superpowers/plans/deployment-plan.md
-  BASE_SHA: a7981ec
-  HEAD_SHA: 3df7661
+1. **Round one.** Full review of the branch. Fix everything blocking, then one
+   scoped re-review of just the fix diff.
 
-[Subagent returns]:
-  Strengths: Clean architecture, real tests
-  Issues:
-    Important: Missing progress indicators
-    Minor: Magic number (100) for reporting interval
-  Assessment: Ready to proceed
+2. **Round two** runs only if round one came back with heavy Critical or Major
+   findings, or the diff is large enough that one pass plausibly missed things.
+   Most branches never reach it.
 
-You: [Fix progress indicators]
-[Continue to Task 3]
-```
+3. **If round two still returns Criticals, stop.** Do not start a third round.
+   Escalate to your human partner in plain English: what is broken, why it
+   matters, and what the options are. Two full rounds failing to converge is
+   information about the change, not a reason to keep looping.
 
-## What makes the review worth having
-
-Dispatch a reviewer rather than reading the diff yourself. The diff and the
-reading of it stay in the reviewer's context; only the findings come back to
-yours, which is the whole economy of the thing.
-
-Hand the reviewer a crafted package — the diff, the requirements it was meant
-to satisfy, what to look at — and not your session history. History puts the
-reviewer on your thought process; the package puts it on the work product,
-which is what a fresh pair of eyes is for.
-
-Critical and Important findings block. "It's simple" is not a reason to skip
-the review; simple changes are where a second reader is cheapest.
-
-**If reviewer wrong:**
-- Push back with technical reasoning
-- Show code/tests that prove it works
-- Request clarification
-
-See template at: [code-reviewer.md](code-reviewer.md)
+The escalation goes in the retro either way, as does reaching round two at all.
