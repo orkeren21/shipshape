@@ -1,0 +1,6 @@
+# GitHub's language bar counts only languages Linguist types as `programming`
+# or `markup`. Markdown is typed `prose`, so it is excluded from every repo's
+# stats by default — which here means the bar describes the hooks and wrappers
+# and stays silent about the skills, and the skills are half of what ShipShape
+# is. Counting them is the accurate picture, not a flattering one.
+*.md linguist-detectable=true
