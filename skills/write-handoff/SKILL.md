@@ -30,7 +30,7 @@ tried and abandoned. Abandoned approaches are worth more than they look — they
 stop the successor spending an hour rediscovering a dead end.
 
 **Next actions.** Concrete and ordered. Not "continue the work" but "t7's
-verify record is stale after the fence rename — re-run `shipshape-verify t7`
+verify record is stale after the fence rename — re-run `shipshape-verify t7 'tests/run-tests.sh hooks'`
 before closing it."
 
 **Gotchas.** The thing that took an hour and should have taken five minutes.

@@ -112,16 +112,17 @@ Do NOT just increase timeouts - find the real issue.
 Return: Summary of what you found and what you fixed.
 ```
 
-## Common Mistakes
+## What makes a brief work
 
-**❌ Too broad:** "Fix all the tests" - agent gets lost
-**✅ Specific:** "Fix agent-tool-abort.test.ts" - focused scope
+Scope it to one thing an agent can hold: "fix agent-tool-abort.test.ts", not
+"fix all the tests". A broad brief produces a wandering agent.
 
-**❌ No context:** "Fix the race condition" - agent doesn't know where
-**✅ Context:** Paste the error messages and test names
+Give it the context you already have — the error messages, the failing test
+names, where you were looking. An agent told to "fix the race condition" spends
+its first half-hour finding what you already knew.
 
-**❌ No constraints:** Agent might refactor everything
-**✅ Constraints:** "Do NOT change production code" or "Fix tests only"
+Say where the work stops. Without a boundary an agent will refactor its way
+outward from the thing you asked for.
 
 **❌ Vague output:** "Fix it" - you don't know what changed
 **✅ Specific:** "Return summary of root cause and changes"

@@ -27,12 +27,21 @@ HEAD_SHA=$(git rev-parse HEAD)
 ```
 
 Dispatch a `general-purpose` subagent using the template at
-[code-reviewer.md](code-reviewer.md). **Start the dispatch description with
-`whole-branch-review:`.** That marker is what the `review-capture` hook watches
-for; on a marked return, the hook writes the reviewer's report to the session
-scratch, and that artifact is what the done gate reads. Write the report
-yourself and the gate stays shut, which is the point — the file's existence is
-the proof a real fresh-context review happened.
+[code-reviewer.md](code-reviewer.md), and **dispatch it synchronously** —
+a backgrounded agent returns before it has a report, and nothing later carries
+one, so its review can never be captured.
+
+**Start the dispatch description with `whole-branch-review:`.** That marker is
+what the `review-capture` hook watches for; on a marked return, the hook writes
+the reviewer's report to the session scratch, and that artifact is what the done
+gate reads.
+
+The hook writing it, rather than you, is what makes the artifact worth
+anything: it exists because a reviewer returned text, which is a different
+thing from a session describing a review it did. That is a tripwire, not a
+lock — nothing stops a determined session writing the file itself. It raises
+the cost from confident phrasing to knowing fabrication, and that is the whole
+claim.
 
 Hand the reviewer a package: the diff, what the change was meant to do, where
 to look. Never your session history — history puts the reviewer on your

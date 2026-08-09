@@ -72,9 +72,20 @@ $(printf '%s' "$hits" | sed 's/^/          /')"
   [ -z "$hits" ] || fail "$rel contains a rationalization table:
 $(printf '%s' "$hits" | sed 's/^/          /')"
 
-  # A few emphatic words are fine. A wall of them is the thing being removed.
+  # The same content in a heading and a bulleted list is the same content. A
+  # table was only ever the most recognisable shape of it.
+  hits="$(printf '%s' "$body" | grep -nEi '^#{2,4} .*(red flag|forbidden|common mistake|rationalization|excuse|signals you|doing it wrong|verification checklist)' || true)"
+  [ -z "$hits" ] || fail "$rel has a rationalization or checklist section:
+$(printf '%s' "$hits" | sed 's/^/          /')"
+
+  hits="$(printf '%s' "$body" | grep -nEi 'if you catch yourself thinking|before marking work complete|before claiming (success|done|complete)' || true)"
+  [ -z "$hits" ] || fail "$rel talks the reader out of rationalizing instead of telling them what to do:
+$(printf '%s' "$hits" | sed 's/^/          /')"
+
+  # Say it once, in a sentence. Shouting is what the old prose did instead of
+  # explaining, and it is what this fork removes.
   caps="$(printf '%s' "$body" | grep -oE '\b(MUST|NEVER|ALWAYS|MANDATORY|CRITICAL|REQUIRED|FORBIDDEN)\b' | wc -l | tr -d ' ')"
-  [ "$caps" -le 3 ] || fail "$rel leans on $caps shouted imperatives (at most 3) — say it once, in a sentence"
+  [ "$caps" -eq 0 ] || fail "$rel leans on $caps shouted imperatives — say it once, in a sentence"
 
   # Frontmatter is what makes a skill discoverable at all.
   case "$body" in

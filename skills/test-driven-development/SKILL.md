@@ -124,7 +124,7 @@ Vague name, tests mock not code
 
 ### Verify RED - Watch It Fail
 
-**MANDATORY. Never skip.**
+**This step is the whole point of the cycle — the rest of it only works because this one happened.**
 
 ```bash
 npm test path/to/test.test.ts
@@ -179,7 +179,7 @@ Don't add features, refactor other code, or "improve" beyond the test.
 
 ### Verify GREEN - Watch It Pass
 
-**MANDATORY.**
+**Not optional.**
 
 ```bash
 npm test path/to/test.test.ts
@@ -239,23 +239,15 @@ Exploration is fine. Throw the exploration away and start again with a test —
 keeping it "as reference" means adapting it, which is testing after by another
 name.
 
-## Red Flags - STOP and Start Over
+## Signs the cycle did not happen
 
-- Code before test
-- Test after implementation
-- Test passes immediately
-- Can't explain why test failed
-- Tests added "later"
-- Rationalizing "just this once"
-- "I already manually tested it"
-- "Tests after achieve the same purpose"
-- "It's about spirit not ritual"
-- "Keep as reference" or "adapt existing code"
-- "Already spent X hours, deleting is wasteful"
-- "TDD is dogmatic, I'm being pragmatic"
-- "This is different because..."
+A test that passed the first time you ran it never demonstrated anything. Nor
+did one you cannot explain the failure of — if you did not read the failure,
+you do not know the test was measuring what you think.
 
-**All of these mean: Delete code. Start over with TDD.**
+Code written before its test is code the test was shaped around. Delete it and
+start from the test; keeping it "as reference" produces the same code with a
+test fitted to it afterwards.
 
 ## Example: Bug Fix
 
@@ -294,20 +286,13 @@ PASS
 **REFACTOR**
 Extract validation for multiple fields if needed.
 
-## Verification Checklist
+## What the cycle leaves behind
 
-Before marking work complete:
-
-- [ ] Every new function/method has a test
-- [ ] Watched each test fail before implementing
-- [ ] Each test failed for expected reason (feature missing, not typo)
-- [ ] Wrote minimal code to pass each test
-- [ ] All tests pass
-- [ ] Output pristine (no errors, warnings)
-- [ ] Tests use real code (mocks only if unavoidable)
-- [ ] Edge cases and errors covered
-
-Can't check all boxes? You skipped TDD. Start over.
+Done properly, the work ends with: a test per behaviour, each of which was seen
+to fail for the reason you expected rather than because of a typo; the smallest
+code that made each one pass; a clean run with no stray warnings; tests
+exercising real code rather than mocks; and the edge cases covered rather than
+noted.
 
 ## When Stuck
 

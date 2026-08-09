@@ -218,9 +218,9 @@ understand — each means Phase 1 is not finished. Go back to it.
 After three failed fixes, or when each fix surfaces a new problem somewhere
 else, the architecture is the suspect rather than the code (Phase 4.5).
 
-## your human partner's Signals You're Doing It Wrong
+## Redirections worth hearing
 
-**Watch for these redirections:**
+When your human partner says one of these, it is usually about the approach rather than the detail:
 - "Is that not happening?" - You assumed without verifying
 - "Will it show us...?" - You should have added evidence gathering
 - "Stop guessing" - You're proposing fixes without understanding

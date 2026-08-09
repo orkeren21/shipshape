@@ -20,7 +20,7 @@ hooks that gate on those artifacts, and skills whose prose assumes the hooks exi
 
 | Path | What lives there |
 |---|---|
-| `bin/` | Evidence wrappers, run by the session. On PATH via the session-start hook. |
+| `bin/` | Evidence wrappers, run by the session. Claude Code puts a plugin's `bin/` on PATH itself, so these resolve by bare name. |
 | `lib/` | Shared helpers sourced by hooks and wrappers. |
 | `hooks/` | Hook scripts plus `hooks.json` registration. |
 | `skills/` | Skill directories, copied whole (reference sub-files included). |

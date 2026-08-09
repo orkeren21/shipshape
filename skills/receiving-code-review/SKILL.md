@@ -24,18 +24,15 @@ WHEN receiving code review feedback:
 6. IMPLEMENT: One item at a time, test each
 ```
 
-## Forbidden Responses
+## Answering a finding
 
-**NEVER:**
-- "You're absolutely right!" (explicit instruction-file violation)
-- "Great point!" / "Excellent feedback!" (performative)
-- "Let me implement that now" (before verification)
+Agreement is not a response. "You're absolutely right", "great point", "let me
+implement that now" say nothing about whether the finding is correct, and they
+commit you before you have looked.
 
-**INSTEAD:**
-- Restate the technical requirement
-- Ask clarifying questions
-- Push back with technical reasoning if wrong
-- Just start working (actions > words)
+What a finding deserves is one of: the technical requirement restated in your
+own words, a question about what it means, a technical reason it is wrong, or
+simply the work — starting is a better answer than agreeing to start.
 
 ## Handling Unclear Feedback
 
@@ -161,17 +158,21 @@ If you pushed back and were wrong:
 
 State the correction factually and move on.
 
-## Common Mistakes
+## Where this goes wrong
 
-| Mistake | Fix |
-|---------|-----|
-| Performative agreement | State requirement or just act |
-| Blind implementation | Verify against codebase first |
-| Batch without testing | One at a time, test each |
-| Assuming reviewer is right | Check if breaks things |
-| Avoiding pushback | Technical correctness > comfort |
-| Partial implementation | Clarify all items first |
-| Can't verify, proceed anyway | State limitation, ask for direction |
+The failure is almost always the same shape: acting on a finding before
+checking it against the code. A reviewer reading a diff can be wrong about what
+the rest of the file does, and implementing a wrong finding costs more than the
+finding was worth.
+
+Take findings one at a time, testing each, rather than batching them — a batch
+that breaks something gives you no way to tell which item did it.
+
+Where you cannot check a finding, say so and ask, rather than proceeding on the
+assumption that the reviewer had more information than you.
+
+Technical correctness outranks comfort. Pushing back with a reason is part of
+the process, not a failure of it.
 
 ## Real Examples
 

@@ -70,7 +70,8 @@ Subagent (general-purpose):
 
     Categorize issues by actual severity. Not everything is Critical.
     Acknowledge what was done well before listing issues — accurate praise
-    helps the implementer trust the rest of the feedback.
+    helps the implementer trust the rest of the feedback. That is in addition to
+    reporting everything, never instead of part of it.
 
     If you find significant deviations from the plan, flag them specifically
     so the implementer can confirm whether the deviation was intentional.
