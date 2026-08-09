@@ -27,8 +27,12 @@ transcript="$work/t.jsonl"
 arm()          { printf 'url=https://x/pull/1\nbranch=%s\nepoch=%s\n' \
                    "$(git -C "$repo" rev-parse --abbrev-ref HEAD)" "$(date -u +%s)" > "$scratch/pr-armed"; }
 give_review()  { printf '# Review\n\nNo blocking findings.\n\n### Assessment\n\n**Ready to merge?** Yes\n' > "$scratch/review-1.md"; }
+give_bad_review() { printf '# Review\n\n## Critical\n- the token comparison is not constant time\n\n### Assessment\n\n**Ready to merge?** No\n' > "$scratch/review-1.md"; }
 give_ci()      { printf 'result=green\nchecks_exit=0\nmerge_state=CLEAN\n' > "$scratch/ci-status"; }
-give_smoke()   { printf '=== $ ./app --version\n1.2.3\n=== exit 0\n' > "$scratch/smoke.log"; }
+# A real smoke log records the commit it was gathered against and the exit code
+# of every command in it. Both are what the gate reads.
+give_smoke()   { printf 'head=%s\n\n=== $ ./app --version\n1.2.3\n=== exit 0\n\n' \
+                   "$(git -C "$repo" rev-parse HEAD)" > "$scratch/smoke.log"; }
 give_all()     { give_review; give_ci; give_smoke; }
 clear_all()    { rm -f "$scratch"/review-*.md "$scratch/ci-status" "$scratch/smoke.log"; }
 
@@ -109,6 +113,40 @@ assert_contains "$reason" "stale" "and the reason says why it does not count"
 give_all
 out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
 assert_eq "" "$(hook_field "$out" decision)" "re-capturing evidence after the commit disarms the gate"
+
+# --- the gate reads what the artifacts say, not just that they are there -----
+#
+# Each of these is the same defect in a different leg: the wrapper writes the
+# truth to disk and the gate declines to read it. "Present and recent" was the
+# wrong bar.
+
+# A reviewer that said no.
+give_all
+give_bad_review
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
+assert_eq "block" "$(hook_field "$out" decision)" "a review whose verdict is no does not satisfy the gate"
+assert_contains "$(hook_field "$out" reason)" "verdict is no" "and the gate says the reviewer answered no"
+
+# A smoke command that failed.
+give_all
+printf 'head=%s\n\n=== $ ./app --smoke\nconnection refused\n=== exit 1\n\n' \
+  "$(git -C "$repo" rev-parse HEAD)" > "$scratch/smoke.log"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
+assert_eq "block" "$(hook_field "$out" decision)" "a smoke command that exited non-zero does not satisfy the gate"
+assert_contains "$(hook_field "$out" reason)" "non-zero" "and the gate says the smoke failed"
+
+# One failure among several passes still counts.
+give_all
+printf 'head=%s\n\n=== $ a\nok\n=== exit 0\n\n=== $ b\nboom\n=== exit 7\n\n' \
+  "$(git -C "$repo" rev-parse HEAD)" > "$scratch/smoke.log"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
+assert_eq "block" "$(hook_field "$out" decision)" "one failure among several passing smoke commands still blocks"
+
+# A log with a header and no runs in it.
+give_all
+printf 'head=%s\n\n' "$(git -C "$repo" rev-parse HEAD)" > "$scratch/smoke.log"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
+assert_eq "block" "$(hook_field "$out" decision)" "a smoke log with no completed run is not a smoke"
 
 # --- an empty review report is not a review ----------------------------------
 

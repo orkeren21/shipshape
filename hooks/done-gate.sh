@@ -85,6 +85,19 @@ elif ! grep -qi 'ready to merge' "$review" 2>/dev/null; then
   # is a reviewer that did not finish, or a file that did not come from a
   # reviewer at all.
   add "review report — no verdict in it. The reviewer template ends with \"Ready to merge?\"; a report without that line is not a completed review."
+else
+  # And the verdict has to say yes. Checking only that a verdict exists lets a
+  # report headed "Ready to merge? No", listing three Criticals, satisfy the
+  # gate — which is the gate reading that a thing is present rather than what
+  # it says.
+  verdict="$(grep -i 'ready to merge' "$review" 2>/dev/null | head -1 \
+             | sed 's/.*[Rr]eady to [Mm]erge//' | tr 'A-Z' 'a-z')"
+  case "$verdict" in
+    *yes*|*"with fixes"*) : ;;
+    *no*)
+      add "review report — the reviewer's verdict is no. Fix what it found and re-review; a branch does not become finished by ignoring the answer."
+      ;;
+  esac
 fi
 
 # --- CI ----------------------------------------------------------------------
@@ -100,10 +113,26 @@ fi
 
 # --- the scoped smoke --------------------------------------------------------
 
-if [ ! -s "$scratch/smoke.log" ]; then
+# Read what the log says, not merely that it is there. The exit codes are
+# already written into it by the wrapper, and the HEAD it was gathered against
+# is in its header — so staleness comes from the log's own content rather than
+# the file's modification time, which one appended command would refresh.
+smoke_log="$scratch/smoke.log"
+if [ ! -s "$smoke_log" ]; then
   add "smoke.log — the changed flows have not been exercised. Run them through shipshape-smoke."
-elif ! shipshape_newer_than_head "$scratch/smoke.log"; then
-  add "smoke.log — stale: it predates the current HEAD commit, so it exercised different code. Smoke the branch again."
+else
+  smoke_head="$(grep '^head=' "$smoke_log" 2>/dev/null | head -1 | cut -d= -f2-)"
+  current_head="$(git rev-parse HEAD 2>/dev/null)"
+  smoke_runs="$(grep -c '^=== exit ' "$smoke_log" 2>/dev/null | tr -d ' ')"
+  smoke_failures="$(grep '^=== exit ' "$smoke_log" 2>/dev/null | grep -vc '^=== exit 0$' | tr -d ' ')"
+
+  if [ -n "$current_head" ] && [ -n "$smoke_head" ] && [ "$smoke_head" != "$current_head" ]; then
+    add "smoke.log — stale: gathered against commit $(printf '%s' "$smoke_head" | cut -c1-8) rather than the current HEAD. It exercised different code; smoke the branch again."
+  elif [ "${smoke_runs:-0}" -eq 0 ]; then
+    add "smoke.log — no completed run in it. Exercise the changed flows through shipshape-smoke."
+  elif [ "${smoke_failures:-0}" -gt 0 ]; then
+    add "smoke.log — $smoke_failures of $smoke_runs smoke commands exited non-zero. A smoke that failed is not evidence the change works; fix it and smoke again."
+  fi
 fi
 
 if [ -z "$missing" ]; then

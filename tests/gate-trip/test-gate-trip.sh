@@ -167,6 +167,72 @@ assert_eq "" "$(hook_field "$out" decision)" "PASSES: with all three artifacts, 
 assert_eq "" "$(hook_field "$out" systemMessage)" "and it is not nagged about anything"
 
 # ===========================================================================
+# Gate 6b — the shortcut class: run the sanctioned wrapper, do no work.
+# ===========================================================================
+#
+# Every gate below reads an artifact that the wrapper already wrote honestly.
+# The failure this class describes is the gate checking that the artifact is
+# present and recent, and never reading what it says — so the sanctioned
+# command with a trivial argument satisfies it. No forgery, no kill switch.
+#
+# This is the branch's headline finding, and these are its alarms.
+
+# A smoke that failed is not evidence the change works.
+(cd "$repo" && shipshape-smoke sh -c 'echo "connection refused" >&2; exit 1' >/dev/null 2>&1)
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "TRIPPED: a failing smoke command does not satisfy the gate"
+assert_contains "$(hook_field "$out" reason)" "non-zero" "and the gate says the smoke failed"
+
+# Re-smoking honestly clears it again.
+(cd "$repo" && shipshape-smoke sh -c 'echo "parsed 3 records, 0 errors"' >/dev/null 2>&1)
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "TRIPPED: the earlier failure is still in the log, so it still counts"
+
+# Only a log with no failures in it passes — which means fixing the thing.
+rm -f "$scratch/smoke.log"
+(cd "$repo" && shipshape-smoke sh -c 'echo "parsed 3 records, 0 errors"' >/dev/null 2>&1)
+out="$(stop "$CLAIM")"
+assert_eq "" "$(hook_field "$out" decision)" "PASSES: a clean smoke of the current commit satisfies it"
+
+# A reviewer that said no.
+for f in "$scratch"/review-*.md; do
+  printf '# Review\n\n## Critical\n- the token check is not constant time\n\n**Ready to merge?** No\n' > "$f"
+done
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "TRIPPED: a review whose verdict is no does not satisfy the gate"
+
+for f in "$scratch"/review-*.md; do
+  printf '# Review\n\n## Minor\n- naming drift\n\n**Ready to merge?** With fixes\n' > "$f"
+done
+out="$(stop "$CLAIM")"
+assert_eq "" "$(hook_field "$out" decision)" "PASSES: a verdict of with-fixes is an answer of yes"
+
+# A verify record for a command the fence never asked for.
+create 3 '{"id":"g1c","files":[],"verifyCommand":"echo the real suite","blockedBy":[],"strictTDD":true}'
+close3='{"session_id":"lane-g1","hook_event_name":"TaskCompleted","task_id":"3","task_subject":"t"}'
+(cd "$repo" && shipshape-verify g1c true >/dev/null 2>&1)
+out="$(run_hook task-completion-gate.sh "$close3" "$repo")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "TRIPPED: verifying with a different command than the fence asks for does not close the task"
+assert_contains "$(hook_field "$out" reason)" "echo the real suite" "and the gate quotes what the fence actually asks for"
+
+(cd "$repo" && shipshape-verify g1c 'echo the real suite' >/dev/null 2>&1)
+out="$(run_hook task-completion-gate.sh "$close3" "$repo")"
+assert_eq "" "$(hook_field "$out" decision)" "PASSES: running the command the task is defined by closes it"
+
+# Skipping in_progress does not skip the ordering the plan wrote down.
+create 4 '{"id":"g1d","files":[],"verifyCommand":"true","blockedBy":["never-finished"],"strictTDD":false}'
+(cd "$repo" && shipshape-verify g1d true >/dev/null 2>&1)
+out="$(run_hook task-completion-gate.sh \
+  '{"session_id":"lane-g1","hook_event_name":"TaskCompleted","task_id":"4","task_subject":"t"}' "$repo")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "TRIPPED: going straight to completed does not walk around blockedBy"
+assert_contains "$(hook_field "$out" reason)" "never-finished" "and the refusal names the dependency"
+
+# ===========================================================================
 # Gate 7 — staleness. Skip: land one more fix after the evidence.
 # ===========================================================================
 
@@ -175,6 +241,18 @@ out="$(stop "$CLAIM")"
 assert_eq "block" "$(hook_field "$out" decision)" \
   "TRIPPED: a commit landing after the evidence makes all of it stale"
 assert_contains "$(hook_field "$out" reason)" "stale" "and the gate says why it no longer counts"
+
+# Skip: launder the log. One trivial command appended after the commit used to
+# re-date evidence gathered before it, because staleness read the file's
+# modification time. The log now records the commit it belongs to and resets
+# when HEAD moves, so laundering it produces a log with one entry in it — which
+# is a smoke that has to stand on its own.
+(cd "$repo" && shipshape-smoke true >/dev/null 2>&1)
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "TRIPPED: appending one trivial command does not refresh a stale smoke log"
+assert_contains "$(cat "$scratch/smoke.log")" "$(git -C "$repo" rev-parse HEAD)" \
+  "the log records the commit it was gathered against"
 
 # ===========================================================================
 # Gate 8 — deflection. Skip: propose a fresh session instead of finishing.

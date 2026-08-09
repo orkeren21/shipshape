@@ -8,7 +8,11 @@
 # It is not an end-to-end suite, and it is not Shakedown — that has its own
 # cadence and is never invoked per pull request.
 #
-# The log accumulates, because a smoke is several commands rather than one.
+# The log accumulates, because a smoke is several commands rather than one — but
+# only within one commit. It records the HEAD it was gathered against, and
+# resets when HEAD moves, so every entry in it always describes the code being
+# shipped. Without that, appending one trivial command re-dates a log gathered
+# five commits ago and the staleness check means nothing.
 
 set -uo pipefail
 
@@ -34,6 +38,18 @@ if ! shipshape_enabled SMOKE; then
 fi
 
 scratch="$(shipshape_scratch_dir)"
+log="$scratch/smoke.log"
+
+# A smoke gathered against a different commit describes different code.
+head_sha="$(git rev-parse HEAD 2>/dev/null)"
+if [ -n "$head_sha" ]; then
+  logged_head="$(grep '^head=' "$log" 2>/dev/null | head -1 | cut -d= -f2-)"
+  if [ "$logged_head" != "$head_sha" ]; then
+    [ -n "$logged_head" ] && shipshape_trace smoke \
+      "HEAD moved since the last smoke; starting a fresh log"
+    printf 'head=%s\n\n' "$head_sha" > "$log"
+  fi
+fi
 
 line_count="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
 truncated=""
@@ -47,7 +63,7 @@ fi
   [ -n "$truncated" ] && printf '%s\n' "$truncated"
   printf '%s\n' "$out" | tail -n "$MAX_LINES"
   printf '=== exit %s\n\n' "$status"
-} >> "$scratch/smoke.log"
+} >> "$log"
 
 shipshape_trace smoke "exited $status: $*"
 exit "$status"

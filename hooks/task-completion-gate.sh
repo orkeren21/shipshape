@@ -51,13 +51,61 @@ if [ -z "$verify_command" ]; then
   exit 0
 fi
 
+# Ordering is checked here too, not only on the move into in_progress. Going
+# straight from pending to completed skipped the only gate that read blockedBy,
+# so the ordering the plan wrote down could be walked around by never claiming
+# to have started.
+set -f
+old_ifs="${IFS-__unset__}"
+IFS='
+'
+unmet=""
+for dep in $(shipshape_json_array "$fence" blockedBy); do
+  [ -n "$dep" ] || continue
+  dep="$(shipshape_safe_id "$dep" "")"
+  [ -n "$dep" ] || continue
+  [ -f "$scratch/tasks/completed/$dep" ] && continue
+  unmet="${unmet}${unmet:+, }$dep"
+done
+if [ "$old_ifs" = "__unset__" ]; then unset IFS; else IFS="$old_ifs"; fi
+set +f
+
+if [ -n "$unmet" ]; then
+  shipshape_trace task-completion-gate "$fence_id blocked: still waiting on $unmet"
+  shipshape_emit_block "Task $fence_id cannot close: it is blocked by $unmet, which has not closed. Finish that first — the plan put it earlier because this task leans on it."
+  exit 0
+fi
+
 record="$scratch/verify/$fence_id"
 
 if [ ! -f "$record" ]; then
   shipshape_trace task-completion-gate "$fence_id blocked: no verify record"
   shipshape_emit_block "Task $fence_id has not been verified. Run its verify command through the wrapper, which records that it ran:
 
-  shipshape-verify $fence_id $verify_command"
+  shipshape-verify $fence_id \"$verify_command\""
+  exit 0
+fi
+
+# What ran has to be what the fence asked for. The record already says which
+# command it was; reading only the exit code lets `shipshape-verify <id> true`
+# close a task whose verifyCommand is a full test suite, which makes the gate
+# decoration. Whitespace is normalised so quoting differences do not matter.
+recorded_command="$(grep '^command=' "$record" 2>/dev/null | head -1 | cut -d= -f2- \
+  | tr -s '[:space:]' ' ' | sed -e 's/^ *//' -e 's/ *$//')"
+wanted_command="$(printf '%s' "$verify_command" | tr -s '[:space:]' ' ' \
+  | sed -e 's/^ *//' -e 's/ *$//')"
+
+if [ "$recorded_command" != "$wanted_command" ]; then
+  shipshape_trace task-completion-gate \
+    "$fence_id blocked: recorded [$recorded_command] but the fence asks for [$wanted_command]"
+  shipshape_emit_block "Task $fence_id was verified with a different command than its fence asks for.
+
+  the fence asks for:  $wanted_command
+  what actually ran:   ${recorded_command:-nothing recorded}
+
+Run the command the task is defined by, quoted so it reaches the wrapper whole:
+
+  shipshape-verify $fence_id \"$verify_command\""
   exit 0
 fi
 
@@ -66,7 +114,7 @@ if [ "$exit_code" != "0" ]; then
   shipshape_trace task-completion-gate "$fence_id blocked: verify exited ${exit_code:-unknown}"
   shipshape_emit_block "Task $fence_id last verified with exit ${exit_code:-unknown} — the verify command failed. Fix what it caught, then:
 
-  shipshape-verify $fence_id $verify_command"
+  shipshape-verify $fence_id \"$verify_command\""
   exit 0
 fi
 
@@ -109,7 +157,7 @@ if [ -n "$record_epoch" ]; then
 
 The record describes code that has since moved. Verify again:
 
-  shipshape-verify $fence_id $verify_command"
+  shipshape-verify $fence_id \"$verify_command\""
     exit 0
   fi
 fi
