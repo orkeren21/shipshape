@@ -90,7 +90,9 @@ assert_valid_json() { # assert_valid_json <json> <what>
   fi
   # Through assert_eq rather than a bare fail, so a passing parse counts toward
   # the tally like every other assertion in the file.
-  assert_eq "0" "$status" "$2 is valid JSON"
+  # Phrased so it still reads correctly on the FAIL line, where the assertion's
+  # own text is what the reader sees.
+  assert_eq "0" "$status" "$2 parses as JSON"
 }
 
 assert_valid_json "$plugin_json" "plugin.json"
@@ -191,29 +193,49 @@ assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/.gitignore")" "docs/superpowers/" \
 # markdown link and bare prose all read the same to someone who then goes
 # looking for the file, so this one is matched on the path itself rather than on
 # the shape it was written in.
-cited_internal="$(printf '%s' "$claude_body" | grep -nE 'docs/superpowers/[A-Za-z0-9._-]' || true)"
-[ -z "$cited_internal" ] || fail "CLAUDE.md cites a file under docs/superpowers/, which no clone has:
-$(printf '%s' "$cited_internal" | sed 's/^/          /')"
+# The filename has to start like a filename, so that naming the bare directory
+# at the end of a sentence is not mistaken for citing something inside it.
+cited_internal="$(printf '%s' "$claude_body" \
+  | grep -nE 'docs/superpowers/[A-Za-z0-9_][A-Za-z0-9._-]*' || true)"
+assert_eq "" "$cited_internal" "CLAUDE.md cites no file under docs/superpowers/, which no clone has"
 
 # Everything else it names has to be in the tree. Repo-relative paths appear
 # either in backticks or as a markdown link target; a leading slash means a
 # slash command rather than a path, and a space or an angle bracket means a
-# placeholder rather than a real file.
+# placeholder rather than a real file. A link may carry an anchor, which is
+# matched so the target is seen at all and then cut, since it names a heading
+# rather than part of the path.
 cited_paths="$(printf '%s' "$claude_body" \
-  | grep -oE '(`|\]\()[A-Za-z0-9._][A-Za-z0-9._/-]*/[A-Za-z0-9._/-]*(`|\))' \
-  | sed -e 's/^[`]//' -e 's/^](//' -e 's/[`)]$//' -e 's:/*$::' \
+  | grep -oE '(`|\]\()[A-Za-z0-9._][A-Za-z0-9._/#-]*/[A-Za-z0-9._/#-]*(`|\))' \
+  | sed -e 's/^[`]//' -e 's/^](//' -e 's/[`)]$//' -e 's/#.*$//' -e 's:/*$::' \
   | sort -u)"
 
 # Without this, a reformat of CLAUDE.md that this regex stops matching turns the
 # whole loop below into a no-op, and a silent no-op looks exactly like a pass.
 assert_ne "" "$cited_paths" "CLAUDE.md names repo paths for this check to read"
 
-# Both loops below ask git what the tree contains. Off a checkout — a downloaded
-# tarball, an installed plugin copy — every answer is empty for a reason that
-# has nothing to do with the thing being checked: the path loop would report
-# every path as untracked, and the boundary loop would report clean. Ask once,
-# and say which it is.
-if git -C "$SHIPSHAPE_REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+# Both loops below ask git what the tree contains, and off a checkout every
+# answer is empty for a reason that has nothing to do with the thing being
+# checked: the path loop would call every path untracked, and the boundary loop
+# would report clean. Ask once, and say so when the answer is unavailable.
+#
+# `rev-parse --git-dir` is the wrong question — it walks upward, so a copy of
+# this tree sitting inside some other repo (vendored into a monorepo, or
+# installed under a `~/.claude` that is itself a dotfiles repo) answers yes and
+# then has every path called untracked by a repo that has never heard of it.
+# The question is whether git tracks *this* root, so compare the toplevel.
+repo_top=""
+if candidate="$(git -C "$SHIPSHAPE_REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" \
+   && [ -n "$candidate" ]; then
+  repo_top="$(cd "$candidate" && pwd -P)"
+fi
+root_real="$(cd "$SHIPSHAPE_REPO_ROOT" && pwd -P)"
+
+if [ "$repo_top" = "$root_real" ]; then
+  # Collected rather than failed one by one, so a green run counts these two
+  # checks in the tally. A check that only registers when it fires is
+  # indistinguishable from one that never runs.
+  untracked=""
   for path in $cited_paths; do
     case "$path" in
       # Naming the directory is how CLAUDE.md tells a session those notes are
@@ -224,19 +246,22 @@ if git -C "$SHIPSHAPE_REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
         # its way into the tree, and failing it would turn every work in
         # progress red. The claim this makes is "git tracks it", nothing more.
         [ -n "$(git -C "$SHIPSHAPE_REPO_ROOT" ls-files -- "$path" 2>/dev/null)" ] \
-          || fail "CLAUDE.md names $path, which git does not track" ;;
+          || untracked="$untracked $path" ;;
     esac
   done
+  assert_eq "" "$untracked" "every path CLAUDE.md names is tracked by git"
 
   # The boundary CLAUDE.md opens with, checked against the tree rather than
   # trusted. Nothing cross-platform ever enters this repo.
+  present=""
   for banned in .codex-plugin .cursor-plugin .kimi-plugin .opencode .pi \
                 gemini-extension.json GEMINI.md AGENTS.md; do
     [ -z "$(git -C "$SHIPSHAPE_REPO_ROOT" ls-files -- "$banned" 2>/dev/null)" ] \
-      || fail "$banned is tracked — this fork is Claude Code only"
+      || present="$present $banned"
   done
+  assert_eq "" "$present" "no cross-platform manifest is tracked — this fork is Claude Code only"
 else
-  fail "not a git checkout, so neither the CLAUDE.md path check nor the Claude Code-only boundary check could run"
+  fail "$root_real is not its own git checkout, so neither the CLAUDE.md path check nor the Claude Code-only boundary check could run"
 fi
 
 # --- attribution survives, because it is a licence obligation ----------------

@@ -121,7 +121,7 @@ independent tracks with a large surface. Both exit through the same gates, so
 the choice is about time and parallelism, never about quality.
 
 Three findings the design follows from, measured across the pilot that ran
-before this repo existed and the lane that built it:
+before this repo existed and the lane that built this repo:
 
 - Direct implementation with one whole-branch review finished lanes in a
   quarter to half the wall-clock of a per-task subagent pipeline, and used far
