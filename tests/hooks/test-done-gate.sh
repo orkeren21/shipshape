@@ -132,11 +132,21 @@ assert_contains "$(hook_field "$out" reason)" "verdict" "and the gate says what 
 # A session that ships one branch and starts another is not owing evidence for
 # work that has no pull request yet.
 
-give_all
+# Evidence cleared first, so the gate would block if the branch check were not
+# doing anything — otherwise this passes for the wrong reason.
+clear_all
 git -C "$repo" checkout -q -b some-other-lane
 out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "on a different branch the gate stands down"
+assert_eq "" "$(hook_field "$out" decision)" \
+  "a completion claim about other work is not blocked by another branch's pull request"
+assert_contains "$(hook_field "$out" systemMessage)" "$(git -C "$repo" rev-parse --abbrev-ref HEAD >/dev/null; echo some-other-lane)" \
+  "but the outstanding evidence is still surfaced, naming both branches"
+
+# Back on the armed branch, the hard block returns — it did not disarm.
 git -C "$repo" checkout -q -
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "returning to the armed branch restores the block — a checkout does not switch the gate off"
 
 # --- CI blocked only on a human approval -------------------------------------
 #

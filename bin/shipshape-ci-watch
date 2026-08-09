@@ -70,9 +70,9 @@ merge_state="UNKNOWN"
 attempt=1
 while [ "$attempt" -le "$MERGE_STATE_ATTEMPTS" ]; do
   if [ -n "$pr" ]; then
-    view_out="$(gh pr view "$pr" --json mergeStateStatus,reviewDecision,url 2>/dev/null)"
+    view_out="$(gh pr view "$pr" --json mergeStateStatus,reviewDecision,statusCheckRollup,url 2>/dev/null)"
   else
-    view_out="$(gh pr view --json mergeStateStatus,reviewDecision,url 2>/dev/null)"
+    view_out="$(gh pr view --json mergeStateStatus,reviewDecision,statusCheckRollup,url 2>/dev/null)"
   fi
   view_exit=$?
 
@@ -112,7 +112,12 @@ case "$checks_exit:$merge_state" in
   # let the branch finish would make the gate unsatisfiable on any repository
   # that requires review. Recorded distinctly, and treated as passing.
   0:BLOCKED)
-    if [ "${review_decision:-}" = "REVIEW_REQUIRED" ]; then
+    # reviewDecision says nothing about checks. A required check that was never
+    # scheduled also reports BLOCKED, and `gh pr checks` exits 0 because it only
+    # sees the checks that exist — which is exactly the incident in the header
+    # comment. So the downgrade needs the rollup to be clear as well.
+    if [ "${review_decision:-}" = "REVIEW_REQUIRED" ] \
+       && ! printf '%s' "$view_out" | grep -qE '"(state|conclusion|status)":"(PENDING|EXPECTED|QUEUED|IN_PROGRESS|FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED)"'; then
       result=green-pending-review
     fi
     ;;

@@ -124,8 +124,8 @@ its first half-hour finding what you already knew.
 Say where the work stops. Without a boundary an agent will refactor its way
 outward from the thing you asked for.
 
-**❌ Vague output:** "Fix it" - you don't know what changed
-**✅ Specific:** "Return summary of root cause and changes"
+Vague output — "Fix it" - you don't know what changed
+Better — "Return summary of root cause and changes"
 
 ## When NOT to Use
 

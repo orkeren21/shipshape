@@ -123,4 +123,59 @@ out="$(complete 11)"
 assert_eq "" "$(hook_field "$out" decision)" \
   "a literal glob in the file list matches nothing rather than expanding against the cwd"
 
+# --- a directory named in the file list --------------------------------------
+#
+# A fence may name a directory as what a task produces. Comparing against it
+# needs a reference point find can actually parse: -newermt is a GNU extension
+# that macOS rejects, and the error would be swallowed, leaving the staleness
+# check quietly doing nothing at all.
+
+mkdir -p "$repo/generated"
+printf 'v1\n' > "$repo/generated/one.txt"
+create 12 '{"id":"dirtask","files":["generated"],"verifyCommand":"true","blockedBy":[],"strictTDD":false}'
+(cd "$repo" && SHIPSHAPE_SCRATCH_ROOT="$repo" SHIPSHAPE_SESSION_ID="$session" \
+  "$SHIPSHAPE_REPO_ROOT/bin/shipshape-verify" dirtask true >/dev/null 2>&1)
+
+out="$(complete 12)"
+assert_eq "" "$(hook_field "$out" decision)" "a freshly verified task naming a directory closes"
+
+sleep 1
+printf 'v2 — edited after the verify\n' > "$repo/generated/one.txt"
+rm -f "$scratch/tasks/completed/dirtask"
+out="$(complete 12)"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "editing a file inside a directory the fence names makes the record stale"
+assert_contains "$(hook_field "$out" reason)" "one.txt" "and the block names the file that moved"
+
+# --- a dependency id containing a space --------------------------------------
+#
+# blockedBy entries are read as JSON strings. Split on whitespace instead, and
+# ["feature 4"] becomes two dependencies named feature and 4, neither of which
+# can ever close — a task denied forever with no way out but editing the plan.
+
+(cd "$repo" && SHIPSHAPE_SCRATCH_ROOT="$repo" SHIPSHAPE_SESSION_ID="$session" \
+  "$SHIPSHAPE_REPO_ROOT/bin/shipshape-verify" 'feature 4' true >/dev/null 2>&1)
+create 13 '{"id":"depends-on-spaced","files":[],"verifyCommand":"true","blockedBy":["feature 4"],"strictTDD":false}'
+complete 9 >/dev/null   # closes the "feature 4" fence captured earlier under task 9
+
+out="$(start 13)"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a dependency whose id contains a space is recognised as closed, not split into two"
+
+# A genuinely open dependency with a space still holds the task.
+create 14 '{"id":"depends-on-open","files":[],"verifyCommand":"true","blockedBy":["never done"],"strictTDD":false}'
+out="$(start 14)"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "and an open one with a space still blocks"
+
+# --- an unusable fence id ----------------------------------------------------
+#
+# Two fences whose ids sanitise to nothing must not collide on one record.
+
+create 15 '{"id":"///","files":[],"verifyCommand":"true","blockedBy":[],"strictTDD":false}'
+out="$(complete 15)"
+assert_eq "" "$(hook_field "$out" decision)" \
+  "a fence whose id is unusable is not gated on a record it could never file"
+assert_no_file "$scratch/verify/unnamed" "and no catch-all record name is invented for it"
+
 finish

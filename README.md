@@ -52,13 +52,13 @@ record behind as a side effect. The record cannot exist without the work.
 | Wrapper | Wraps | Leaves behind |
 |---|---|---|
 | `shipshape-pr-open` | `gh pr create` | `pr-armed` — arms the done gate |
-| `shipshape-ci-watch` | `gh pr checks --watch` | `ci-status` — green means *mergeable*, not "the checks that ran passed" |
+| `shipshape-ci-watch` | `gh pr checks --watch` | `ci-status` — green means *mergeable*, not "the checks that ran passed". A pull request blocked only on a human approval, with a clean check rollup, is recorded `green-pending-review` and accepted. |
 | `shipshape-verify` | a task's verify command | `verify/<task-id>` |
 | `shipshape-smoke` | any command | `smoke.log` |
 
 | Hook | Event | What it does |
 |---|---|---|
-| `done-gate` | `Stop` | Arms when a pull request exists. Disarms only on a review report, green CI and a smoke log, each **newer than HEAD**. Soft nudge every turn; hard block on a completion claim. |
+| `done-gate` | `Stop` | Arms when a pull request exists. Disarms only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD**. Soft nudge every turn; hard block on a completion claim. On a branch other than the one it was armed from it nudges but does not block, and it never disarms. |
 | `review-capture` | `PostToolUse` | Writes the reviewer subagent's return verbatim. The hook writes it, so the artifact proves a real fresh-context review happened. |
 | `task-capture` | `TaskCreated` | Remembers each task's metadata fence. |
 | `task-completion-gate` | `TaskCompleted` | A fenced task closes only on a fresh, passing verify record. |

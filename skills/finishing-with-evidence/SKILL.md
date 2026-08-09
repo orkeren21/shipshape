@@ -34,6 +34,13 @@ check list did not.
 Red means diagnose, fix, and watch again. Never hand over a red pull request,
 and never explain away a red one.
 
+One outcome is neither: on a repository that requires an approving review, a
+pull request whose checks are all green sits blocked until somebody approves.
+That is recorded as its own state and passes the gate, because it is not
+something this session can fix. A required check that has not been scheduled
+looks similar and is not the same thing — the wrapper tells them apart, so
+trust what it wrote rather than the fact that nothing failed.
+
 ## 3. Smoke the changed flows
 
 ```bash

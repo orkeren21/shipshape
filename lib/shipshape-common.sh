@@ -49,7 +49,11 @@ shipshape_session_id() {
 # One helper, used everywhere, so the wrapper that writes a record and the gate
 # that reads it can never disagree about what the record is called.
 shipshape_safe_id() {
-  local id="$1" fallback="${2:-unnamed}"
+  # ${2-…} rather than ${2:-…}: a caller that deliberately passes an empty
+  # fallback wants an empty answer, meaning "this id is unusable". With :- it
+  # would get "unnamed" instead, two unusable ids would collide on one record,
+  # and the callers' own guards against an unusable id could never fire.
+  local id="$1" fallback="${2-unnamed}"
   id="$(printf '%s' "$id" | tr -c 'A-Za-z0-9_-' '-')"
   while [ "${id}" != "${id//--/-}" ]; do id="${id//--/-}"; done
   id="${id#-}"
@@ -201,7 +205,7 @@ shipshape_agent_text() {
       .tool_response as $r
       | if ($r | type) == "string" then $r
         elif ($r | type) == "object" then
-          ( [ ($r.content // [])[]? | select(.type == "text") | .text ] | join("\n") )
+          ( [ ($r.content // [])[]? | select(.type == "text") | .text | select(. != "") ] | join("\n") )
         else "" end
     ' 2>/dev/null)"
     status=$?
@@ -313,6 +317,53 @@ shipshape_context_pct() {
     return 0
   fi
   printf '%s\n' "-1"
+}
+
+# shipshape_json_array '<json>' 'path.to.array' -> one element per line.
+#
+# Parsed properly rather than pulled apart with tr and sed. A fence's files and
+# blockedBy are written by hand in a plan, so they contain spaces, commas and
+# occasionally a glob character; splitting the rendered array on punctuation
+# turns one entry into several nonexistent ones, and every one of those is then
+# silently skipped — the check stops checking and says nothing.
+#
+# Entries containing a newline are the one thing this cannot represent, and a
+# path with a newline in it is not a thing worth supporting.
+shipshape_json_array() {
+  local json="$1" path="$2"
+  local out status
+  if command -v jq >/dev/null 2>&1; then
+    out="$(printf '%s' "$json" | jq -r --arg p "$path" '
+      ($p | split(".")) as $parts
+      | reduce $parts[] as $k (.; if type == "object" then .[$k] else null end)
+      | if type == "array" then .[] | select(type == "string") else empty end
+    ' 2>/dev/null)"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+      printf '%s' "$out"
+      [ -n "$out" ] && printf '\n'
+      return 0
+    fi
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    SHIPSHAPE_JSON="$json" SHIPSHAPE_PATH="$path" python3 -c '
+import json, os, sys
+try:
+    node = json.loads(os.environ["SHIPSHAPE_JSON"])
+except Exception:
+    sys.exit(0)
+for key in os.environ["SHIPSHAPE_PATH"].split("."):
+    if isinstance(node, dict) and key in node:
+        node = node[key]
+    else:
+        sys.exit(0)
+if isinstance(node, list):
+    for item in node:
+        if isinstance(item, str):
+            sys.stdout.write(item + "\n")
+' 2>/dev/null
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------

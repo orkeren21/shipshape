@@ -108,6 +108,47 @@ assert_contains "$(cat "$scratch/trace.log")" "retry cap" \
   "hitting the retry cap is logged rather than silent"
 unset GH_STUB_STATE_FILE
 
+# --- blocked on a human, not on CI -------------------------------------------
+#
+# On a repository that requires an approving review, a pull request with every
+# check green sits at BLOCKED until somebody approves. That is not something
+# the session can fix, and refusing to let the branch finish would make the
+# gate unsatisfiable — so it is recorded as its own state and passes.
+
+rm -f "$status_file"
+GH_STUB_CHECKS_EXIT=0 GH_STUB_MERGE_STATE=BLOCKED \
+  GH_STUB_REVIEW_DECISION=REVIEW_REQUIRED "$ci_watch" >/dev/null 2>&1
+assert_eq "0" "$?" "a pull request waiting only on an approving review is not a failure"
+body="$(cat "$status_file")"
+assert_contains "$body" "result=green-pending-review" "and is recorded as its own state, not as plain green"
+assert_contains "$body" "review_decision=REVIEW_REQUIRED" "with the reason kept"
+
+# The dangerous version of the same signal: a required check that never ran.
+# reviewDecision says nothing about checks, and `gh pr checks` exits 0 because
+# it only sees the checks that exist — which is the incident this wrapper was
+# built for. The rollup has to be clear as well.
+rm -f "$status_file"
+GH_STUB_CHECKS_EXIT=0 GH_STUB_MERGE_STATE=BLOCKED \
+  GH_STUB_REVIEW_DECISION=REVIEW_REQUIRED \
+  GH_STUB_ROLLUP='[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"release-lockstep","status":"EXPECTED","conclusion":""}]' \
+  "$ci_watch" >/dev/null 2>&1
+assert_ne "0" "$?" "a required check that never ran is not waved through as pending review"
+assert_not_contains "$(cat "$status_file")" "result=green" \
+  "an unscheduled required check is not recorded as any kind of green"
+
+rm -f "$status_file"
+GH_STUB_CHECKS_EXIT=0 GH_STUB_MERGE_STATE=BLOCKED \
+  GH_STUB_REVIEW_DECISION=REVIEW_REQUIRED \
+  GH_STUB_ROLLUP='[{"name":"build","status":"COMPLETED","conclusion":"FAILURE"}]' \
+  "$ci_watch" >/dev/null 2>&1
+assert_ne "0" "$?" "nor is a failing check in the rollup"
+
+# BLOCKED with no review requirement is still a plain CI problem.
+rm -f "$status_file"
+GH_STUB_CHECKS_EXIT=0 GH_STUB_MERGE_STATE=BLOCKED GH_STUB_REVIEW_DECISION=APPROVED \
+  "$ci_watch" >/dev/null 2>&1
+assert_ne "0" "$?" "an approved but still-blocked pull request is not green"
+
 # --- gh unusable -------------------------------------------------------------
 
 rm -f "$status_file"

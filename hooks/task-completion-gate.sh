@@ -73,21 +73,21 @@ fi
 # Has any file the task claims moved since the record was written?
 record_epoch="$(grep '^epoch=' "$record" 2>/dev/null | head -1 | cut -d= -f2)"
 if [ -n "$record_epoch" ]; then
-  files="$(shipshape_json_get "$fence" files)"
-  # files comes back as a JSON array. Split on commas rather than whitespace so
-  # a path containing a space stays one path, and turn globbing off so a * in a
-  # plan document cannot expand against the working directory.
+  # Each entry read as a JSON string rather than split out of the rendered
+  # array, so a path containing a space or a comma stays one path.
   moved=""
   set -f
-  old_ifs="$IFS"
+  old_ifs="${IFS-__unset__}"
   IFS='
 '
-  for path in $(printf '%s' "$files" | sed -e 's/^\[//' -e 's/\]$//' -e 's/","/\n/g' -e 's/^"//' -e 's/"$//' | tr ',' '\n' | sed -e 's/^ *"*//' -e 's/"* *$//'); do
+  for path in $(shipshape_json_array "$fence" files); do
     [ -n "$path" ] || continue
-    # A directory in the list is checked by its newest member, since a fence may
-    # legitimately name a whole directory as the thing a task produces.
+    # A fence may name a whole directory as what a task produces. The verify
+    # record is itself the reference point, so compare against it directly —
+    # find's -newermt is a GNU extension that macOS rejects outright, and the
+    # failure would be swallowed, leaving the check silently doing nothing.
     if [ -d "$path" ]; then
-      newest="$(find "$path" -type f -newermt "@$record_epoch" 2>/dev/null | head -1)"
+      newest="$(find "$path" -type f -newer "$record" 2>/dev/null | head -1)"
       if [ -n "$newest" ]; then
         moved="${moved}${moved:+, }$newest"
       fi
@@ -100,8 +100,9 @@ if [ -n "$record_epoch" ]; then
       moved="${moved}${moved:+, }$path"
     fi
   done
-  IFS="$old_ifs"
+  if [ "$old_ifs" = "__unset__" ]; then unset IFS; else IFS="$old_ifs"; fi
   set +f
+
   if [ -n "$moved" ]; then
     shipshape_trace task-completion-gate "$fence_id blocked: $moved changed after the verify ran"
     shipshape_emit_block "Task $fence_id was verified, then these files changed: $moved

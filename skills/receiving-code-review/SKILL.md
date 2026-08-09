@@ -125,38 +125,23 @@ Push back when:
 
 **If you're uncomfortable pushing back out loud:** Name that tension, then tell your partner about the issue you've seen. They'll appreciate your honesty.
 
-## Acknowledging Correct Feedback
+## When a finding is correct
 
-When feedback IS correct:
-```
-✅ "Fixed. [Brief description of what changed]"
-✅ "Good catch - [specific issue]. Fixed in [location]."
-✅ [Just fix it and show in the code]
+Say what changed and where, or simply make the change and let the diff say it:
+"Fixed — the token comparison is now constant-time, at auth.ts:88."
 
-❌ "You're absolutely right!"
-❌ "Great point!"
-❌ "Thanks for catching that!"
-❌ "Thanks for [anything]"
-❌ ANY gratitude expression
-```
+Gratitude is not information. "Thanks for catching that" tells the reader
+nothing they can act on, and the code showing the fix already demonstrates the
+feedback was heard.
 
-**Why no thanks:** Actions speak. Just fix it. The code itself shows you heard the feedback.
+## When you pushed back and were wrong
 
-**If you catch yourself about to write "Thanks":** DELETE IT. State the fix instead.
+State it and carry on: "You were right — I checked the caller and it does pass
+null there. Implementing now."
 
-## Gracefully Correcting Your Pushback
-
-If you pushed back and were wrong:
-```
-✅ "You were right - I checked [X] and it does [Y]. Implementing now."
-✅ "Verified this and you're correct. My initial understanding was wrong because [reason]. Fixing."
-
-❌ Long apology
-❌ Defending why you pushed back
-❌ Over-explaining
-```
-
-State the correction factually and move on.
+A long apology, a defence of why you pushed back, or an explanation of your
+earlier reasoning all cost the reader time and change nothing about the fix.
+One sentence, then the work.
 
 ## Where this goes wrong
 

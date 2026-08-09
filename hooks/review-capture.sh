@@ -58,15 +58,19 @@ fi
 scratch="$(shipshape_scratch_dir)"
 # One file per round: a re-review of the fix diff is a second report, not an
 # overwrite of the first, and the retro wants both.
+# Always sequence-suffixed, so the filenames sort in the order they were
+# written. Two reports in the same second are exactly the case that matters —
+# a re-review of the fix diff — and the gate picks the newest by modification
+# time, which cannot distinguish them. Lexical order breaks the tie correctly
+# only if it agrees with creation order.
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-target="$scratch/review-$stamp.md"
-suffix=1
-# Two reviews inside one second is already unusual; a hundred means something
-# is looping, and writing a hundred-and-first file will not help. Bounded, and
-# the cap is logged when it is reached.
-while [ -e "$target" ] && [ "$suffix" -le 99 ]; do
-  target="$scratch/review-$stamp-$(printf '%02d' "$suffix").md"
+suffix=0
+target="$scratch/review-$stamp-00.md"
+# A hundred reports in one second means something is looping, and the
+# hundred-and-first will not help. Bounded, and the cap is logged.
+while [ -e "$target" ] && [ "$suffix" -le 98 ]; do
   suffix=$((suffix + 1))
+  target="$scratch/review-$stamp-$(printf '%02d' "$suffix").md"
 done
 if [ -e "$target" ]; then
   shipshape_trace review-capture "100 reports already written this second; discarding this one"

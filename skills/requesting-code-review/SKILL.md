@@ -27,9 +27,10 @@ HEAD_SHA=$(git rev-parse HEAD)
 ```
 
 Dispatch a `general-purpose` subagent using the template at
-[code-reviewer.md](code-reviewer.md), and **dispatch it synchronously** —
-a backgrounded agent returns before it has a report, and nothing later carries
-one, so its review can never be captured.
+[code-reviewer.md](code-reviewer.md), and **dispatch it synchronously**
+(`run_in_background: false`) — agents run in the background by default, a
+backgrounded one returns before it has written anything, and no later event
+carries the report, so its review can never be captured.
 
 **Start the dispatch description with `whole-branch-review:`.** That marker is
 what the `review-capture` hook watches for; on a marked return, the hook writes

@@ -43,9 +43,14 @@ scratch="$(shipshape_scratch_dir)"
 # has no pull request yet.
 armed_branch="$(grep '^branch=' "$scratch/pr-armed" 2>/dev/null | head -1 | cut -d= -f2-)"
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+elsewhere=no
 if [ -n "$armed_branch" ] && [ -n "$current_branch" ] && [ "$armed_branch" != "$current_branch" ]; then
-  shipshape_trace done-gate "armed for $armed_branch but now on $current_branch; standing down"
-  exit 0
+  # Work on a different branch is not this pull request's work, so the hard
+  # block would be nagging about the wrong thing. It does not disarm, though:
+  # standing down entirely would mean `git checkout -b anything` switches the
+  # gate off for the rest of the session, which is a far bigger hole than the
+  # one it closes.
+  elsewhere=yes
 fi
 
 missing=""
@@ -112,6 +117,15 @@ last="$(shipshape_field last_assistant_message)"
 claim=no
 if printf '%s' "$last" | grep -qiE "all done|we'?re done|we are done|it'?s done|(work|task|branch|implementation|feature|lane|this) is (complete|done)|ready (to|for) merge|ready for review|good to merge|nothing (left|else) to do|shipped it|definition of done"; then
   claim=yes
+fi
+
+if [ "$claim" = yes ] && [ "$elsewhere" = yes ]; then
+  shipshape_trace done-gate "completion claim on $current_branch while armed for $armed_branch; nudging rather than blocking"
+  shipshape_emit_system_message "ShipShape — the pull request opened from $armed_branch still owes evidence:
+
+$missing
+You are on $current_branch now, so this is a note rather than a refusal."
+  exit 0
 fi
 
 if [ "$claim" = yes ]; then

@@ -17,6 +17,9 @@
 #   GH_STUB_MERGE_STATES   space-separated states handed out one call at a
 #                          time, for testing the UNKNOWN retry
 #   GH_STUB_VIEW_EXIT      exit code for `gh pr view`        (default 0)
+#   GH_STUB_REVIEW_DECISION  reviewDecision from `gh pr view`
+#   GH_STUB_ROLLUP         statusCheckRollup JSON array from `gh pr view`
+#                          (default: one SUCCESS context)
 
 make_gh_stub() {
   local dir="$1"
@@ -59,8 +62,13 @@ lint	pass	14s}"
       fi
       printf '%s' "$((idx + 1))" > "$GH_STUB_STATE_FILE"
     fi
-    printf '{"mergeStateStatus":"%s","url":"%s"}\n' \
-      "$state" "${GH_STUB_PR_URL:-https://github.com/acme/widget/pull/7}"
+    rollup="${GH_STUB_ROLLUP:-}"
+    if [ -z "$rollup" ]; then
+      rollup='[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]'
+    fi
+    printf '{"mergeStateStatus":"%s","reviewDecision":"%s","statusCheckRollup":%s,"url":"%s"}\n' \
+      "$state" "${GH_STUB_REVIEW_DECISION:-}" "$rollup" \
+      "${GH_STUB_PR_URL:-https://github.com/acme/widget/pull/7}"
     exit 0
     ;;
 esac

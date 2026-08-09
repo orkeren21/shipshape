@@ -32,18 +32,24 @@ fence="$(cat "$fence_file")"
 fence_id="$(shipshape_safe_id "$(shipshape_json_get "$fence" id)" "this task")"
 blocked_by="$(shipshape_json_get "$fence" blockedBy)"
 
-# Globbing off: a dependency entry is a name, and an unquoted expansion would
-# otherwise let a * in a plan document match whatever is in the working
-# directory.
+# Each entry read as a JSON string. Split the rendered array on whitespace
+# instead and ["feature 4"] becomes two dependencies named feature and 4,
+# neither of which can ever close — the task is then denied forever, with no
+# way out but editing the plan. Globbing is off for the same reason: a * in a
+# plan document is a name, not a pattern to match against the working directory.
 set -f
+old_ifs="${IFS-__unset__}"
+IFS='
+'
 unmet=""
-for dep in $(printf '%s' "$blocked_by" | tr -d '[]"' | tr ',' ' '); do
+for dep in $(shipshape_json_array "$fence" blockedBy); do
   [ -n "$dep" ] || continue
   dep="$(shipshape_safe_id "$dep" "")"
   [ -n "$dep" ] || continue
   [ -f "$scratch/tasks/completed/$dep" ] && continue
   unmet="${unmet}${unmet:+, }$dep"
 done
+if [ "$old_ifs" = "__unset__" ]; then unset IFS; else IFS="$old_ifs"; fi
 set +f
 
 if [ -z "$unmet" ]; then
