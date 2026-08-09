@@ -1,0 +1,72 @@
+---
+name: finishing-with-evidence
+description: Use when the implementation is complete and the branch needs to be finished - the definition of done, in order
+---
+
+# Finishing with evidence
+
+Five steps, in this order. Each one produces an artifact, and the artifacts are
+what the done gate reads — not what you say about them. The gate arms the
+moment step 1 succeeds, so there is no version of this where the steps are
+optional.
+
+## 1. Open the pull request
+
+```bash
+shipshape-pr-open --title "<title>" --body "<what changed and why>"
+```
+
+The wrapper passes everything through to `gh pr create` and records that a pull
+request now exists. From here the branch owes evidence.
+
+## 2. Watch CI to green
+
+```bash
+shipshape-ci-watch
+```
+
+Green means the pull request is *mergeable* — not that the checks which
+happened to run came back clean. Those are different claims, and only the
+second one is worth anything. A recorded incident had every visible check green
+and four more required checks never scheduled; the merge bar knew, and the
+check list did not.
+
+Red means diagnose, fix, and watch again. Never hand over a red pull request,
+and never explain away a red one.
+
+## 3. Smoke the changed flows
+
+```bash
+shipshape-smoke <command exercising what you changed>
+```
+
+Run the thing. Exercise the flows this branch touched. Look at the output.
+
+This is the developer reflex of "did my change actually work", and it is
+several small commands rather than one big one — start it, hit the path that
+changed, check what came back. It is not an end-to-end suite, and it is
+explicitly **not Shakedown**, which has its own cadence and is never invoked
+per pull request.
+
+If a commit lands after the smoke, the smoke is stale and the gate will say so.
+Smoke last, or smoke again.
+
+## 4. Write the retro
+
+`shipshape:writing-retros`. Before reporting done, not after — the retro is
+where the Minor findings from review go, and where the next lane's priming
+comes from.
+
+## 5. Report
+
+Outcome first, in plain English, for someone who saw none of the work. See
+`shipshape:plain-english-reporting`.
+
+## What "done" is not
+
+Reaching the end of the task list is not done. Tests passing locally is not
+done. A green check list is not done, and neither is a review with no
+Criticals on its own.
+
+Done is: the review happened, CI says mergeable, the changed flows were
+exercised, and none of that evidence predates the code being shipped.
