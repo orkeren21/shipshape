@@ -63,6 +63,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `task-capture` | `TaskCreated` | Remembers each task's metadata fence. |
 | `task-completion-gate` | `TaskCompleted` | A fenced task closes only on a fresh, passing verify record. |
 | `blockedby-gate` | `PreToolUse` | Refuses a task whose dependencies are open. |
+| `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create` and hands back the `shipshape-pr-open` form. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. |
 | `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, worded as an action rather than an alarm. |
 | `deflection-guard` | `Stop` | Holds the session when it proposes a fresh start below real context pressure. |
 | `session-start` | `SessionStart` | Injects the bootstrap skill. |
@@ -71,6 +72,13 @@ Every hook **fails open**, has a kill switch (`SHIPSHAPE_<HOOK>=0`), and logs
 what it decided to `.shipshape/<session-id>/trace.log`. All scratch is
 session-scoped, which fixes an upstream shared-path collision that once
 destroyed a task brief mid-epic.
+
+**Kill switches are for hooks, not wrappers.** `SHIPSHAPE_SMOKE=0` and its
+siblings are safe because switching them off makes the done gate *block* — the
+artifact it wants is absent and it says so. Suppressing the arming file would
+do the reverse: retire the gate for that branch, silently. So
+`shipshape-pr-open` has no off switch, and the hook that keeps bare
+`gh pr create` from going around it does.
 
 ### Where enforcement stops
 

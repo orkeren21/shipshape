@@ -41,6 +41,7 @@ check_registration "review-capture.sh"       PostToolUse
 check_registration "task-capture.sh"         TaskCreated
 check_registration "task-completion-gate.sh" TaskCompleted
 check_registration "blockedby-gate.sh"       PreToolUse
+check_registration "pr-wrapper-gate.sh"      PreToolUse
 
 # --- no invented events ------------------------------------------------------
 
@@ -57,7 +58,8 @@ fi
 # --- every referenced script exists and runs ---------------------------------
 
 for script in session-start.sh done-gate.sh context-watch.sh deflection-guard.sh \
-              review-capture.sh task-capture.sh task-completion-gate.sh blockedby-gate.sh; do
+              review-capture.sh task-capture.sh task-completion-gate.sh blockedby-gate.sh \
+              pr-wrapper-gate.sh; do
   assert_file "$SHIPSHAPE_REPO_ROOT/hooks/$script" "$script exists"
   bash -n "$SHIPSHAPE_REPO_ROOT/hooks/$script" 2>/dev/null \
     || fail "$script parses as bash"
@@ -82,7 +84,7 @@ make_repo "$repo"
 export SHIPSHAPE_SCRATCH_ROOT="$repo"
 
 for script in done-gate.sh context-watch.sh deflection-guard.sh review-capture.sh \
-              task-capture.sh task-completion-gate.sh blockedby-gate.sh; do
+              task-capture.sh task-completion-gate.sh blockedby-gate.sh pr-wrapper-gate.sh; do
   run_hook "$script" '{}' "$repo" >/dev/null
   assert_eq "0" "$(hook_status)" "$script exits 0 on an empty payload"
   run_hook "$script" '' "$repo" >/dev/null

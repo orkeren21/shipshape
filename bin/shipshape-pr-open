@@ -12,6 +12,14 @@
 # opening one leaves behind. No PR, no arming, nothing to satisfy. A PR, and
 # the session owes a review report, green CI and a smoke log regardless of how
 # it describes its own state.
+#
+# Arming has no off switch, and that is deliberate. The other wrappers have one
+# because switching them off makes the done gate *block* — the artifact it
+# wants is simply absent and it says so. Switching off arming does the reverse:
+# it removes the gate for that branch entirely, silently, which is the exact
+# failure mode this fork was built to close. Kill switches belong on hooks, and
+# the hook that keeps bare `gh pr create` from going around this wrapper has
+# one.
 
 set -uo pipefail
 
@@ -33,11 +41,6 @@ printf '%s\n' "$out"
 if [ "$status" -ne 0 ]; then
   shipshape_trace pr-open "gh pr create exited $status; nothing armed"
   exit "$status"
-fi
-
-if ! shipshape_enabled PR_OPEN; then
-  shipshape_trace pr-open "kill switch set; PR created but gate not armed"
-  exit 0
 fi
 
 # gh prints the PR URL on success; keep the last URL-looking line.

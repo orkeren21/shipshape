@@ -89,12 +89,27 @@ run_hook task-completion-gate.sh \
 out="$(stop "$CLAIM")"
 assert_eq "" "$(hook_field "$out" decision)" "no pull request yet, so nothing is owed"
 
-(cd "$repo" && shipshape-pr-open --title "lane g1" --body "the change" >/dev/null 2>&1)
-assert_file "$scratch/pr-armed" "opening the pull request through the wrapper armed the gate"
+# Skip: open the pull request the ordinary way and never arm anything. This was
+# the cheapest evaporation path in the design — no forgery, no kill switch,
+# just the command everyone already knows, after which the gate is silent for
+# the rest of the branch.
+bare='{"session_id":"lane-g1","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git push -u origin HEAD && gh pr create --title \"lane g1\" --body \"the change\""}}'
+out="$(run_hook pr-wrapper-gate.sh "$bare" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "TRIPPED: a bare gh pr create is refused before it can open an unarmed pull request"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "shipshape-pr-open" \
+  "and the refusal hands back the wrapper form to run instead"
+assert_no_file "$scratch/pr-armed" "nothing was armed, because nothing was opened"
 
+# The refusal is the whole point: the session runs the wrapper, and the gate arms.
+(cd "$repo" && shipshape-pr-open --title "lane g1" --body "the change" >/dev/null 2>&1)
+assert_file "$scratch/pr-armed" "PASSES: routed through the wrapper, the pull request arms the gate"
+
+# And the gate is now live, which is what the bare command would have avoided.
 out="$(stop "$CLAIM")"
 assert_eq "block" "$(hook_field "$out" decision)" \
-  "TRIPPED: claiming done with no review, no CI and no smoke is refused"
+  "TRIPPED: with the gate armed, the branch is asked for its evidence"
+
 reason="$(hook_field "$out" reason)"
 for owed in review ci-status smoke; do
   assert_contains "$reason" "$owed" "the refusal names the missing $owed"

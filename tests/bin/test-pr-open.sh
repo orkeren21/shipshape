@@ -60,13 +60,24 @@ second="$(cat "$scratch/pr-armed")"
 assert_contains "$second" "pull/43" "re-opening updates the arming file to the current PR"
 assert_ne "$first" "$second" "the arming file is refreshed rather than left stale"
 
-# --- kill switch -------------------------------------------------------------
+# --- arming has no off switch ------------------------------------------------
+#
+# The other wrappers may be switched off because doing so makes the done gate
+# *block*: no ci-status, no smoke.log, and the gate says the evidence is
+# missing. Suppressing arming is the opposite — it removes the gate entirely
+# for that branch, which is guardrail evaporation with a documented name. So
+# this wrapper does not get one. Kill switches belong on hooks.
 
 rm -rf "$scratch" "$GH_STUB_LOG"
-SHIPSHAPE_PR_OPEN=0 "$pr_open" --title "unarmed" >/dev/null 2>&1
-assert_no_file "$scratch/pr-armed" "the kill switch suppresses arming"
-assert_contains "$(cat "$GH_STUB_LOG")" "pr create" \
-  "the kill switch suppresses the artifact, never the underlying command"
+SHIPSHAPE_PR_OPEN=0 "$pr_open" --title "still armed" >/dev/null 2>&1
+assert_file "$scratch/pr-armed" "SHIPSHAPE_PR_OPEN=0 does not stop the gate arming"
+
+rm -rf "$scratch"
+SHIPSHAPE=0 SHIPSHAPE_ARMING=0 SHIPSHAPE_PR_ARMED=0 "$pr_open" --title "still armed" >/dev/null 2>&1
+assert_file "$scratch/pr-armed" "and neither does any other spelling of an off switch"
+
+grep -q 'shipshape_enabled' "$pr_open" \
+  && fail "shipshape-pr-open still consults a kill switch"
 
 # --- gh missing --------------------------------------------------------------
 
