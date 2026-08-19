@@ -383,6 +383,124 @@ shipshape_waiver_unreasoned() { # <leg> -> 0 when waived without a reason
 }
 
 # ---------------------------------------------------------------------------
+# Evidence legs
+# ---------------------------------------------------------------------------
+
+# One evaluator, three readers. The done gate, the merge gate and the doctor
+# all judge the same artifacts; when each carried its own copy of the rules
+# they drifted within a week — the doctor called a verdict-of-No review "ok"
+# while the gate refused it, and the denial message pointed sessions at the
+# tool that was lying to them. Each function prints "<status>|<detail>".
+#
+#   review: ok | missing | empty:<names> | stale:<file> | no-verdict:<file>
+#           | verdict-no:<file>
+#   ci:     ok | missing | not-green:<merge-state> | stale
+#   smoke:  ok | missing | stale:<head> | no-runs | failures:<n>/<runs>
+
+shipshape_leg_review() { # <scratch>
+  local scratch="$1" review="" newest=0 empties="" candidate candidate_mtime
+  for candidate in "$scratch"/review-*.md; do
+    [ -f "$candidate" ] || continue
+    if [ ! -s "$candidate" ]; then
+      empties="$empties$(basename "$candidate") "
+      continue
+    fi
+    candidate_mtime="$(shipshape_mtime "$candidate")"
+    [ -n "$candidate_mtime" ] || continue
+    if [ "$candidate_mtime" -ge "$newest" ]; then
+      newest="$candidate_mtime"
+      review="$candidate"
+    fi
+  done
+  if [ -z "$review" ]; then
+    if [ -n "$empties" ]; then
+      printf 'empty|%s' "${empties% }"
+    else
+      printf 'missing|'
+    fi
+    return 0
+  fi
+  if ! shipshape_newer_than_head "$review"; then
+    printf 'stale|%s' "$(basename "$review")"
+    return 0
+  fi
+  if ! grep -qi 'ready to merge' "$review" 2>/dev/null; then
+    printf 'no-verdict|%s' "$(basename "$review")"
+    return 0
+  fi
+  local verdict
+  verdict="$(grep -i 'ready to merge' "$review" 2>/dev/null | head -1 \
+             | sed 's/.*[Rr]eady to [Mm]erge//' | tr 'A-Z' 'a-z')"
+  case "$verdict" in
+    *yes*|*"with fixes"*) printf 'ok|%s' "$(basename "$review")" ;;
+    *no*) printf 'verdict-no|%s' "$(basename "$review")" ;;
+    *) printf 'ok|%s' "$(basename "$review")" ;;
+  esac
+}
+
+shipshape_leg_ci() { # <scratch>
+  local scratch="$1"
+  if [ ! -f "$scratch/ci-status" ]; then
+    printf 'missing|'
+    return 0
+  fi
+  if ! grep -qE '^result=green(-pending-review)?$' "$scratch/ci-status" 2>/dev/null; then
+    printf 'not-green|%s' \
+      "$(grep '^merge_state=' "$scratch/ci-status" 2>/dev/null | head -1 | cut -d= -f2)"
+    return 0
+  fi
+  if ! shipshape_newer_than_head "$scratch/ci-status"; then
+    printf 'stale|'
+    return 0
+  fi
+  printf 'ok|'
+}
+
+shipshape_leg_smoke() { # <scratch>
+  local scratch="$1" log="$1/smoke.log"
+  if [ ! -s "$log" ]; then
+    printf 'missing|'
+    return 0
+  fi
+  local smoke_head current_head runs failures
+  smoke_head="$(grep '^head=' "$log" 2>/dev/null | head -1 | cut -d= -f2-)"
+  current_head="$(git rev-parse HEAD 2>/dev/null)"
+  runs="$(grep -c '^=== exit ' "$log" 2>/dev/null | tr -d ' ')"
+  failures="$(grep '^=== exit ' "$log" 2>/dev/null | grep -vc '^=== exit 0$' | tr -d ' ')"
+  if [ -n "$current_head" ] && [ -n "$smoke_head" ] && [ "$smoke_head" != "$current_head" ]; then
+    printf 'stale|%s' "$smoke_head"
+    return 0
+  fi
+  if [ "${runs:-0}" -eq 0 ]; then
+    printf 'no-runs|'
+    return 0
+  fi
+  if [ "${failures:-0}" -gt 0 ]; then
+    printf 'failures|%s/%s' "$failures" "$runs"
+    return 0
+  fi
+  printf 'ok|'
+}
+
+# 0 when every leg is ok or carries a reasoned waiver — the same judgment the
+# done gate stamps on. The merge gate uses this for the earn-then-merge turn:
+# evidence completed and merged in one turn has had no Stop between them, so
+# no stamp exists yet, and denying it with "you still owe evidence" would be
+# the gate lying.
+shipshape_legs_settled() { # <scratch>
+  local scratch="$1" leg status
+  for leg in review ci smoke; do
+    shipshape_waived "$leg" && continue
+    status="$(shipshape_leg_"$leg" "$scratch")"
+    case "$status" in
+      ok\|*) : ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Context pressure
 # ---------------------------------------------------------------------------
 

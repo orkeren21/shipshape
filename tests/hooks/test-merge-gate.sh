@@ -99,6 +99,66 @@ assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "a bare merge from a branch with no record is refused"
 git -C "$repo" checkout -q "$main_branch"
 
+# --- one merge per command ---------------------------------------------------
+#
+# A compound merge has no single answer, and judging only one invocation lets
+# the others ship unevidenced — the reviewed bypass was `gh pr merge 57 &&
+# gh pr merge 58` with only 58 evidenced, allowed because the parser read the
+# last invocation. Refused outright now.
+
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 57 && gh pr merge 58")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "two merges in one command are refused, whatever their evidence"
+assert_eq "merge_gate_compound" "$(hook_field "$out" shipshapeCode)" "named as a compound"
+
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 57
+gh pr merge 58")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "two merges on separate lines are the same refusal"
+
+# Tokens on other lines belong to other invocations: `sleep 30` is not PR 30.
+out="$(run_hook merge-gate.sh "$(merge_payload "sleep 30
+gh pr merge 57")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a number on an unrelated line is not read as the PR being merged"
+
+# --- earn-then-merge: evidence completed this turn, no Stop yet --------------
+#
+# The stamp is written on Stop. A session that finishes review + CI + smoke
+# and merges in the same turn has no stamp through no fault of its own; the
+# gate judges the record's own branch live, by the same evaluators.
+
+printf '# Review\n\n**Ready to merge?** Yes\n' > "$scratch/review-live.md"
+printf 'result=green\nchecks_exit=0\nmerge_state=CLEAN\n' > "$scratch/ci-status"
+printf 'head=%s\n\n=== $ x\nok\n=== exit 0\n\n' \
+  "$(git -C "$repo" rev-parse HEAD)" > "$scratch/smoke.log"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 58")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "complete fresh evidence on the record's branch merges without waiting for a stop"
+rm -f "$scratch/review-live.md" "$scratch/ci-status" "$scratch/smoke.log"
+
+# --- the previous wrapper's un-numbered record still works -------------------
+#
+# An old-format pr-armed has no number= line; it is matched by branch for a
+# bare merge and by its URL for a numbered one, and its stamp is the
+# pr-satisfied-legacy the done gate already writes.
+
+rm -f "$scratch"/pr-armed-* "$scratch"/pr-satisfied-*
+printf 'url=https://x/pull/7\nbranch=%s\nepoch=%s\n' \
+  "$main_branch" "$(date -u +%s)" > "$scratch/pr-armed"
+printf 'head=%s\nbranch=%s\nepoch=%s\n' \
+  "$main_head" "$main_branch" "$(date -u +%s)" > "$scratch/pr-satisfied-legacy"
+
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a bare merge resolves through the legacy record and its stamp"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 7")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a numbered merge matches the legacy record by its URL"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 70")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "and pull/7 does not match PR 70 by prefix"
+
 # --- the waiver: a reviewable exception, whole-gate --------------------------
 
 printf 'skip_merge_gate: true  # reason: release train merges are operator-supervised\n' \

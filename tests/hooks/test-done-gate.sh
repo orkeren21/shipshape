@@ -184,8 +184,8 @@ git -C "$repo" checkout -q -b some-other-lane
 out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
 assert_eq "" "$(hook_field "$out" decision)" \
   "a completion claim about other work is not blocked by another branch's pull request"
-assert_contains "$(hook_field "$out" systemMessage)" "$(git -C "$repo" rev-parse --abbrev-ref HEAD >/dev/null; echo some-other-lane)" \
-  "but the outstanding evidence is still surfaced, naming both branches"
+assert_contains "$(hook_field "$out" systemMessage)" "some-other-lane" \
+  "but the outstanding evidence is still surfaced, naming the branch the session is on"
 
 # The downgrade leaves a marker, and only the downgrade does. A validation lane
 # greps its trace for it; if it ever fires in real use, this path is closed and

@@ -38,60 +38,50 @@ printf 'ShipShape doctor — session %s, branch %s (HEAD %s)\n\n' \
 
 leg_line() { printf '  %-8s %s\n' "$1" "$2"; }
 
+# Verdicts come from the shared evaluators the gates read — the doctor owns
+# only the phrasing. A diagnostic that applies looser rules than the gate is
+# worse than none: the denial message points sessions here.
+
 if shipshape_waived review; then
   leg_line review "waived — $(shipshape_waiver_line review)"
 else
-  review=""
-  newest_mtime=0
-  for candidate in "$scratch"/review-*.md; do
-    [ -s "$candidate" ] || continue
-    candidate_mtime="$(shipshape_mtime "$candidate")"
-    [ -n "$candidate_mtime" ] || continue
-    if [ "$candidate_mtime" -ge "$newest_mtime" ]; then
-      newest_mtime="$candidate_mtime"
-      review="$candidate"
-    fi
-  done
-  if [ -z "$review" ]; then
-    leg_line review 'missing — dispatch the reviewer with "whole-branch-review:" in the description'
-  elif ! shipshape_newer_than_head "$review"; then
-    leg_line review "stale — $(basename "$review") predates HEAD; re-review the branch"
-  elif ! grep -qi 'ready to merge' "$review" 2>/dev/null; then
-    leg_line review "no verdict — $(basename "$review") never answers \"Ready to merge?\""
-  else
-    leg_line review "ok — $(basename "$review"), fresh, carries a verdict"
-  fi
+  leg="$(shipshape_leg_review "$scratch")"
+  detail="${leg#*|}"
+  case "${leg%%|*}" in
+    missing)    leg_line review 'missing — dispatch the reviewer with "whole-branch-review:" in the description' ;;
+    empty)      leg_line review "ignored (empty): $detail — an empty file is not a review; dispatch the reviewer" ;;
+    stale)      leg_line review "stale — $detail predates HEAD; re-review the branch" ;;
+    no-verdict) leg_line review "no verdict — $detail never answers \"Ready to merge?\"" ;;
+    verdict-no) leg_line review "verdict is no — fix what $detail found and re-review" ;;
+    ok)         leg_line review "ok — $detail, fresh, verdict yes" ;;
+  esac
 fi
 
 if shipshape_waived ci; then
   leg_line ci "waived — $(shipshape_waiver_line ci)"
-elif [ ! -f "$scratch/ci-status" ]; then
-  leg_line ci "missing — run shipshape-ci-watch"
-elif ! grep -qE '^result=green(-pending-review)?$' "$scratch/ci-status" 2>/dev/null; then
-  leg_line ci "not green ($(field "$scratch/ci-status" result)) — fix and run shipshape-ci-watch again"
-elif ! shipshape_newer_than_head "$scratch/ci-status"; then
-  leg_line ci "stale — predates HEAD; run shipshape-ci-watch again"
 else
-  leg_line ci "green and fresh"
+  leg="$(shipshape_leg_ci "$scratch")"
+  detail="${leg#*|}"
+  case "${leg%%|*}" in
+    missing)   leg_line ci "missing — run shipshape-ci-watch" ;;
+    not-green) leg_line ci "not green (merge state ${detail:-unknown}) — fix and run shipshape-ci-watch again" ;;
+    stale)     leg_line ci "stale — predates HEAD; run shipshape-ci-watch again" ;;
+    ok)        leg_line ci "green and fresh" ;;
+  esac
 fi
 
 if shipshape_waived smoke; then
   leg_line smoke "waived — $(shipshape_waiver_line smoke)"
-elif [ ! -s "$scratch/smoke.log" ]; then
-  leg_line smoke "missing — exercise the changed flows through shipshape-smoke"
 else
-  smoke_head="$(field "$scratch/smoke.log" head)"
-  smoke_runs="$(grep -c '^=== exit ' "$scratch/smoke.log" 2>/dev/null | tr -d ' ')"
-  smoke_failures="$(grep '^=== exit ' "$scratch/smoke.log" 2>/dev/null | grep -vc '^=== exit 0$' | tr -d ' ')"
-  if [ -n "$current_head" ] && [ "$smoke_head" != "$current_head" ]; then
-    leg_line smoke "stale — gathered against $(printf '%s' "$smoke_head" | cut -c1-8); smoke the branch again"
-  elif [ "${smoke_runs:-0}" -eq 0 ]; then
-    leg_line smoke "no completed run — exercise the changed flows through shipshape-smoke"
-  elif [ "${smoke_failures:-0}" -gt 0 ]; then
-    leg_line smoke "$smoke_failures of $smoke_runs commands failed — a failing smoke is not evidence"
-  else
-    leg_line smoke "ok — $smoke_runs commands, all exit 0, current HEAD"
-  fi
+  leg="$(shipshape_leg_smoke "$scratch")"
+  detail="${leg#*|}"
+  case "${leg%%|*}" in
+    missing)  leg_line smoke "missing — exercise the changed flows through shipshape-smoke" ;;
+    stale)    leg_line smoke "stale — gathered against $(printf '%s' "$detail" | cut -c1-8); smoke the branch again" ;;
+    no-runs)  leg_line smoke "no completed run — exercise the changed flows through shipshape-smoke" ;;
+    failures) leg_line smoke "${detail%%/*} of ${detail#*/} commands failed — a failing smoke is not evidence" ;;
+    ok)       leg_line smoke "ok — all commands exit 0, current HEAD" ;;
+  esac
 fi
 
 if shipshape_waived merge_gate; then

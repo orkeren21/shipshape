@@ -116,58 +116,45 @@ leg_note_unreasoned() { # <leg>
   add "note — .shipshape.yaml waives the $1 leg without a reason, so the waiver is not honored. Give it one: skip_$1: true  # reason: <why this leg does not apply>"
 }
 
+# Honored waivers are traced for the record and surfaced in the nudge for the
+# operator — an exception only the trace knows about is an exception the
+# reviewer never reads.
+waived_lines=""
+note_waived() {
+  waived_lines="${waived_lines}  - $1
+"
+}
+
+# The leg verdicts come from the shared evaluators in the lib — the merge gate
+# and the doctor read the same functions, so the three can never drift apart.
+# This gate owns only the wording.
+
 # --- the review report -------------------------------------------------------
-#
-# Newest by modification time, not by name: a re-review written in the same
-# second gets a suffix that sorts after the original, and picking the
-# lexically-last file would then judge recency on the wrong one.
 
 if shipshape_waived review; then
   shipshape_trace done-gate "review leg waived: $(shipshape_waiver_line review)"
+  note_waived "$(shipshape_waiver_line review)"
 else
 before_review="$missing"
-review=""
-newest_mtime=0
-empty_reviews=""
-for candidate in "$scratch"/review-*.md; do
-  [ -f "$candidate" ] || continue
-  if [ ! -s "$candidate" ]; then
-    empty_reviews="$empty_reviews $(basename "$candidate")"
-    continue
-  fi
-  candidate_mtime="$(shipshape_mtime "$candidate")"
-  [ -n "$candidate_mtime" ] || continue
-  if [ "$candidate_mtime" -ge "$newest_mtime" ]; then
-    newest_mtime="$candidate_mtime"
-    review="$candidate"
-  fi
-done
-
-if [ -z "$review" ] && [ -n "$empty_reviews" ]; then
-  add "review report — ignored:$empty_reviews (empty). An empty file at the right name is not a review; dispatch the reviewer synchronously with \"whole-branch-review:\" in the description."
-elif [ -z "$review" ]; then
-  add "review report — no whole-branch review has been captured. Dispatch the reviewer synchronously with \"whole-branch-review:\" in the description; the hook writes the report from what it returns."
-elif ! shipshape_newer_than_head "$review"; then
-  add "review report — stale: it predates the current HEAD commit, so it did not see the code being shipped. Re-review the branch."
-elif ! grep -qi 'ready to merge' "$review" 2>/dev/null; then
-  # The reviewer template ends with an explicit verdict. A report without one
-  # is a reviewer that did not finish, or a file that did not come from a
-  # reviewer at all.
-  add "review report — no verdict in it. The reviewer template ends with \"Ready to merge?\"; a report without that line is not a completed review."
-else
-  # And the verdict has to say yes. Checking only that a verdict exists lets a
-  # report headed "Ready to merge? No", listing three Criticals, satisfy the
-  # gate — which is the gate reading that a thing is present rather than what
-  # it says.
-  verdict="$(grep -i 'ready to merge' "$review" 2>/dev/null | head -1 \
-             | sed 's/.*[Rr]eady to [Mm]erge//' | tr 'A-Z' 'a-z')"
-  case "$verdict" in
-    *yes*|*"with fixes"*) : ;;
-    *no*)
-      add "review report — the reviewer's verdict is no. Fix what it found and re-review; a branch does not become finished by ignoring the answer."
-      ;;
-  esac
-fi
+leg="$(shipshape_leg_review "$scratch")"
+detail="${leg#*|}"
+case "${leg%%|*}" in
+  empty)
+    add "review report — ignored: $detail (empty). An empty file at the right name is not a review; dispatch the reviewer synchronously with \"whole-branch-review:\" in the description."
+    ;;
+  missing)
+    add "review report — no whole-branch review has been captured. Dispatch the reviewer synchronously with \"whole-branch-review:\" in the description; the hook writes the report from what it returns."
+    ;;
+  stale)
+    add "review report — stale: it predates the current HEAD commit, so it did not see the code being shipped. Re-review the branch."
+    ;;
+  no-verdict)
+    add "review report — no verdict in it. The reviewer template ends with \"Ready to merge?\"; a report without that line is not a completed review."
+    ;;
+  verdict-no)
+    add "review report — the reviewer's verdict is no. Fix what it found and re-review; a branch does not become finished by ignoring the answer."
+    ;;
+esac
 [ "$missing" != "$before_review" ] && shipshape_waiver_unreasoned review && leg_note_unreasoned review
 fi
 
@@ -175,46 +162,48 @@ fi
 
 if shipshape_waived ci; then
   shipshape_trace done-gate "ci leg waived: $(shipshape_waiver_line ci)"
+  note_waived "$(shipshape_waiver_line ci)"
 else
 before_ci="$missing"
-if [ ! -f "$scratch/ci-status" ]; then
-  add "ci-status — CI has not been watched to a verdict. Run shipshape-ci-watch."
-elif ! grep -qE '^result=green(-pending-review)?$' "$scratch/ci-status" 2>/dev/null; then
-  state="$(grep '^merge_state=' "$scratch/ci-status" 2>/dev/null | head -1 | cut -d= -f2)"
-  add "ci-status — not green (merge state ${state:-unknown}). Diagnose, fix, and run shipshape-ci-watch again."
-elif ! shipshape_newer_than_head "$scratch/ci-status"; then
-  add "ci-status — stale: it predates the current HEAD commit. Run shipshape-ci-watch again."
-fi
+leg="$(shipshape_leg_ci "$scratch")"
+detail="${leg#*|}"
+case "${leg%%|*}" in
+  missing)
+    add "ci-status — CI has not been watched to a verdict. Run shipshape-ci-watch."
+    ;;
+  not-green)
+    add "ci-status — not green (merge state ${detail:-unknown}). Diagnose, fix, and run shipshape-ci-watch again."
+    ;;
+  stale)
+    add "ci-status — stale: it predates the current HEAD commit. Run shipshape-ci-watch again."
+    ;;
+esac
 [ "$missing" != "$before_ci" ] && shipshape_waiver_unreasoned ci && leg_note_unreasoned ci
 fi
 
 # --- the scoped smoke --------------------------------------------------------
 
-# Read what the log says, not merely that it is there. The exit codes are
-# already written into it by the wrapper, and the HEAD it was gathered against
-# is in its header — so staleness comes from the log's own content rather than
-# the file's modification time, which one appended command would refresh.
 if shipshape_waived smoke; then
   shipshape_trace done-gate "smoke leg waived: $(shipshape_waiver_line smoke)"
+  note_waived "$(shipshape_waiver_line smoke)"
 else
 before_smoke="$missing"
-smoke_log="$scratch/smoke.log"
-if [ ! -s "$smoke_log" ]; then
-  add "smoke.log — the changed flows have not been exercised. Run them through shipshape-smoke."
-else
-  smoke_head="$(grep '^head=' "$smoke_log" 2>/dev/null | head -1 | cut -d= -f2-)"
-  current_head="$(git rev-parse HEAD 2>/dev/null)"
-  smoke_runs="$(grep -c '^=== exit ' "$smoke_log" 2>/dev/null | tr -d ' ')"
-  smoke_failures="$(grep '^=== exit ' "$smoke_log" 2>/dev/null | grep -vc '^=== exit 0$' | tr -d ' ')"
-
-  if [ -n "$current_head" ] && [ -n "$smoke_head" ] && [ "$smoke_head" != "$current_head" ]; then
-    add "smoke.log — stale: gathered against commit $(printf '%s' "$smoke_head" | cut -c1-8) rather than the current HEAD. It exercised different code; smoke the branch again."
-  elif [ "${smoke_runs:-0}" -eq 0 ]; then
+leg="$(shipshape_leg_smoke "$scratch")"
+detail="${leg#*|}"
+case "${leg%%|*}" in
+  missing)
+    add "smoke.log — the changed flows have not been exercised. Run them through shipshape-smoke."
+    ;;
+  stale)
+    add "smoke.log — stale: gathered against commit $(printf '%s' "$detail" | cut -c1-8) rather than the current HEAD. It exercised different code; smoke the branch again."
+    ;;
+  no-runs)
     add "smoke.log — no completed run in it. Exercise the changed flows through shipshape-smoke."
-  elif [ "${smoke_failures:-0}" -gt 0 ]; then
-    add "smoke.log — $smoke_failures of $smoke_runs smoke commands exited non-zero. A smoke that failed is not evidence the change works; fix it and smoke again."
-  fi
-fi
+    ;;
+  failures)
+    add "smoke.log — ${detail%%/*} of ${detail#*/} smoke commands exited non-zero. A smoke that failed is not evidence the change works; fix it and smoke again."
+    ;;
+esac
 [ "$missing" != "$before_smoke" ] && shipshape_waiver_unreasoned smoke && leg_note_unreasoned smoke
 fi
 
@@ -327,6 +316,12 @@ if [ -n "$elsewhere_lines" ]; then
   nudge_text="${nudge_text}ShipShape — pull requests from other branches this session still owe evidence:
 
 $elsewhere_lines"
+fi
+if [ -n "$waived_lines" ]; then
+  nudge_text="$nudge_text
+Active waivers (.shipshape.yaml):
+
+$waived_lines"
 fi
 nudge_text="$nudge_text
 Run shipshape-doctor for the full evidence state."

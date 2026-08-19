@@ -86,6 +86,17 @@ case "$gate_out" in
   *) fail "the doctor said unsatisfied for 58 but the merge gate says otherwise" ;;
 esac
 
+# --- the doctor applies the gate's rules, not looser ones --------------------
+#
+# The reviewed defect: a report whose verdict was No read as "ok" here while
+# the gate refused it — and the merge denial points sessions at this tool.
+
+printf '# Review\n\n**Ready to merge?** No\n' > "$scratch/review-1.md"
+out="$(cd "$repo" && "$doctor" 2>&1)"
+assert_contains "$out" "verdict is no" \
+  "a verdict of No is reported as the failure the gate treats it as"
+printf '# Review\n\n**Ready to merge?** Yes\n' > "$scratch/review-1.md"
+
 # --- waivers are part of the state, so the doctor reports them ---------------
 
 printf 'skip_smoke: true  # reason: docs-only change\n' > "$repo/.shipshape.yaml"
