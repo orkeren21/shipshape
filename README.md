@@ -54,7 +54,7 @@ Start with `/shipshape` — it routes your situation to the skill that handles i
 | `subagent-driven-development` | Genuinely independent, parallel work streams |
 | `test-driven-development` | Implementing behavior-bearing code |
 | `systematic-debugging` | A bug, test failure, or unexpected behavior |
-| `requesting-code-review` | The whole-branch review before finishing |
+| `requesting-code-review` | The whole-branch review and design-conformance pass before finishing |
 | `receiving-code-review` | Acting on review findings |
 | `finishing-with-evidence` | Ending a branch: PR, CI watched to green, smoke, retro |
 | `writing-retros` | Closing a feature session with a defect-by-catch-point record |
@@ -70,7 +70,10 @@ Start with `/shipshape` — it routes your situation to the skill that handles i
 
 Wrappers (`bin/`) run the real commands and leave evidence artifacts behind as a
 side effect; hooks gate on what those artifacts *say* — exit codes, commands,
-commit SHAs — never on what the transcript claims. Every hook fails open, has a
+commit SHAs — never on what the transcript claims. Obligations are tracked per
+pull request, and the merge-gate hook refuses `gh pr merge` for any PR — this
+session's or anyone's — that does not carry fresh evidence; `shipshape-doctor`
+prints the whole evidence state read-only. Every hook fails open, has a
 kill switch, and logs its decisions. The full architecture — the gate and
 wrapper tables, what enforcement can and cannot stop, the pilot findings, and
 the mutation-tested alarm suite — is in [DETAILS.md](DETAILS.md).

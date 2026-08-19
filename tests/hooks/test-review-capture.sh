@@ -56,6 +56,31 @@ if [ -n "$captured" ]; then
   assert_eq "$REPORT" "$body" "verbatim means verbatim — the hook does not summarise or reformat"
 fi
 
+# --- the conformance lane: second marker, distinct artifact ------------------
+#
+# The design-conformance reviewer reads the design against the shipped diff —
+# a different question from "is this code sound", so it is a different
+# dispatch and a different file. Distinct on purpose: the done gate's review
+# leg reads review-*.md, and a conformance report satisfying it would let a
+# branch finish with no code review at all.
+
+reviews_before="$(find "$scratch" -maxdepth 1 -name 'review-*.md' | wc -l | tr -d ' ')"
+out="$(run_hook review-capture.sh \
+  "$(payload Agent "design-conformance: lane G1 against the ratified design" \
+     "## Gaps
+- D-003: partial — the fallback branch was never transcribed
+- unrequested: a retry loop no decision asked for")" "$repo")"
+assert_eq "0" "$(hook_status)" "capturing a conformance report never disturbs the session"
+
+conformance="$(find "$scratch" -maxdepth 1 -name 'conformance-*.md' | head -1)"
+[ -n "$conformance" ] || fail "a marked conformance return writes a conformance-*.md artifact"
+if [ -n "$conformance" ]; then
+  assert_contains "$(cat "$conformance")" "D-003" "the gap report is written verbatim"
+fi
+reviews_after="$(find "$scratch" -maxdepth 1 -name 'review-*.md' | wc -l | tr -d ' ')"
+assert_eq "$reviews_before" "$reviews_after" \
+  "a conformance report is never filed as a whole-branch review"
+
 # --- unmarked returns are ignored --------------------------------------------
 
 rm -f "$scratch"/review-*.md

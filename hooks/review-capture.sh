@@ -20,6 +20,7 @@ lib="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../lib" && pwd)"
 . "$lib/shipshape-common.sh"
 
 MARKER="${SHIPSHAPE_REVIEW_MARKER:-whole-branch-review:}"
+CONFORMANCE_MARKER="${SHIPSHAPE_CONFORMANCE_MARKER:-design-conformance:}"
 
 shipshape_read_payload
 shipshape_enabled REVIEW_CAPTURE || exit 0
@@ -34,10 +35,21 @@ esac
 description="$(shipshape_field tool_input.description)"
 prompt="$(shipshape_field tool_input.prompt)"
 
+# Two lanes, two artifacts. The whole-branch review asks "is this code sound";
+# the conformance pass asks "is this the code the design ordered". They file
+# under different prefixes because the done gate's review leg globs
+# review-*.md, and a conformance report satisfying it would let a branch
+# finish with no code review at all.
+kind=""
 case "$description$prompt" in
-  *"$MARKER"*) : ;;
-  *) exit 0 ;;
+  *"$MARKER"*) kind="review" ;;
 esac
+if [ -z "$kind" ]; then
+  case "$description$prompt" in
+    *"$CONFORMANCE_MARKER"*) kind="conformance" ;;
+  esac
+fi
+[ -n "$kind" ] || exit 0
 
 # A backgrounded dispatch has not produced a report yet, and no later event
 # carries one — so its report can never be captured. Say that plainly in the
@@ -65,12 +77,12 @@ scratch="$(shipshape_scratch_dir)"
 # only if it agrees with creation order.
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 suffix=0
-target="$scratch/review-$stamp-00.md"
+target="$scratch/$kind-$stamp-00.md"
 # A hundred reports in one second means something is looping, and the
 # hundred-and-first will not help. Bounded, and the cap is logged.
 while [ -e "$target" ] && [ "$suffix" -le 98 ]; do
   suffix=$((suffix + 1))
-  target="$scratch/review-$stamp-$(printf '%02d' "$suffix").md"
+  target="$scratch/$kind-$stamp-$(printf '%02d' "$suffix").md"
 done
 if [ -e "$target" ]; then
   shipshape_trace review-capture "100 reports already written this second; discarding this one"

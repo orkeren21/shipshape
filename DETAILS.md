@@ -36,6 +36,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `shipshape-ci-watch` | `gh pr checks --watch` | `ci-status` — green means *mergeable*, not "the checks that ran passed". A pull request blocked only on a human approval, with a clean check rollup, is recorded `green-pending-review` and accepted. |
 | `shipshape-verify` | a task's verify command | `verify/<task-id>` |
 | `shipshape-smoke` | any command | `smoke.log` |
+| `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Always exits 0; diagnosis is not enforcement. |
 
 ## The hooks
 
@@ -43,7 +44,7 @@ record behind as a side effect. The record cannot exist without the work.
 |---|---|---|
 | `done-gate` | `Stop` | Arms per pull request, one obligation record each, so a cascade's second PR cannot evaporate the first one's debt. Disarms a record only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD** — and stamps it `pr-satisfied-<n>` for the merge gate. The soft nudge speaks when the outstanding state changes and stays silent while it does not; the hard block on a completion claim never dedupes. On a branch other than the record's it nudges but does not block, and it never disarms. |
 | `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp. A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. |
-| `review-capture` | `PostToolUse` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:`. The hook writing it, rather than the session, is what makes the artifact mean something (see *Where enforcement stops*). |
+| `review-capture` | `PostToolUse` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:`. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
 | `task-capture` | `TaskCreated` | Remembers each task's metadata fence. |
 | `task-completion-gate` | `TaskCompleted` | A fenced task closes only on a fresh, passing verify record whose command matches the one the fence demanded. |
 | `blockedby-gate` | `PreToolUse` | Refuses a task whose dependencies are open. |
