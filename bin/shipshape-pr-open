@@ -47,15 +47,31 @@ fi
 url="$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*' | tail -1)"
 
 scratch="$(shipshape_scratch_dir)"
+
+# The obligation is tracked per PR, keyed by its number, so a later PR in the
+# same session arms its own record instead of overwriting this one's — the
+# cascade where PR #2's arming evaporated PR #1's unmet evidence was a field
+# failure, not a hypothetical. A URL the number cannot be parsed from still
+# gets a record: an unnumbered obligation beats an evaporated one.
+number="$(printf '%s' "$url" | sed -n 's#.*/pull/\([0-9][0-9]*\).*#\1#p')"
+[ -n "$number" ] || number="unknown-$(date -u +%s)"
+record="pr-armed-$(shipshape_safe_id "$number" "unknown")"
+
 # The branch is recorded so the gate can tell that this session has moved on
 # to different work. Without it, a session that ships one branch and starts
 # another stays armed against the first branch's evidence forever.
+#
+# The un-numbered pr-armed is still written for the current PR: gates one
+# version behind read only that name, and it must never be the reason a gate
+# stays dark.
 {
   printf 'url=%s\n' "$url"
+  printf 'number=%s\n' "$number"
   printf 'branch=%s\n' "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
   printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'epoch=%s\n' "$(date -u +%s)"
-} > "$scratch/pr-armed"
+} > "$scratch/$record"
+cp "$scratch/$record" "$scratch/pr-armed" 2>/dev/null
 
-shipshape_trace pr-open "armed done gate for $url"
+shipshape_trace pr-open "armed done gate for $url ($record)"
 exit 0

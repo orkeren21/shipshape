@@ -207,6 +207,56 @@ assert_eq "" "$(hook_field "$out" decision)" \
   "a pull request waiting only on an approving review satisfies the CI half of the gate"
 give_ci
 
+# --- obligations are per PR: a cascade cannot evaporate the first one --------
+#
+# The field failure: PR 1 merges, a defect is found, PR 2 opens from a new
+# branch, and PR 1's unmet evidence quietly stops being anyone's problem. With
+# per-PR records the second PR satisfies its own gate while the first stays
+# listed until evidenced or waived.
+
+cascade="$work/cascade-repo"
+make_repo "$cascade"
+outer_cascade_root="$SHIPSHAPE_SCRATCH_ROOT"
+export SHIPSHAPE_SCRATCH_ROOT="$cascade"
+cscratch="$cascade/.shipshape/$session"
+mkdir -p "$cscratch"
+cascade_main="$(git -C "$cascade" rev-parse --abbrev-ref HEAD)"
+
+# PR 7, opened from the default branch, never evidenced.
+printf 'url=https://x/pull/7\nnumber=7\nbranch=%s\nepoch=%s\n' \
+  "$cascade_main" "$(date -u +%s)" > "$cscratch/pr-armed-7"
+
+# The session moves to a second branch and opens PR 9 there, fully evidenced.
+git -C "$cascade" checkout -q -b lane-b
+printf 'url=https://x/pull/9\nnumber=9\nbranch=lane-b\nepoch=%s\n' \
+  "$(date -u +%s)" > "$cscratch/pr-armed-9"
+printf '# Review\n\n**Ready to merge?** Yes\n' > "$cscratch/review-1.md"
+printf 'result=green\nchecks_exit=0\nmerge_state=CLEAN\n' > "$cscratch/ci-status"
+printf 'head=%s\n\n=== $ x\nok\n=== exit 0\n\n' \
+  "$(git -C "$cascade" rev-parse HEAD)" > "$cscratch/smoke.log"
+
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$cascade")"
+assert_eq "" "$(hook_field "$out" decision)" \
+  "PR 9's complete evidence is not blocked by PR 7's debt"
+assert_file "$cscratch/pr-satisfied-9" \
+  "a complete, fresh evidence set stamps its PR satisfied"
+assert_contains "$(cat "$cscratch/pr-satisfied-9" 2>/dev/null)" \
+  "head=$(git -C "$cascade" rev-parse HEAD)" \
+  "the stamp records the HEAD it was earned against"
+assert_no_file "$cscratch/pr-satisfied-7" \
+  "PR 7 is not stamped by PR 9's evidence"
+nudge="$(hook_field "$out" systemMessage)"
+assert_contains "$nudge" "7" "PR 7's unmet obligation is still listed"
+assert_contains "$nudge" "$cascade_main" "named with the branch that owes it"
+
+# A commit after the stamp: the satisfaction does not outlive HEAD.
+commit_more "$cascade"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$cascade")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "a completion claim after a new commit is blocked — the stamp went stale with HEAD"
+
+export SHIPSHAPE_SCRATCH_ROOT="$outer_cascade_root"
+
 # --- loop guard --------------------------------------------------------------
 
 clear_all

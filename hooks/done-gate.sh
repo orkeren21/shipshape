@@ -36,22 +36,73 @@ shipshape_enabled DONE_GATE || exit 0
 [ "$(shipshape_field stop_hook_active)" = "true" ] && exit 0
 
 scratch="$(shipshape_scratch_dir)"
-[ -f "$scratch/pr-armed" ] || exit 0
 
-# The gate belongs to the branch the pull request was opened from. A session
-# that ships one branch and starts another is not owing evidence for work that
-# has no pull request yet.
-armed_branch="$(grep '^branch=' "$scratch/pr-armed" 2>/dev/null | head -1 | cut -d= -f2-)"
-current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
-elsewhere=no
-if [ -n "$armed_branch" ] && [ -n "$current_branch" ] && [ "$armed_branch" != "$current_branch" ]; then
-  # Work on a different branch is not this pull request's work, so the hard
-  # block would be nagging about the wrong thing. It does not disarm, though:
-  # standing down entirely would mean `git checkout -b anything` switches the
-  # gate off for the rest of the session, which is a far bigger hole than the
-  # one it closes.
-  elsewhere=yes
+# ---- the obligation records -------------------------------------------------
+#
+# One record per pull request, written by shipshape-pr-open. The un-numbered
+# pr-armed is what older wrappers wrote (and what the current one still copies
+# for them); it is honored only when no numbered record exists, so one PR never
+# counts twice.
+records=""
+for record_file in "$scratch"/pr-armed-*; do
+  [ -f "$record_file" ] || continue
+  records="$records$record_file
+"
+done
+if [ -z "$records" ] && [ -f "$scratch/pr-armed" ]; then
+  records="$scratch/pr-armed
+"
 fi
+[ -n "$records" ] || exit 0
+
+current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+current_head="$(git rev-parse HEAD 2>/dev/null)"
+
+record_field() { grep "^$2=" "$1" 2>/dev/null | head -1 | cut -d= -f2-; }
+record_number() {
+  case "$(basename "$1")" in
+    pr-armed) printf 'legacy' ;;
+    *)        basename "$1" | sed 's/^pr-armed-//' ;;
+  esac
+}
+
+# The gate's evidence checks describe the branch the session is on, so each
+# record is classified by branch. Records for the current branch are judged on
+# the evidence itself; records for other branches are judged on their
+# satisfaction stamp — the stamp holds the HEAD the evidence was earned
+# against, and it counts only while that is still the branch's tip. A session
+# that ships one branch and starts another is not owing evidence for work that
+# has no pull request yet, but neither does `git checkout -b anything` switch
+# the gate off: the record stays, listed, until evidenced.
+current_numbers=""
+elsewhere_lines=""
+while IFS= read -r record_file; do
+  [ -n "$record_file" ] || continue
+  rec_branch="$(record_field "$record_file" branch)"
+  rec_number="$(record_number "$record_file")"
+  if [ -n "$rec_branch" ] && [ -n "$current_branch" ] && [ "$rec_branch" != "$current_branch" ]; then
+    stamp="$scratch/pr-satisfied-$rec_number"
+    settled=no
+    if [ -f "$stamp" ]; then
+      stamp_head="$(record_field "$stamp" head)"
+      branch_head="$(git rev-parse "$rec_branch" 2>/dev/null)"
+      # A branch git cannot resolve (deleted after merge) fails open: the
+      # stamp was earned, and there is no tip left to outrun it.
+      if [ -z "$branch_head" ] || [ "$stamp_head" = "$branch_head" ]; then
+        settled=yes
+      fi
+    fi
+    if [ "$settled" = no ]; then
+      rec_url="$(record_field "$record_file" url)"
+      elsewhere_lines="${elsewhere_lines}  - PR #$rec_number (${rec_url:-url unrecorded}) from branch $rec_branch — opened this session and still owing its evidence set (review, CI, smoke).
+"
+    fi
+  else
+    current_numbers="$current_numbers$rec_number "
+  fi
+done <<SHIPSHAPE_RECORDS
+$records
+SHIPSHAPE_RECORDS
 
 missing=""
 add() { missing="${missing}  - $1
@@ -135,7 +186,33 @@ else
   fi
 fi
 
-if [ -z "$missing" ]; then
+# The legs above describe the branch the session is on. With no record for
+# this branch, their verdicts belong to nobody and are discarded — the other
+# branches' records are judged on their stamps, not on this branch's files.
+[ -n "$current_numbers" ] || missing=""
+
+# ---- the satisfaction stamp -------------------------------------------------
+#
+# Written when the current branch's evidence set is complete and fresh, and
+# removed the moment it is not: the stamp is a statement about a specific
+# HEAD, recorded inside it, and the merge gate refuses a stamp whose HEAD is
+# not the one being merged. Leaving a stale stamp behind would let a record
+# read as settled from another branch while its own evidence had lapsed.
+if [ -n "$current_numbers" ]; then
+  for n in $current_numbers; do
+    if [ -z "$missing" ]; then
+      {
+        printf 'head=%s\n' "$current_head"
+        printf 'branch=%s\n' "$current_branch"
+        printf 'epoch=%s\n' "$(date -u +%s)"
+      } > "$scratch/pr-satisfied-$n"
+    else
+      rm -f "$scratch/pr-satisfied-$n"
+    fi
+  done
+fi
+
+if [ -z "$missing" ] && [ -z "$elsewhere_lines" ]; then
   shipshape_trace done-gate "armed and satisfied — review, CI and smoke all present and current"
   exit 0
 fi
@@ -148,13 +225,13 @@ if printf '%s' "$last" | grep -qiE "all done|we'?re done|we are done|it'?s done|
   claim=yes
 fi
 
-if [ "$claim" = yes ] && [ "$elsewhere" = yes ]; then
+if [ "$claim" = yes ] && [ -z "$missing" ] && [ -n "$elsewhere_lines" ]; then
   # DOWNGRADE-BRANCH-MISMATCH is a deliberate tripwire, not a status line.
   #
   # This branch is the one remaining place where a completion claim meets a
   # softer answer than a refusal, and it was left in rather than closed on the
   # argument that claiming a *different* branch is done should not be refused
-  # by this pull request's gate. That argument is untested optimism.
+  # by another pull request's gate. That argument is untested optimism.
   #
   # Standing rule for the validation lanes: if this marker appears even once in
   # a lane's trace, the downgrade is closed and this path becomes a hard block,
@@ -162,25 +239,41 @@ if [ "$claim" = yes ] && [ "$elsewhere" = yes ]; then
   # The trace decides, not our confidence in the reasoning.
   #
   #   grep -c DOWNGRADE-BRANCH-MISMATCH .shipshape/*/trace.log
-  shipshape_trace done-gate "DOWNGRADE-BRANCH-MISMATCH completion claim on $current_branch while armed for $armed_branch; nudged instead of blocking"
-  shipshape_emit_system_message "ShipShape — the pull request opened from $armed_branch still owes evidence:
+  shipshape_trace done-gate "DOWNGRADE-BRANCH-MISMATCH completion claim on $current_branch while other branches' pull requests owe evidence; nudged instead of blocking"
+  shipshape_emit_system_message "ShipShape — pull requests opened this session still owe evidence:
 
-$missing
+$elsewhere_lines
 You are on $current_branch now, so this is a note rather than a refusal."
   exit 0
 fi
 
-if [ "$claim" = yes ]; then
-  shipshape_trace done-gate "blocked a completion claim; outstanding evidence follows"
-  shipshape_emit_block "This branch is not finished yet. Outstanding evidence:
+if [ "$claim" = yes ] && [ -n "$missing" ]; then
+  block_text="This branch is not finished yet. Outstanding evidence:
 
-$missing
+$missing"
+  [ -n "$elsewhere_lines" ] && block_text="$block_text
+Other pull requests from this session are also still owing:
+
+$elsewhere_lines"
+  shipshape_trace done-gate "blocked a completion claim; outstanding evidence follows"
+  shipshape_emit_block "$block_text
 Each of these is an artifact a gate reads, not a statement to make. Produce them, then say the branch is done."
   exit 0
 fi
 
-shipshape_trace done-gate "nudged; evidence still outstanding"
-shipshape_emit_system_message "ShipShape — a pull request is open and the branch still owes evidence:
+nudge_text=""
+if [ -n "$missing" ]; then
+  nudge_text="ShipShape — a pull request is open and the branch still owes evidence:
 
 $missing"
+fi
+if [ -n "$elsewhere_lines" ]; then
+  [ -n "$nudge_text" ] && nudge_text="$nudge_text
+"
+  nudge_text="${nudge_text}ShipShape — pull requests from other branches this session still owe evidence:
+
+$elsewhere_lines"
+fi
+shipshape_trace done-gate "nudged; evidence still outstanding"
+shipshape_emit_system_message "$nudge_text"
 exit 0
