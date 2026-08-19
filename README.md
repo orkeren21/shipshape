@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/orkeren21/shipshape/actions/workflows/tests.yml/badge.svg?branch=main&event=push)](https://github.com/orkeren21/shipshape/actions/workflows/tests.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![version 0.1.0](https://img.shields.io/badge/version-0.1.0-blue.svg)](.claude-plugin/plugin.json)
+[![version 0.2.0](https://img.shields.io/badge/version-0.2.0-blue.svg)](.claude-plugin/plugin.json)
 
 ShipShape is an opinionated take on [obra/superpowers](https://github.com/obra/superpowers),
 rebuilt for frontier models — Opus 5, Fable 5, and long 1M-token sessions. It keeps
