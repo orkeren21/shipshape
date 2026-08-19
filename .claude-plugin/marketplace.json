@@ -13,7 +13,7 @@
       "name": "shipshape",
       "source": "./",
       "description": "Quality gates that catch real defects, enforced by hooks that read evidence artifacts instead of transcript prose. A Claude Code-only take on obra/superpowers, written for Opus 5 / Fable 5 and long-context solo work.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "Or Keren"
       },
