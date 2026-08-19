@@ -156,6 +156,12 @@ that breaks something gives you no way to tell which item did it.
 Where you cannot check a finding, say so and ask, rather than proceeding on the
 assumption that the reviewer had more information than you.
 
+When a finding — or your rebuttal — rests on a claim about an external system
+(an exit code, a response shape, what a flag does), run the probe before
+either of you is believed. Measured beats believed, in both directions: the
+reviewer asserting a behavior from memory and you defending one from memory
+are the same defect wearing different hats.
+
 Technical correctness outranks comfort. Pushing back with a reason is part of
 the process, not a failure of it.
 

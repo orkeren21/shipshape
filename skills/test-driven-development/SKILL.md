@@ -305,9 +305,22 @@ noted.
 
 ## Debugging Integration
 
-Bug found? Write failing test reproducing it. Follow TDD cycle. Test proves fix and prevents regression.
+Bug found? Write failing test reproducing it. Follow TDD cycle. Test proves
+fix and prevents regression — a bug fixed without a test is a bug scheduled to
+return.
 
-Never fix bugs without a test.
+## A control derived from its subject is no control
+
+A fixture that computes its expected value *from* the artifact under test
+cannot disagree with it. In the field, a descriptor built from its own
+manifest passed four thousand unit tests while production carried two
+different sets, and a fixture pretty-printer silently became the identity
+transform and disarmed the control in the same file. Expected values arrive by
+a second route: written by hand, pulled from a real artifact, or computed
+independently. Where a harness applies a transform to fixtures, make the
+harness refuse an identity transform structurally — the prose version of this
+rule sat recorded the whole fortnight and was violated twice anyway; the
+structural refusal ended the class.
 
 ## Final Rule
 

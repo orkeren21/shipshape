@@ -9,8 +9,8 @@ following weeks.
 `docs/escapes.md`, in the product repository, **committed to git**.
 
 This is deliberate, and it is the one exception to the rule that internal
-documents stay out of version control. Everything under `docs/superpowers/` is
-gitignored, which means it exists on one machine. A ledger only one person can
+documents stay out of version control. Everything under `docs/shipshape/work/`
+is gitignored, which means it exists on one machine. A ledger only one person can
 read cannot be added to by the people most likely to find an escape — a
 colleague hitting the bug, another machine, a session weeks later. Gitignoring
 it would quietly kill the validation loop it exists to close.

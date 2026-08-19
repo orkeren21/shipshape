@@ -144,4 +144,32 @@ if [ -f "$boot" ]; then
     || fail "the bootstrap is $words words — it is injected into every session, so it stays short (~220)"
 fi
 
+# --- bare negations ----------------------------------------------------------
+#
+# A paragraph that is nothing but a prohibition steers by negation: it drags
+# the forbidden behavior into context without saying what to do instead. The
+# check is deliberately narrow — a "Never …" sentence standing beside its
+# positive instruction in the same paragraph is a guardrail and passes; only
+# the lone-sentence paragraph fails.
+
+# No getline: at end-of-file it reads the NEXT file's first line, which made
+# the first version of this check blind to a violation at any file's end. A
+# candidate is held instead, and resolved by whatever record arrives next — a
+# blank line or a file boundary confirms it stood alone.
+bare_negations="$(awk '
+  function flush() {
+    if (pending != "") { printf "%s: %s\n", pfile, pending; pending = "" }
+  }
+  FNR == 1 { flush(); prev_blank = 1 }
+  /^$/     { flush(); prev_blank = 1; next }
+  {
+    pending = ""
+    if (prev_blank && /^(Never|Do not) [^.]*\.$/) { pending = $0; pfile = FILENAME }
+    prev_blank = 0
+  }
+  END { flush() }
+' "$skills_dir"/*/SKILL.md 2>/dev/null)"
+[ -z "$bare_negations" ] || fail "bare negation paragraphs — state the positive target instead:
+$(printf '%s' "$bare_negations" | sed 's/^/          /')"
+
 finish

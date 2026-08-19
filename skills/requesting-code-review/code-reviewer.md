@@ -66,6 +66,21 @@ Subagent (general-purpose):
     - Documentation complete?
     - No obvious bugs?
 
+    **Claims about external systems:**
+    - Any code, comment, matcher or doc line asserting an external system's
+      behavior — an exit code, a response shape, a tool's output, a flag's
+      semantics — must say how that was measured. Challenge unattributed
+      external claims the way you challenge untested branches: in the field,
+      every defect of this class came from an unprobed belief, and every
+      probe ever run returned truth.
+
+    **Gate-adjacent prose:**
+    - Expectation text, remedy copy and carve-out conditions around a check
+      are part of the check. A wrong sentence about a gate can pre-excuse the
+      exact failure the gate exists to catch, and it survives review when
+      reviewers read only the code. Prefer expectations stated as runnable
+      predicates over sentences to remember.
+
     ## Calibration
 
     Categorize issues by actual severity. Not everything is Critical.

@@ -22,6 +22,12 @@ for this feature only. If a skill should *not* be invoked — because its output
 already exists as one of the documents below — say so explicitly, since the
 default is to invoke it.
 
+State the expected verification multiple for this surface — high-assurance
+code in the field runs 2–3× proof-to-fix — so a conceptually small change
+arriving as a large diff reads as the house bar, not as scope creep. That
+dispute has consumed operator trust once already; the number, stated up front,
+would have kept it.
+
 ## Read first, in order
 
 A numbered list of documents, each with one line on why it matters and which
@@ -30,6 +36,11 @@ read-only references as read-only.
 
 This section is the difference between a session that re-derives the design and
 one that starts from it.
+
+An instruction anywhere in this priming to delete or modify an artifact means
+the Architect read that artifact in full; where it read only part, the priming
+says so and hands the completeness check to the session holding the file
+(rule in `shipshape:epic-architecture`).
 
 ## The problem, and why this feature
 
@@ -82,6 +93,6 @@ commands, which paths, what output would show it working. The session running
 ## Definition of done, and the retro contract
 
 The artifacts this feature owes, listed. The gates apply as always; anything
-beyond them goes here. Where the retro is written, and what the Architect needs
-from it before dispatching whatever depends on this lane — cross-lane news
-first.
+beyond them goes here. Where the retro is written — next to this feature's
+design in the epic's folder — and what the Architect needs from it before
+dispatching whatever depends on this lane: cross-lane news first.

@@ -46,6 +46,7 @@ so the successor knows to look.
 
 ## Where it goes
 
-`docs/superpowers/handoffs/YYYY-MM-DD-<lane>.md`, gitignored like everything
-else internal. Say the path out loud when you write it, so the operator can
-hand it to the next session.
+Next to the work item's design document: `<design>-handoff.md` (layout in
+`shipshape:brainstorming`), gitignored like everything else internal. Say the
+path out loud when you write it, so the operator can hand it to the next
+session.

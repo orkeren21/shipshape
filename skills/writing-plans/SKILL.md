@@ -33,6 +33,13 @@ what "done" means in checkable terms, and the command that proves it. All of
 that also goes in the task's metadata fence — see
 [fence-schema.md](fence-schema.md) for the fields and what reads them.
 
+Number the design's decisions (`D-001`, `D-002`, …) and let each task's fence
+say which ones it `satisfies`. The finishing sweep diffs the decision list
+against the union of the fences: a decision no task satisfies is exactly how a
+ratified assumption ships un-transcribed, and counting is cheaper than
+remembering. In the field, two of nine ratified assumptions never became
+tasks; one shipped a latent deploy hole.
+
 **No code bodies.** Writing the implementation into the plan means writing it
 twice, and the second version — the real one — is the one that has met the
 code. Name the approach if it is not obvious; leave the writing to the writing.
@@ -50,8 +57,9 @@ ordering gate will not start one whose dependencies are open.
 
 ## Where it lives
 
-`docs/superpowers/plans/YYYY-MM-DD-<slug>.md`, which is gitignored. Plans are
-internal working documents and are never committed.
+Next to the design document it implements, in the work item's folder:
+`<design>-plan.md`. The folder layout is defined in `shipshape:brainstorming`.
+Plans are internal working documents, gitignored, never committed.
 
 ## What the plan is not
 

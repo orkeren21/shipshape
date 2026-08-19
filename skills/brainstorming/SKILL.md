@@ -21,6 +21,15 @@ assumption. Write it into the design as a recorded assumption and move on. Your
 human partner vetoes the ones you got wrong, which costs them a glance instead
 of an answer.
 
+A fact you can measure is never a question. Grep the code, run the probe, read
+the artifact — and spend the operator's turn only on decisions. Ask the open
+frontier: a question whose answer depends on another question in the same
+batch gets answered twice, so it waits for the round after.
+
+Each question is a full interrogative ending in "?", carries one line on why
+it matters, and puts the recommended option first, marked — the cheapest
+possible answer should be "yes".
+
 Rounds end on convergence, not on a count. When the next round would only
 confirm what you already have, stop asking and start designing.
 
@@ -34,18 +43,43 @@ owns a piece of state? Which failure mode has no handler? What did the
 requirements not say, that the code will have to decide anyway? What breaks the
 next lane working in this repo?
 
+And wherever the design asserts two artifacts "correspond", "agree", or "carry
+the same values": say whether the relation is identity, subset, or
+format-match, checked against one real pair of artifacts. A cross-check that
+compared two different rosters as if they were the same set survived five
+review rounds and four thousand unit tests in the field; pulling one real pair
+at the design table would have shown the difference in a glance.
+
 Anything found here is a design gap, and closing it is this skill's job, not
 your human partner's and not the reviewer's. Anything that turns out to need a
 decision goes back through a question round.
 
 ## The design document
 
-Write it to `docs/superpowers/`, which is gitignored. It is internal thinking,
-not a deliverable, and it is never committed.
+One folder per work item holds everything the work puts on paper — this rule
+lives here and every other skill defers to it:
+
+    docs/shipshape/work/<slug>/         an ad-hoc feature
+    docs/shipshape/work/<epic-slug>/    an epic; its features' documents live
+                                        inside it, with no folders of their own
+
+The design document starts the folder. The plan, the retro and any handoff are
+its siblings, named after it — `<design>-plan.md`, `<design>-retro.md`,
+`<design>-handoff.md` — so "where is this feature's retro" is never a search.
+The tree is gitignored: internal thinking, not a deliverable, never committed.
 
 Record the *why* behind each decision, not just the decision. The retro will
 want it, the next session will want it, and a decision without its reason gets
 re-litigated the moment it becomes inconvenient.
+
+Two markers keep the document honest, and both are greppable on purpose. A
+belief about an external system — a flag's semantics, a response shape, what a
+tool emits — is written tagged `ASSUMPTION:` and stays tagged until output
+from a real probe is pasted beside it; in the field, every defect of this
+class came from an unprobed belief, and every probe ever run returned truth. A
+question that would change the build but has no answer yet is written
+`[NEEDS CLARIFICATION: <the question>]`. A design still carrying either marker
+is not done, and saying so is the document's own job.
 
 Include the recorded assumptions, and the task list if the work is small enough
 to plan inline. For anything larger, `shipshape:writing-plans` takes over.
@@ -68,3 +102,8 @@ split.
 Both modes exit through the same gates: a whole-branch review, green CI, a
 scoped smoke. The choice is about time and parallelism. It is never about how
 carefully the work gets checked.
+
+The request that started this skill authorized the design — even when it asked
+to build the thing. Present the menu, then stand by: the build starts on a
+fresh operator go, and a hook message is never that.
+

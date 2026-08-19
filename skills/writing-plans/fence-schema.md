@@ -5,7 +5,7 @@ reader; the fence is the same task in a form the gates can check.
 
 ````markdown
 ```json:metadata
-{"id":"t3","files":["bin/shipshape-verify","tests/bin/test-verify.sh"],"interfaces":"Consumes lib/shipshape-common.sh; produces verify/<task-id>","acceptanceCriteria":["a failing command still writes a record","the record carries command, exit code and timestamp"],"verifyCommand":"tests/run-tests.sh bin","blockedBy":["t2"],"strictTDD":true}
+{"id":"t3","files":["bin/shipshape-verify","tests/bin/test-verify.sh"],"interfaces":"Consumes lib/shipshape-common.sh; produces verify/<task-id>","acceptanceCriteria":["a failing command still writes a record","the record carries command, exit code and timestamp"],"verifyCommand":"tests/run-tests.sh bin","blockedBy":["t2"],"satisfies":["D-003"],"strictTDD":true}
 ```
 ````
 
@@ -23,6 +23,7 @@ no opinion about — nothing breaks, but nothing is checked either.
 | `acceptanceCriteria` | array of strings | people | What "done" means, in checkable terms. The self-review at the end of the task answers these one by one. |
 | `verifyCommand` | string | task-completion gate | The command that proves this task works. Run it through `shipshape-verify <id> <command>`; the gate will not close the task without a passing record. Omit it only for tasks with genuinely nothing to run. |
 | `blockedBy` | array of `id`s | blockedBy gate | Tasks that must close first. The gate refuses to move this task into `in_progress` while any of them is open. |
+| `satisfies` | array of strings | the finishing sweep | Design decision ids this task implements (`D-003`). At branch end the sweep diffs every decision id against the union of these; a decision with no task and no "already true, verified by X" line fails the sweep. |
 | `strictTDD` | boolean | the implementer | `true` means red-green-refactor. `false` means tests exist and pass. See `shipshape:test-driven-development`. |
 
 ## Rules that matter
