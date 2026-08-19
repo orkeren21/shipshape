@@ -82,6 +82,6 @@ commands, which paths, what output would show it working. The session running
 ## Definition of done, and the retro contract
 
 The artifacts this feature owes, listed. The gates apply as always; anything
-beyond them goes here. Where the retro is written, and what the Architect needs
-from it before dispatching whatever depends on this lane — cross-lane news
-first.
+beyond them goes here. Where the retro is written — next to this feature's
+design in the epic's folder — and what the Architect needs from it before
+dispatching whatever depends on this lane: cross-lane news first.

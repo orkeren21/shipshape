@@ -50,8 +50,9 @@ ordering gate will not start one whose dependencies are open.
 
 ## Where it lives
 
-`docs/superpowers/plans/YYYY-MM-DD-<slug>.md`, which is gitignored. Plans are
-internal working documents and are never committed.
+Next to the design document it implements, in the work item's folder:
+`<design>-plan.md`. The folder layout is defined in `shipshape:brainstorming`.
+Plans are internal working documents, gitignored, never committed.
 
 ## What the plan is not
 

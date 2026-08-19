@@ -59,9 +59,9 @@ Smoke last, or smoke again.
 
 ## 4. Write the retro
 
-`shipshape:writing-retros`. Before reporting done, not after — the retro is
-where the Minor findings from review go, and where the next lane's priming
-comes from.
+`shipshape:writing-retros`, next to the design document in the work item's
+folder. Before reporting done, not after — the retro is where the Minor
+findings from review go, and where the next lane's priming comes from.
 
 ## 5. Report
 

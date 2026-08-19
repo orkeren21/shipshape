@@ -16,7 +16,10 @@ from.
 ## What the Architect produces
 
 **`EPIC.md`** — scope, the feature breakdown, dependencies between features, and
-the decisions that apply across all of them.
+the decisions that apply across all of them. It lives at the root of the epic's
+folder, `docs/shipshape/work/<epic-slug>/`, and every feature's documents —
+design, plan, priming, retro, handoff — live beside it in that same folder
+(layout in `shipshape:brainstorming`).
 
 Its process section **references ShipShape rather than restating it**. A
 charter that re-explains the pipeline goes stale the moment the pipeline
@@ -50,7 +53,8 @@ which is the only reason it can prime later features accurately.
 ## Read the retros before dispatching
 
 Before priming a feature that depends on an earlier one, read that lane's
-retro — the cross-lane line first. It is where an interface change, a moved
+retro — it sits next to the lane's design in the epic's folder, and the
+cross-lane line comes first. It is where an interface change, a moved
 file or a discovered constraint gets recorded, and priming a dependent feature
 without it means priming it with a world-state that is already wrong.
 

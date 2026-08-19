@@ -64,6 +64,8 @@ converging, say so and say what came of it.
 
 ## Where it lives
 
-`docs/superpowers/retros/` — internal, gitignored, never committed. The escapes
-ledger is the deliberate exception: it is tracked, because it has to be visible
-from other machines to be worth anything.
+Next to the design document it retrospects, in the work item's folder:
+`<design>-retro.md` (layout in `shipshape:brainstorming`). A retro in some
+other tree is a retro the next lane's Architect does not find. The escapes
+ledger is the deliberate exception: it is tracked, because it has to be
+visible from other machines to be worth anything.

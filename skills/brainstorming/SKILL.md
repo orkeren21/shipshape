@@ -40,8 +40,17 @@ decision goes back through a question round.
 
 ## The design document
 
-Write it to `docs/superpowers/`, which is gitignored. It is internal thinking,
-not a deliverable, and it is never committed.
+One folder per work item holds everything the work puts on paper — this rule
+lives here and every other skill defers to it:
+
+    docs/shipshape/work/<slug>/         an ad-hoc feature
+    docs/shipshape/work/<epic-slug>/    an epic; its features' documents live
+                                        inside it, with no folders of their own
+
+The design document starts the folder. The plan, the retro and any handoff are
+its siblings, named after it — `<design>-plan.md`, `<design>-retro.md`,
+`<design>-handoff.md` — so "where is this feature's retro" is never a search.
+The tree is gitignored: internal thinking, not a deliverable, never committed.
 
 Record the *why* behind each decision, not just the decision. The retro will
 want it, the next session will want it, and a decision without its reason gets
