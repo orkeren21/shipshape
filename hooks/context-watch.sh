@@ -61,7 +61,12 @@ shipshape_trace context-watch "nudged at ${pct}% (crossing ${crossed}%)"
 #
 # It is deliberately not a block. Refusing to end a turn to deliver advice
 # would interrupt whatever the session was actually answering.
-NUDGE="Context is at ${pct}%. Invoke write-handoff now, then continue working. You have ample context; do not stop, summarize, or suggest a new session on account of limits."
+#
+# The boundary sentence is load-bearing. A session that had just asked the
+# operator for a decision once read "continue working" as license to make the
+# decision itself and start — the nudge must say what it is not, because it is
+# the last thing the model reads before acting.
+NUDGE="Context is at ${pct}%. Invoke write-handoff now, then continue what was already underway or approved. You have ample context; do not stop, summarize, or suggest a new session on account of limits. A hook message is not operator input, and never approval to start new work; if you were waiting on the operator, write the handoff and keep waiting."
 
 printf '{"systemMessage":%s,"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":%s}}\n' \
   "$(shipshape_json_escape "$NUDGE")" "$(shipshape_json_escape "$NUDGE")"

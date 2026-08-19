@@ -33,6 +33,17 @@ printf '%s' "$last" | grep -qiE \
   "(fresh|new|clean|separate) (session|context)|continue in a new|start over in|pick this up in another|resume in a (new|fresh)|hand (this )?off to a (new|fresh) session|compact and (resume|continue)" \
   || exit 0
 
+# A session standing by for the operator is not fleeing, whatever nouns its
+# recommendation used. The recorded incident: an Architect recommended future
+# work for a fresh lane, was blocked mid-wait and told to keep going, and
+# resolved the contradiction by starting the work uninvited. Waiting is the
+# one continuation a Stop hook must never argue with.
+if printf '%s' "$last" | grep -qiE \
+  "standing by|awaiting (your|the operator)|waiting (for|on) (your|the operator)|before anything starts|(your|the operator'?s?) (approval|go-ahead|decision|call)"; then
+  shipshape_trace deflection-guard "deflection phrasing, but the session is waiting on the operator; left alone"
+  exit 0
+fi
+
 pct="$(shipshape_context_pct "$(shipshape_field transcript_path)")"
 case "$pct" in
   ''|*[!0-9-]*) pct="-1" ;;
@@ -48,6 +59,18 @@ if [ "$pct" -ge "$THRESHOLD" ]; then
   exit 0
 fi
 
+# A blocked stop forces the model to produce another turn. If that turn says
+# the same thing again, a second identical block is a loop, not a guard —
+# answer once, then let the answer stand.
+scratch="$(shipshape_scratch_dir)"
+digest="$(printf '%s' "$last" | cksum 2>/dev/null | cut -d' ' -f1)"
+if [ -n "$digest" ] && [ "$digest" = "$(cat "$scratch/deflection-answered" 2>/dev/null)" ]; then
+  shipshape_trace deflection-guard "same deflection already answered once; standing down"
+  exit 0
+fi
+[ -n "$digest" ] && printf '%s' "$digest" > "$scratch/deflection-answered"
+
 shipshape_trace deflection-guard "blocked deflection at ${pct}%"
-shipshape_emit_block "Context is at ${pct}%, well inside this session's window, so a fresh session would re-derive what you already have loaded rather than save anything. Keep going here. If a specific thing is blocking you, say what it is."
+shipshape_emit_block "Context is at ${pct}%, well inside this session's window, so moving this session's own in-progress work to a fresh session would re-derive what is already loaded rather than save anything. If that is what you were proposing, keep going here. If you were recommending future work or presenting options, restate what you are waiting for and stand by — a hook message is not operator input, and never approval to start new work. If a specific thing is blocking you, say what it is." \
+  deflection_guard_hold
 exit 0

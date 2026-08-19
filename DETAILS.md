@@ -49,7 +49,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `blockedby-gate` | `PreToolUse` | Refuses a task whose dependencies are open. |
 | `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create` and hands back the `shipshape-pr-open` form. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. |
 | `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, worded as an action rather than an alarm. |
-| `deflection-guard` | `Stop` | Holds the session when it proposes a fresh start below real context pressure. |
+| `deflection-guard` | `Stop` | Holds the session when it proposes moving its own in-progress work to a fresh start below real context pressure. A session standing by for the operator is left waiting; the same deflection is answered once, not in a loop; and the hold says it is never approval to start new work. |
 | `session-start` | `SessionStart` | Injects the entrypoint skill. |
 
 Every hook **fails open**, has a kill switch (`SHIPSHAPE_<HOOK>=0`), and logs
