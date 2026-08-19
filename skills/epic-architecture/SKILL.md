@@ -27,6 +27,13 @@ changes, and then two sessions are working from different rules while both
 believe they are following the charter. Say which mode each feature runs in and
 what differs for this epic; leave the rest to the skills.
 
+The feature breakdown is a table. Each feature carries an **immutable ID**
+(never renamed once referenced), a **scope boundary** column — what is in, and
+what is deferred *to which sibling lane*, because an unowned deferral is how
+two lanes build the same thing — and one line: *independently demonstrable
+by:* the command or flow that shows it working on its own. That line is what
+the lane's scoped smoke later runs.
+
 **One priming per feature** — see [priming-template.md](priming-template.md).
 
 ## Splitting
@@ -40,6 +47,15 @@ did not read the others.
 
 Dependencies point one way. Two features that need each other are one feature
 that was split at the wrong seam.
+
+## Instructions come from reading the thing
+
+A priming may not order the deletion or modification of an artifact the
+Architect has not read in full. "Retire X", written from X's name, is a defect
+vector: in the field, the named guard also carried three unrelated
+load-bearing checks, and only the implementing session's own reading of the
+file caught the coverage loss. Where the Architect read only part, the priming
+says so and delegates the completeness check to the session holding the file.
 
 ## Questions, relayed
 

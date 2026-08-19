@@ -22,6 +22,12 @@ for this feature only. If a skill should *not* be invoked — because its output
 already exists as one of the documents below — say so explicitly, since the
 default is to invoke it.
 
+State the expected verification multiple for this surface — high-assurance
+code in the field runs 2–3× proof-to-fix — so a conceptually small change
+arriving as a large diff reads as the house bar, not as scope creep. That
+dispute has consumed operator trust once already; the number, stated up front,
+would have kept it.
+
 ## Read first, in order
 
 A numbered list of documents, each with one line on why it matters and which

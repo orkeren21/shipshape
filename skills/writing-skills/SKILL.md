@@ -59,6 +59,19 @@ prose that also teaches the technique.
 a cap says what happens when it is reached. Unstated exits are how a process
 turns into a spiral.
 
+**The no-op test.** A line earns its place only if it changes behavior against
+the model's default — and the test is model-relative: two people disagreeing
+about a no-op disagree about the default, and settle it by running the
+document against a fresh session, not by arguing. When a sentence fails the
+test, delete the sentence, not half of it.
+
+**Negation is a failure mode.** A prohibition drags the forbidden behavior
+into context and makes it more available. State the positive target and let
+the banned thing go unspoken; a prohibition earns its place only as a hard
+guardrail, and then it stands beside the positive instruction, never alone.
+The prose test refuses a paragraph that is nothing but a bare "Never …" or
+"Do not …" sentence.
+
 **Claude Code only.** No other runtime's paths, tools, or config appear here.
 Cross-skill references are `shipshape:<name>`.
 
@@ -77,3 +90,4 @@ read the results.
 
 - `testing-skills-with-subagents.md` — running a skill against fresh sessions
 - `anthropic-best-practices.md` — upstream guidance on writing for agents
+
