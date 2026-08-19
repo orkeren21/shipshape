@@ -69,8 +69,14 @@ test, delete the sentence, not half of it.
 into context and makes it more available. State the positive target and let
 the banned thing go unspoken; a prohibition earns its place only as a hard
 guardrail, and then it stands beside the positive instruction, never alone.
-The prose test refuses a paragraph that is nothing but a bare "Never …" or
-"Do not …" sentence.
+The prose test refuses a paragraph that is a single bare "Never …" or
+"Do not …" line.
+
+**Gate-adjacent prose is part of the gate.** Expectation text, remedy copy and
+carve-out conditions around a check get the check's own review, and where
+possible they are runnable predicates rather than sentences to remember. A
+wrong sentence about a gate pre-excuses the exact failure the gate exists to
+catch, and it survives review when readers read only the code.
 
 **Claude Code only.** No other runtime's paths, tools, or config appear here.
 Cross-skill references are `shipshape:<name>`.

@@ -168,7 +168,7 @@ bare_negations="$(awk '
     prev_blank = 0
   }
   END { flush() }
-' "$skills_dir"/*/*.md 2>/dev/null)"
+' "$skills_dir"/*/SKILL.md 2>/dev/null)"
 [ -z "$bare_negations" ] || fail "bare negation paragraphs — state the positive target instead:
 $(printf '%s' "$bare_negations" | sed 's/^/          /')"
 

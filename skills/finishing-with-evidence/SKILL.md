@@ -61,9 +61,9 @@ Smoke last, or smoke again.
 
 Two lists, both minutes of work, both recorded in the retro.
 
-**The assumption sweep.** Every `ASSUMPTION:` marker and numbered decision in
-the design becomes either a task that shipped (`satisfies` in its fence) or
-one line: "already true, verified by X". The first sweep ever run in the field
+**The assumption sweep.** Every recorded assumption, `ASSUMPTION:` marker and
+numbered decision in the design becomes either a task that shipped
+(`satisfies` in its fence) or one line: "already true, verified by X". The first sweep ever run in the field
 found two misses in nine ratified assumptions — one a latent deploy hole.
 Anything unaccounted for is work, not a footnote.
 

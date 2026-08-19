@@ -12,7 +12,9 @@ description of work for another agent, losing something in the handoff. A
 session that implements what it designed has no such boundary to lose things
 across.
 
-The whole-branch reviewer at the end is the one dispatch this mode requires.
+The whole-branch reviewer at the end is the one dispatch this mode always
+requires; when the branch implements a design document, the conformance lane
+in `shipshape:requesting-code-review` adds a second.
 The rest is arithmetic, not doctrine: your context is the scarce resource and
 a subagent's is disposable, so keep the work that teaches you the codebase —
 design, integration, anything the next task builds on — and hand off what is

@@ -51,8 +51,9 @@ a second reader for.
 
 ## The conformance lane
 
-When the branch implements a design document, dispatch a **second** reviewer,
-marked `design-conformance:`, with the design and the diff. Its question is
+When the branch implements a design document, dispatch a **second** reviewer —
+synchronously, like the first — marked `design-conformance:`, with the design
+and the diff. Its question is
 not "is this code sound" but "is this the code the design ordered": every gap
 typed as **missing**, **partial**, **contradicts**, or **unrequested** — code
 no decision asked for is a finding, not a bonus. The hook files its report as

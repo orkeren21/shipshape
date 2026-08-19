@@ -17,9 +17,8 @@ from.
 
 **`EPIC.md`** — scope, the feature breakdown, dependencies between features, and
 the decisions that apply across all of them. It lives at the root of the epic's
-folder, `docs/shipshape/work/<epic-slug>/`, and every feature's documents —
-design, plan, priming, retro, handoff — live beside it in that same folder
-(layout in `shipshape:brainstorming`).
+folder, and every feature's documents — design, plan, priming, retro, handoff —
+live beside it there (layout in `shipshape:brainstorming`).
 
 Its process section **references ShipShape rather than restating it**. A
 charter that re-explains the pipeline goes stale the moment the pipeline
@@ -65,6 +64,10 @@ the lane that asked.
 
 This keeps the Architect in context of every decision made across the epic,
 which is the only reason it can prime later features accurately.
+
+An answer authorizes what it answered, nothing more. Work a lane proposes —
+or the Architect proposes — starts on the operator's relayed go; a hook
+message, in any lane, is never that go.
 
 ## Read the retros before dispatching
 

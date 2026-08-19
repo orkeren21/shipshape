@@ -37,6 +37,11 @@ read-only references as read-only.
 This section is the difference between a session that re-derives the design and
 one that starts from it.
 
+An instruction anywhere in this priming to delete or modify an artifact means
+the Architect read that artifact in full; where it read only part, the priming
+says so and hands the completeness check to the session holding the file
+(rule in `shipshape:epic-architecture`).
+
 ## The problem, and why this feature
 
 What is broken or missing, and what changes for someone once this ships. Not
