@@ -49,6 +49,31 @@ to look. Never your session history — history puts the reviewer on your
 thought process instead of the work product, which is the one thing you needed
 a second reader for.
 
+## The conformance lane
+
+When the branch implements a design document, dispatch a **second** reviewer,
+marked `design-conformance:`, with the design and the diff. Its question is
+not "is this code sound" but "is this the code the design ordered": every gap
+typed as **missing**, **partial**, **contradicts**, or **unrequested** — code
+no decision asked for is a finding, not a bonus. The hook files its report as
+`conformance-*.md`, distinct from the review the done gate reads, and it is
+never a substitute for the whole-branch review.
+
+Two dispatches on purpose. A reviewer holding five quality findings
+under-reports the "you built the wrong thing" axis, so the axes never share a
+context and their findings are never reranked against each other. In the
+field, the designs were right and the diffs drifted — things fell out of the
+pipe between the ratified document and the code, and only a reader holding the
+document catches that.
+
+## Fix commits are fresh code
+
+The highest-defect-density code in the field data was the fix written in
+answer to a finding — momentum, in code the author just learned was subtle.
+The gate already enforces the consequence: a review predating HEAD is stale,
+so every fix diff gets its scoped re-review before the branch is finished.
+That is the mechanism working, not friction to route around.
+
 **Never tell the reviewer to be conservative, to filter, or to report only what
 matters.** Under that instruction it reports less than it found, and what goes
 missing is not reliably the unimportant part. Ask for everything, with
