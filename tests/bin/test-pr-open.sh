@@ -40,6 +40,13 @@ log="$(cat "$GH_STUB_LOG")"
 assert_contains "$log" "pr create" "gh pr create was actually invoked"
 assert_contains "$log" "Add the thing" "the caller's arguments were passed through untouched"
 
+# Obligations are tracked per PR, so a later PR cannot overwrite this one's.
+assert_file "$scratch/pr-armed-42" "arming also writes a record keyed by the PR number"
+record="$(cat "$scratch/pr-armed-42" 2>/dev/null)"
+assert_contains "$record" "number=42" "the per-PR record knows its number"
+assert_contains "$record" "pull/42" "and its URL"
+assert_contains "$record" "branch=" "and the branch the PR was opened from"
+
 # --- no PR, no arming --------------------------------------------------------
 
 rm -rf "$scratch" "$GH_STUB_LOG"
@@ -59,6 +66,21 @@ GH_STUB_PR_URL="https://github.com/acme/widget/pull/43" "$pr_open" --title "two"
 second="$(cat "$scratch/pr-armed")"
 assert_contains "$second" "pull/43" "re-opening updates the arming file to the current PR"
 assert_ne "$first" "$second" "the arming file is refreshed rather than left stale"
+
+# The cascade case observation 2 was about: PR #2 arms without evaporating
+# PR #1's obligation.
+assert_file "$scratch/pr-armed-42" "the first PR's obligation record survives a second PR"
+assert_file "$scratch/pr-armed-43" "and the second PR gets its own record"
+assert_contains "$(cat "$scratch/pr-armed-42" 2>/dev/null)" "pull/42" \
+  "the first record still describes the first PR"
+
+# A URL the wrapper cannot parse still leaves a per-PR record — an unnumbered
+# obligation is better than an evaporated one.
+rm -rf "$scratch"
+GH_STUB_PR_URL="created (gh printed no url)" "$pr_open" --title "odd" >/dev/null 2>&1
+assert_file "$scratch/pr-armed" "an unparseable URL still arms the gate"
+ls "$scratch"/pr-armed-* >/dev/null 2>&1 \
+  || fail "an unparseable URL still writes a per-PR obligation record"
 
 # --- arming has no off switch ------------------------------------------------
 #
