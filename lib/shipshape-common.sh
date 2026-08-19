@@ -343,6 +343,46 @@ shipshape_emit_context() {
 }
 
 # ---------------------------------------------------------------------------
+# Waivers
+# ---------------------------------------------------------------------------
+
+# A gate exception is a file, not a transcript claim: .shipshape.yaml at the
+# repo root, one line per waived leg —
+#
+#   skip_smoke: true  # reason: docs-only change, no runnable flow
+#
+# The reason is load-bearing. The waiver is the part of the branch a reviewer
+# most needs to read, and an unexplained one is treated as absent — the gates
+# say so rather than silently ignoring the line. Env kill switches still exist
+# for emergencies; the waiver is the reviewable, per-work-item form.
+
+shipshape_waiver_file() {
+  printf '%s/.shipshape.yaml' "$(shipshape_scratch_root)"
+}
+
+shipshape_waiver_line() { # <leg> -> the waiving line, if any
+  grep -E "^skip_$1:[[:space:]]*true" "$(shipshape_waiver_file)" 2>/dev/null | head -1
+}
+
+shipshape_waived() { # <leg> -> 0 when waived with a reason
+  local line
+  line="$(shipshape_waiver_line "$1")"
+  [ -n "$line" ] || return 1
+  printf '%s' "$line" | grep -q '#[^#]*[A-Za-z]' || return 1
+  return 0
+}
+
+shipshape_waiver_unreasoned() { # <leg> -> 0 when waived without a reason
+  local line
+  line="$(shipshape_waiver_line "$1")"
+  [ -n "$line" ] || return 1
+  if printf '%s' "$line" | grep -q '#[^#]*[A-Za-z]'; then
+    return 1
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # Context pressure
 # ---------------------------------------------------------------------------
 

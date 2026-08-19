@@ -108,17 +108,33 @@ missing=""
 add() { missing="${missing}  - $1
 "; }
 
+# A leg the operator waived in .shipshape.yaml is skipped, with the waiver
+# traced so the exception leaves a record. A waiver missing its reason is not
+# honored — and gets named, because a line the gate silently ignores is the
+# same failure as a file it silently ignores.
+leg_note_unreasoned() { # <leg>
+  add "note — .shipshape.yaml waives the $1 leg without a reason, so the waiver is not honored. Give it one: skip_$1: true  # reason: <why this leg does not apply>"
+}
+
 # --- the review report -------------------------------------------------------
 #
 # Newest by modification time, not by name: a re-review written in the same
 # second gets a suffix that sorts after the original, and picking the
 # lexically-last file would then judge recency on the wrong one.
 
+if shipshape_waived review; then
+  shipshape_trace done-gate "review leg waived: $(shipshape_waiver_line review)"
+else
+before_review="$missing"
 review=""
 newest_mtime=0
+empty_reviews=""
 for candidate in "$scratch"/review-*.md; do
   [ -f "$candidate" ] || continue
-  [ -s "$candidate" ] || continue
+  if [ ! -s "$candidate" ]; then
+    empty_reviews="$empty_reviews $(basename "$candidate")"
+    continue
+  fi
   candidate_mtime="$(shipshape_mtime "$candidate")"
   [ -n "$candidate_mtime" ] || continue
   if [ "$candidate_mtime" -ge "$newest_mtime" ]; then
@@ -127,7 +143,9 @@ for candidate in "$scratch"/review-*.md; do
   fi
 done
 
-if [ -z "$review" ]; then
+if [ -z "$review" ] && [ -n "$empty_reviews" ]; then
+  add "review report — ignored:$empty_reviews (empty). An empty file at the right name is not a review; dispatch the reviewer synchronously with \"whole-branch-review:\" in the description."
+elif [ -z "$review" ]; then
   add "review report — no whole-branch review has been captured. Dispatch the reviewer synchronously with \"whole-branch-review:\" in the description; the hook writes the report from what it returns."
 elif ! shipshape_newer_than_head "$review"; then
   add "review report — stale: it predates the current HEAD commit, so it did not see the code being shipped. Re-review the branch."
@@ -150,9 +168,15 @@ else
       ;;
   esac
 fi
+[ "$missing" != "$before_review" ] && shipshape_waiver_unreasoned review && leg_note_unreasoned review
+fi
 
 # --- CI ----------------------------------------------------------------------
 
+if shipshape_waived ci; then
+  shipshape_trace done-gate "ci leg waived: $(shipshape_waiver_line ci)"
+else
+before_ci="$missing"
 if [ ! -f "$scratch/ci-status" ]; then
   add "ci-status — CI has not been watched to a verdict. Run shipshape-ci-watch."
 elif ! grep -qE '^result=green(-pending-review)?$' "$scratch/ci-status" 2>/dev/null; then
@@ -161,6 +185,8 @@ elif ! grep -qE '^result=green(-pending-review)?$' "$scratch/ci-status" 2>/dev/n
 elif ! shipshape_newer_than_head "$scratch/ci-status"; then
   add "ci-status — stale: it predates the current HEAD commit. Run shipshape-ci-watch again."
 fi
+[ "$missing" != "$before_ci" ] && shipshape_waiver_unreasoned ci && leg_note_unreasoned ci
+fi
 
 # --- the scoped smoke --------------------------------------------------------
 
@@ -168,6 +194,10 @@ fi
 # already written into it by the wrapper, and the HEAD it was gathered against
 # is in its header — so staleness comes from the log's own content rather than
 # the file's modification time, which one appended command would refresh.
+if shipshape_waived smoke; then
+  shipshape_trace done-gate "smoke leg waived: $(shipshape_waiver_line smoke)"
+else
+before_smoke="$missing"
 smoke_log="$scratch/smoke.log"
 if [ ! -s "$smoke_log" ]; then
   add "smoke.log — the changed flows have not been exercised. Run them through shipshape-smoke."
@@ -184,6 +214,8 @@ else
   elif [ "${smoke_failures:-0}" -gt 0 ]; then
     add "smoke.log — $smoke_failures of $smoke_runs smoke commands exited non-zero. A smoke that failed is not evidence the change works; fix it and smoke again."
   fi
+fi
+[ "$missing" != "$before_smoke" ] && shipshape_waiver_unreasoned smoke && leg_note_unreasoned smoke
 fi
 
 # The legs above describe the branch the session is on. With no record for
@@ -213,9 +245,32 @@ if [ -n "$current_numbers" ]; then
 fi
 
 if [ -z "$missing" ] && [ -z "$elsewhere_lines" ]; then
+  # Forgetting the last nudge here is what lets the next debt speak: a fresh
+  # PR whose outstanding list happens to read identically must not inherit
+  # this one's silence.
+  rm -f "$scratch/done-gate-last-nudge"
   shipshape_trace done-gate "armed and satisfied — review, CI and smoke all present and current"
   exit 0
 fi
+
+# The soft tier speaks when the outstanding state changes and stays silent
+# while it does not. A merge-queue monitor can end five turns in a row; five
+# identical nudges teach the reader to skip the sixth, and a gate nobody reads
+# is a gate that already failed. The hard tier never dedupes — a completion
+# claim is always answered.
+nudge_once() { # <text> <trace-note>
+  local digest last
+  digest="$(printf '%s' "$1" | cksum 2>/dev/null | cut -d' ' -f1)"
+  last="$(cat "$scratch/done-gate-last-nudge" 2>/dev/null)"
+  if [ -n "$digest" ] && [ "$digest" = "$last" ]; then
+    shipshape_trace done-gate "state unchanged, staying silent — $2"
+    exit 0
+  fi
+  [ -n "$digest" ] && printf '%s' "$digest" > "$scratch/done-gate-last-nudge"
+  shipshape_trace done-gate "$2"
+  shipshape_emit_system_message "$1" done_gate_nudge
+  exit 0
+}
 
 # --- which tier --------------------------------------------------------------
 
@@ -239,12 +294,11 @@ if [ "$claim" = yes ] && [ -z "$missing" ] && [ -n "$elsewhere_lines" ]; then
   # The trace decides, not our confidence in the reasoning.
   #
   #   grep -c DOWNGRADE-BRANCH-MISMATCH .shipshape/*/trace.log
-  shipshape_trace done-gate "DOWNGRADE-BRANCH-MISMATCH completion claim on $current_branch while other branches' pull requests owe evidence; nudged instead of blocking"
-  shipshape_emit_system_message "ShipShape — pull requests opened this session still owe evidence:
+  nudge_once "ShipShape — pull requests opened this session still owe evidence:
 
 $elsewhere_lines
-You are on $current_branch now, so this is a note rather than a refusal."
-  exit 0
+You are on $current_branch now, so this is a note rather than a refusal." \
+    "DOWNGRADE-BRANCH-MISMATCH completion claim on $current_branch while other branches' pull requests owe evidence; nudged instead of blocking"
 fi
 
 if [ "$claim" = yes ] && [ -n "$missing" ]; then
@@ -257,7 +311,7 @@ Other pull requests from this session are also still owing:
 $elsewhere_lines"
   shipshape_trace done-gate "blocked a completion claim; outstanding evidence follows"
   shipshape_emit_block "$block_text
-Each of these is an artifact a gate reads, not a statement to make. Produce them, then say the branch is done."
+Each of these is an artifact a gate reads, not a statement to make. Produce them, then say the branch is done." done_gate_unfinished
   exit 0
 fi
 
@@ -274,6 +328,4 @@ if [ -n "$elsewhere_lines" ]; then
 
 $elsewhere_lines"
 fi
-shipshape_trace done-gate "nudged; evidence still outstanding"
-shipshape_emit_system_message "$nudge_text"
-exit 0
+nudge_once "$nudge_text" "nudged; evidence still outstanding"

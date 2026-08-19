@@ -148,11 +148,18 @@ printf 'head=%s\n\n' "$(git -C "$repo" rev-parse HEAD)" > "$scratch/smoke.log"
 out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
 assert_eq "block" "$(hook_field "$out" decision)" "a smoke log with no completed run is not a smoke"
 
-# --- an empty review report is not a review ----------------------------------
+# --- an empty review report is not a review, and the near-miss is named ------
+#
+# A file at almost the right shape is the worst silent failure: the session
+# believes the evidence exists, the gate ignores it, and nothing says so. What
+# the gate declines to read, it names.
 
 : > "$scratch/review-1.md"
 out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
 assert_eq "block" "$(hook_field "$out" decision)" "an empty review file does not count as a review"
+assert_contains "$(hook_field "$out" reason)" "review-1.md" \
+  "the ignored near-miss file is named, not silently skipped"
+assert_contains "$(hook_field "$out" reason)" "empty" "and the reason it was ignored is stated"
 
 # --- a report with no verdict is an unfinished review ------------------------
 #
@@ -256,6 +263,83 @@ assert_eq "block" "$(hook_field "$out" decision)" \
   "a completion claim after a new commit is blocked — the stamp went stale with HEAD"
 
 export SHIPSHAPE_SCRATCH_ROOT="$outer_cascade_root"
+
+# --- the nudge repeats only when the state changes ---------------------------
+#
+# The field complaint: a merge-queue monitor ends a turn per event, and the
+# identical nudge arrived five times in a row. Repetition trains the operator
+# and the model to ignore the gate, which is how evidence gets skipped. The
+# hard tier is exempt: a completion claim is always answered.
+
+dd="$work/dedupe-repo"
+make_repo "$dd"
+outer_dedupe_root="$SHIPSHAPE_SCRATCH_ROOT"
+export SHIPSHAPE_SCRATCH_ROOT="$dd"
+dscratch="$dd/.shipshape/$session"
+mkdir -p "$dscratch"
+printf 'url=https://x/pull/11\nnumber=11\nbranch=%s\nepoch=%s\n' \
+  "$(git -C "$dd" rev-parse --abbrev-ref HEAD)" "$(date -u +%s)" > "$dscratch/pr-armed-11"
+
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$dd")"
+assert_contains "$(hook_field "$out" systemMessage)" "review" "the first nudge speaks"
+
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$dd")"
+assert_eq "" "$(hook_field "$out" systemMessage)" \
+  "the same outstanding state is not nudged about twice"
+assert_eq "0" "$(hook_status)" "staying silent is not blocking"
+
+printf 'result=green\nchecks_exit=0\nmerge_state=CLEAN\n' > "$dscratch/ci-status"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$dd")"
+nudge="$(hook_field "$out" systemMessage)"
+assert_contains "$nudge" "review" "a changed state speaks again"
+assert_not_contains "$nudge" "ci-status" "and describes the new state, not the old one"
+
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$dd")"
+assert_eq "block" "$(hook_field "$out" decision)" "a claim is blocked regardless of the dedupe"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$dd")"
+assert_eq "block" "$(hook_field "$out" decision)" "and blocked again — the hard tier never dedupes"
+
+# Satisfaction clears the memory: the next armed-and-owing state speaks even
+# if its text happens to match the last one.
+printf '# Review\n\n**Ready to merge?** Yes\n' > "$dscratch/review-1.md"
+printf 'head=%s\n\n=== $ x\nok\n=== exit 0\n\n' "$(git -C "$dd" rev-parse HEAD)" > "$dscratch/smoke.log"
+run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$dd" >/dev/null
+rm -f "$dscratch"/review-*.md "$dscratch/ci-status" "$dscratch/smoke.log" "$dscratch"/pr-satisfied-*
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$dd")"
+assert_contains "$(hook_field "$out" systemMessage)" "review" \
+  "after a satisfied pass, a fresh debt is nudged about even with identical text"
+
+export SHIPSHAPE_SCRATCH_ROOT="$outer_dedupe_root"
+
+# --- waivers: the exception is a file with a reason, not a transcript claim --
+
+wv="$work/waiver-repo"
+make_repo "$wv"
+outer_waiver_root="$SHIPSHAPE_SCRATCH_ROOT"
+export SHIPSHAPE_SCRATCH_ROOT="$wv"
+wscratch="$wv/.shipshape/$session"
+mkdir -p "$wscratch"
+printf 'url=https://x/pull/13\nnumber=13\nbranch=%s\nepoch=%s\n' \
+  "$(git -C "$wv" rev-parse --abbrev-ref HEAD)" "$(date -u +%s)" > "$wscratch/pr-armed-13"
+printf '# Review\n\n**Ready to merge?** Yes\n' > "$wscratch/review-1.md"
+printf 'result=green\nchecks_exit=0\nmerge_state=CLEAN\n' > "$wscratch/ci-status"
+# No smoke log — the leg is waived instead, with a reason.
+printf 'skip_smoke: true  # reason: docs-only change, no runnable flow\n' > "$wv/.shipshape.yaml"
+
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$wv")"
+assert_eq "" "$(hook_field "$out" decision)" "a reasoned waiver satisfies the leg it names"
+assert_file "$wscratch/pr-satisfied-13" "a waived leg still lets the PR reach satisfied"
+assert_contains "$(cat "$wscratch/trace.log")" "waived" \
+  "the honored waiver is traced, so the exception leaves a record"
+
+# A waiver without a reason is treated as absent, and the gate says why.
+printf 'skip_smoke: true\n' > "$wv/.shipshape.yaml"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$wv")"
+assert_eq "block" "$(hook_field "$out" decision)" "an unexplained waiver is not honored"
+assert_contains "$(hook_field "$out" reason)" "reason" \
+  "and the gate names the missing reason rather than silently ignoring the line"
+
+export SHIPSHAPE_SCRATCH_ROOT="$outer_waiver_root"
 
 # --- loop guard --------------------------------------------------------------
 
