@@ -5,7 +5,7 @@ description: Use when the implementation is complete and the branch needs to be 
 
 # Finishing with evidence
 
-Five steps, in this order. Each one produces an artifact, and the artifacts are
+Six steps, in this order. Each one produces an artifact, and the artifacts are
 what the done gate reads — not what you say about them. The gate arms the
 moment step 1 succeeds, so there is no version of this where the steps are
 optional.
@@ -57,13 +57,35 @@ end-to-end suite has its own cadence and is never invoked per pull request.
 If a commit lands after the smoke, the smoke is stale and the gate will say so.
 Smoke last, or smoke again.
 
-## 4. Write the retro
+## 4. Sweep the design against the diff
+
+Two lists, both minutes of work, both recorded in the retro.
+
+**The assumption sweep.** Every `ASSUMPTION:` marker and numbered decision in
+the design becomes either a task that shipped (`satisfies` in its fence) or
+one line: "already true, verified by X". The first sweep ever run in the field
+found two misses in nine ratified assumptions — one a latent deploy hole.
+Anything unaccounted for is work, not a footnote.
+
+**The first-execution inventory.** List every path whose first real execution
+will be in production — the steps a dry run structurally cannot reach: writes,
+publishes, one-shot workflow steps. Each entry gets a scratch-target rehearsal
+or an explicit accepted-bet line naming the blast radius. A release cut in the
+field died at the one step its dry run never exercised, on a workflow that
+could not be re-run. Silence is how those become incidents.
+
+## 5. Write the retro
 
 `shipshape:writing-retros`, next to the design document in the work item's
 folder. Before reporting done, not after — the retro is where the Minor
 findings from review go, and where the next lane's priming comes from.
 
-## 5. Report
+A defect found after merge, whenever and by whomever, gets one line in the
+committed `docs/escapes.md` naming the gate that could have caught it — see
+the escapes ledger in `shipshape:writing-retros`. That column is what tunes
+the gates instead of a hunch.
+
+## 6. Report
 
 Outcome first, in plain English, for someone who saw none of the work. See
 `shipshape:plain-english-reporting`.

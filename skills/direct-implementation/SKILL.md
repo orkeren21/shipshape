@@ -12,8 +12,15 @@ description of work for another agent, losing something in the handoff. A
 session that implements what it designed has no such boundary to lose things
 across.
 
-The only subagent this mode requires is the whole-branch reviewer at the end.
-Dispatch nothing for the sake of dispatching.
+The whole-branch reviewer at the end is the one dispatch this mode requires.
+The rest is arithmetic, not doctrine: your context is the scarce resource and
+a subagent's is disposable, so keep the work that teaches you the codebase —
+design, integration, anything the next task builds on — and hand off what is
+independent and self-contained, where writing the brief costs less than doing
+the thing. Bulk mechanical edits, independent test-file fixes, research and
+log-reading, unrelated failures investigated in parallel: see
+`shipshape:dispatching-parallel-agents` for the dispatch pattern. Dispatch for
+that arithmetic, never for ceremony.
 
 ## Start with an isolated tree
 
