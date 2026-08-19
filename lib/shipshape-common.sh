@@ -271,21 +271,69 @@ shipshape_json_escape() {
   printf '"%s"' "$s"
 }
 
+# The three refusal emitters share one optional envelope:
+#
+#   shipshape_emit_block <text> [code] [fix]
+#
+# A code is a stable, greppable name for the refusal (done_gate_smoke_stale).
+# It rides on the JSON as shipshapeCode — a key Claude Code does not read and
+# ignores — and goes to the trace, which is what lets a month of traces answer
+# "which gate fires most" without parsing prose. A fix is one pasteable
+# command, appended to the text the model reads. Calls without a code emit the
+# same bytes they always have: the envelope is opt-in per call site, never a
+# migration.
+
+_shipshape_emit_with_fix() { # <text> <fix> -> text with the fix appended
+  if [ -n "$2" ]; then
+    printf '%s\n\nFix:\n  %s' "$1" "$2"
+  else
+    printf '%s' "$1"
+  fi
+}
+
+_shipshape_emit_trace() { # <code> <fix>
+  shipshape_trace emit "$1${2:+ — fix: $2}"
+}
+
 # Stop / TaskCompleted / PostToolUse: refuse, and tell Claude why.
 shipshape_emit_block() {
-  printf '{"decision":"block","reason":%s}\n' "$(shipshape_json_escape "$1")"
+  local text code="${2:-}" fix="${3:-}"
+  text="$(_shipshape_emit_with_fix "$1" "$fix")"
+  if [ -n "$code" ]; then
+    _shipshape_emit_trace "$code" "$fix"
+    printf '{"decision":"block","reason":%s,"shipshapeCode":%s}\n' \
+      "$(shipshape_json_escape "$text")" "$(shipshape_json_escape "$code")"
+  else
+    printf '{"decision":"block","reason":%s}\n' "$(shipshape_json_escape "$text")"
+  fi
 }
 
 # A visible note that does not stop anything. This is the soft tier: the user
 # sees what is still outstanding, and the turn ends normally.
 shipshape_emit_system_message() {
-  printf '{"systemMessage":%s}\n' "$(shipshape_json_escape "$1")"
+  local text code="${2:-}" fix="${3:-}"
+  text="$(_shipshape_emit_with_fix "$1" "$fix")"
+  if [ -n "$code" ]; then
+    _shipshape_emit_trace "$code" "$fix"
+    printf '{"systemMessage":%s,"shipshapeCode":%s}\n' \
+      "$(shipshape_json_escape "$text")" "$(shipshape_json_escape "$code")"
+  else
+    printf '{"systemMessage":%s}\n' "$(shipshape_json_escape "$text")"
+  fi
 }
 
 # PreToolUse refuses through permissionDecision rather than a top-level decision.
 shipshape_emit_deny() {
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s}}\n' \
-    "$(shipshape_json_escape "$1")"
+  local text code="${2:-}" fix="${3:-}"
+  text="$(_shipshape_emit_with_fix "$1" "$fix")"
+  if [ -n "$code" ]; then
+    _shipshape_emit_trace "$code" "$fix"
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s},"shipshapeCode":%s}\n' \
+      "$(shipshape_json_escape "$text")" "$(shipshape_json_escape "$code")"
+  else
+    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s}}\n' \
+      "$(shipshape_json_escape "$1")"
+  fi
 }
 
 # Add context for Claude on an event that supports it.
