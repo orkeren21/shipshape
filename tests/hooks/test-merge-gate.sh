@@ -132,6 +132,17 @@ assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "single line" \
   "and the refusal says how to phrase the merge so it can be judged"
 
+# A continuation splitting the token run itself is still detected — the
+# words never share a line, but bash folds them into one real merge.
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr \\
+merge 444")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a continuation inside the command's own tokens cannot hide the merge"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh \\
+pr merge 444")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "wherever the split lands"
+
 # The two shapes that defeated the folding approach stay denied.
 out="$(run_hook merge-gate.sh "$(merge_payload "echo x \\\\
 gh pr merge 444")" "$repo")"

@@ -47,7 +47,14 @@ nl='
 '
 case "$command_line" in
   *"\\$nl"*)
-    if printf '%s' "$command_line" | grep -qE 'gh[[:space:]]+pr[[:space:]]+merge'; then
+    # The detection itself must not read per line: a continuation can split
+    # the token run (`gh pr \` + `merge`), and then no single line contains
+    # the words. Blanking backslashes and newlines first means the check can
+    # only over-match — into this deny, never past it. The judgment below
+    # still never parses continuations; regex-matching shell keeps its known
+    # boundary (`gh "pr" merge` and friends evade any of this), and the
+    # matching discipline shared with pr-wrapper-gate accepts that openly.
+    if printf '%s' "$command_line" | tr '\\\n' '  ' | grep -qE 'gh[[:space:]]+pr[[:space:]]+merge'; then
       shipshape_trace merge-gate "denied: merge command uses line continuations; cannot be judged safely"
       shipshape_emit_deny "This command mentions gh pr merge and uses backslash-newline continuations, which this gate cannot attribute safely. Write the merge as a single line — gh pr merge <number> [flags] — so it can be judged." \
         merge_gate_unparseable "gh pr merge <number> --squash"
