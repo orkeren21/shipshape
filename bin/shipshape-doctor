@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# Print the evidence state the gates would act on. Read-only, exit 0, always.
+#
+#   shipshape-doctor
+#
+# Diagnosis and enforcement stay separate on purpose. The done gate nudges and
+# the merge gate refuses; this only answers "where am I" — which PRs this
+# session armed, what each leg of the evidence looks like against the current
+# HEAD, which waivers are active, and what the merge gate would say right now.
+# It writes nothing, not even a trace: a diagnostic that mutates state can be
+# gamed into a bypass, and one that exits non-zero becomes a gate nobody
+# asked for.
+#
+# The verdict logic mirrors the gates by reading the same artifacts the same
+# way. If the doctor and a gate ever disagree, the doctor is wrong and the
+# gate is the truth — tests pin them together.
+
+set -uo pipefail
+
+lib="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../lib" && pwd)"
+# shellcheck source=../lib/shipshape-common.sh
+. "$lib/shipshape-common.sh"
+
+# The scratch path is computed, never created — shipshape_scratch_dir would
+# mkdir, and looking must not leave footprints.
+scratch="$(shipshape_scratch_root)/.shipshape/$(shipshape_session_id)"
+
+current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+current_head="$(git rev-parse HEAD 2>/dev/null)"
+
+field() { grep "^$2=" "$1" 2>/dev/null | head -1 | cut -d= -f2-; }
+
+printf 'ShipShape doctor — session %s, branch %s (HEAD %s)\n\n' \
+  "$(shipshape_session_id)" "${current_branch:-none}" \
+  "$(printf '%s' "${current_head:-no-git}" | cut -c1-8)"
+
+# ---- the evidence legs, as the done gate reads them -------------------------
+
+leg_line() { printf '  %-8s %s\n' "$1" "$2"; }
+
+if shipshape_waived review; then
+  leg_line review "waived — $(shipshape_waiver_line review)"
+else
+  review=""
+  newest_mtime=0
+  for candidate in "$scratch"/review-*.md; do
+    [ -s "$candidate" ] || continue
+    candidate_mtime="$(shipshape_mtime "$candidate")"
+    [ -n "$candidate_mtime" ] || continue
+    if [ "$candidate_mtime" -ge "$newest_mtime" ]; then
+      newest_mtime="$candidate_mtime"
+      review="$candidate"
+    fi
+  done
+  if [ -z "$review" ]; then
+    leg_line review 'missing — dispatch the reviewer with "whole-branch-review:" in the description'
+  elif ! shipshape_newer_than_head "$review"; then
+    leg_line review "stale — $(basename "$review") predates HEAD; re-review the branch"
+  elif ! grep -qi 'ready to merge' "$review" 2>/dev/null; then
+    leg_line review "no verdict — $(basename "$review") never answers \"Ready to merge?\""
+  else
+    leg_line review "ok — $(basename "$review"), fresh, carries a verdict"
+  fi
+fi
+
+if shipshape_waived ci; then
+  leg_line ci "waived — $(shipshape_waiver_line ci)"
+elif [ ! -f "$scratch/ci-status" ]; then
+  leg_line ci "missing — run shipshape-ci-watch"
+elif ! grep -qE '^result=green(-pending-review)?$' "$scratch/ci-status" 2>/dev/null; then
+  leg_line ci "not green ($(field "$scratch/ci-status" result)) — fix and run shipshape-ci-watch again"
+elif ! shipshape_newer_than_head "$scratch/ci-status"; then
+  leg_line ci "stale — predates HEAD; run shipshape-ci-watch again"
+else
+  leg_line ci "green and fresh"
+fi
+
+if shipshape_waived smoke; then
+  leg_line smoke "waived — $(shipshape_waiver_line smoke)"
+elif [ ! -s "$scratch/smoke.log" ]; then
+  leg_line smoke "missing — exercise the changed flows through shipshape-smoke"
+else
+  smoke_head="$(field "$scratch/smoke.log" head)"
+  smoke_runs="$(grep -c '^=== exit ' "$scratch/smoke.log" 2>/dev/null | tr -d ' ')"
+  smoke_failures="$(grep '^=== exit ' "$scratch/smoke.log" 2>/dev/null | grep -vc '^=== exit 0$' | tr -d ' ')"
+  if [ -n "$current_head" ] && [ "$smoke_head" != "$current_head" ]; then
+    leg_line smoke "stale — gathered against $(printf '%s' "$smoke_head" | cut -c1-8); smoke the branch again"
+  elif [ "${smoke_runs:-0}" -eq 0 ]; then
+    leg_line smoke "no completed run — exercise the changed flows through shipshape-smoke"
+  elif [ "${smoke_failures:-0}" -gt 0 ]; then
+    leg_line smoke "$smoke_failures of $smoke_runs commands failed — a failing smoke is not evidence"
+  else
+    leg_line smoke "ok — $smoke_runs commands, all exit 0, current HEAD"
+  fi
+fi
+
+if shipshape_waived merge_gate; then
+  leg_line merge "gate waived — $(shipshape_waiver_line merge_gate)"
+fi
+
+printf '\n'
+
+# ---- the obligation records, as the merge gate judges them ------------------
+
+records=""
+for record_file in "$scratch"/pr-armed-*; do
+  [ -f "$record_file" ] || continue
+  records="$records$record_file
+"
+done
+if [ -z "$records" ] && [ -f "$scratch/pr-armed" ]; then
+  records="$scratch/pr-armed
+"
+fi
+
+if [ -z "$records" ]; then
+  printf 'nothing armed this session — no pull request opened through shipshape-pr-open.\n'
+  exit 0
+fi
+
+while IFS= read -r record_file; do
+  [ -n "$record_file" ] || continue
+  case "$(basename "$record_file")" in
+    pr-armed) rec_number="legacy" ;;
+    *)        rec_number="$(basename "$record_file" | sed 's/^pr-armed-//')" ;;
+  esac
+  rec_branch="$(field "$record_file" branch)"
+  rec_url="$(field "$record_file" url)"
+  stamp="$scratch/pr-satisfied-$rec_number"
+  if [ ! -f "$stamp" ]; then
+    printf 'PR #%s (%s, branch %s) — OWING\n' "$rec_number" "${rec_url:-url unrecorded}" "${rec_branch:-unknown}"
+    printf '  merge gate: would deny (merge_gate_unsatisfied)\n'
+    continue
+  fi
+  stamp_head="$(field "$stamp" head)"
+  stamp_branch="$(field "$stamp" branch)"
+  branch_head=""
+  [ -n "$stamp_branch" ] && branch_head="$(git rev-parse "$stamp_branch" 2>/dev/null)"
+  if [ -n "$branch_head" ] && [ "$stamp_head" != "$branch_head" ]; then
+    printf 'PR #%s (%s, branch %s) — STALE: satisfied at %s, branch now at %s\n' \
+      "$rec_number" "${rec_url:-url unrecorded}" "${rec_branch:-unknown}" \
+      "$(printf '%s' "$stamp_head" | cut -c1-8)" "$(printf '%s' "$branch_head" | cut -c1-8)"
+    printf '  merge gate: would deny (merge_gate_stale)\n'
+  else
+    printf 'PR #%s (%s, branch %s) — SATISFIED at %s\n' \
+      "$rec_number" "${rec_url:-url unrecorded}" "${rec_branch:-unknown}" \
+      "$(printf '%s' "$stamp_head" | cut -c1-8)"
+    printf '  merge gate: would allow the merge\n'
+  fi
+done <<SHIPSHAPE_RECORDS
+$records
+SHIPSHAPE_RECORDS
+
+exit 0

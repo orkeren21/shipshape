@@ -123,7 +123,7 @@ fi
 
 if [ ! -f "$stamp" ]; then
   shipshape_trace merge-gate "denied: PR #$number armed but not satisfied"
-  shipshape_emit_deny "PR #$number still owes its evidence set. The done gate stamps a PR satisfied when the whole-branch review, green CI and the scoped smoke are all present and fresh; that stamp is what this merge needs, and it does not exist yet." \
+  shipshape_emit_deny "PR #$number still owes its evidence set. The done gate stamps a PR satisfied when the whole-branch review, green CI and the scoped smoke are all present and fresh; that stamp is what this merge needs, and it does not exist yet. shipshape-doctor shows exactly which legs are outstanding." \
     merge_gate_unsatisfied "shipshape-ci-watch $number"
   exit 0
 fi

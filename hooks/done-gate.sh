@@ -328,4 +328,6 @@ if [ -n "$elsewhere_lines" ]; then
 
 $elsewhere_lines"
 fi
+nudge_text="$nudge_text
+Run shipshape-doctor for the full evidence state."
 nudge_once "$nudge_text" "nudged; evidence still outstanding"
