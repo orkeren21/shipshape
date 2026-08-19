@@ -122,6 +122,24 @@ gh pr merge 57")" "$repo")"
 assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "a number on an unrelated line is not read as the PR being merged"
 
+# A backslash continuation is one command wearing two lines — the number after
+# the fold belongs to this merge, not to a bare merge of the current branch.
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge \\
+444 --squash")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a continuation-line PR number is judged as this merge's target"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "444" \
+  "and the refusal names that PR, not the current branch's"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge \\
+57 --squash")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a continuation-line merge of the stamped PR is allowed"
+
+# Prose in a quoted body is not a second invocation.
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 57 --body \"reverts what gh pr merge did\"")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a quoted mention of the command is prose, not a compound merge"
+
 # --- earn-then-merge: evidence completed this turn, no Stop yet --------------
 #
 # The stamp is written on Stop. A session that finishes review + CI + smoke

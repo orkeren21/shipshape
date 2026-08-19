@@ -36,6 +36,13 @@ shipshape_enabled MERGE_GATE || exit 0
 command_line="$(shipshape_field tool_input.command)"
 [ -n "$command_line" ] || exit 0
 
+# A backslash-newline continuation is one command wearing two lines. Fold it
+# before any matching: parsed per line, `gh pr merge \` + `60` reads as a bare
+# merge of the current branch's PR while gh merges #60 — a verified
+# false-allow. Everything below sees the folded form.
+command_line="$(printf '%s\n' "$command_line" \
+  | sed -e ':a' -e '/\\$/N' -e 's/\\\n/ /' -e 'ta')"
+
 printf '%s' "$command_line" | grep -qE \
   '(^|[;&|(]|&&|\|\|)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)' \
   || exit 0
@@ -67,8 +74,16 @@ invocations="$(printf '%s\n' "$command_line" | grep -cE \
 merge_line="$(printf '%s\n' "$command_line" | grep -E \
   '(^|[;&|(]|&&|\|\|)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)' \
   | head -1)"
+# The same-line occurrence count reads the line with quoted regions removed:
+# a --body that mentions "gh pr merge" is prose, not a second invocation.
+# Quoting can also hide a real second merge from this count (`gh "pr" merge`)
+# — that is the boundary of regex-matching shell, shared with pr-wrapper-gate
+# and accepted there too; the defense in depth is that the hidden merge's own
+# PR still has no stamp when its turn comes.
+merge_line_unquoted="$(printf '%s' "$merge_line" \
+  | sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g')"
 if [ "$invocations" -gt 1 ] \
-  || [ "$(printf '%s' "$merge_line" | grep -o 'gh[[:space:]][[:space:]]*pr[[:space:]][[:space:]]*merge' | grep -c .)" -gt 1 ]; then
+  || [ "$(printf '%s' "$merge_line_unquoted" | grep -o 'gh[[:space:]][[:space:]]*pr[[:space:]][[:space:]]*merge' | grep -c .)" -gt 1 ]; then
   shipshape_trace merge-gate "denied: $invocations merge invocations in one command"
   shipshape_emit_deny "This command runs more than one gh pr merge. The gate judges one pull request per merge — its evidence, its stamp, its verdict — and a compound merge would let the unjudged ones ship. Merge them one command at a time.$unreasoned_note" \
     merge_gate_compound "gh pr merge <one-pr-number>"
