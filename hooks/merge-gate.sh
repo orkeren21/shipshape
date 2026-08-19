@@ -36,12 +36,25 @@ shipshape_enabled MERGE_GATE || exit 0
 command_line="$(shipshape_field tool_input.command)"
 [ -n "$command_line" ] || exit 0
 
-# A backslash-newline continuation is one command wearing two lines. Fold it
-# before any matching: parsed per line, `gh pr merge \` + `60` reads as a bare
-# merge of the current branch's PR while gh merges #60 — a verified
-# false-allow. Everything below sees the folded form.
-command_line="$(printf '%s\n' "$command_line" \
-  | sed -e ':a' -e '/\\$/N' -e 's/\\\n/ /' -e 'ta')"
+# A backslash-newline continuation moves this command's tokens onto lines the
+# per-line parser below cannot safely attribute — folding them back was tried
+# and opened two verified false-allows of its own (BSD sed swallowing the
+# command on a trailing lone backslash; `\\`+newline gluing two real commands
+# into one). The gate does not parse shell; when a merge hides behind
+# continuations, it refuses and asks for the one-line form. Refusing is
+# cheaper than being wrong.
+nl='
+'
+case "$command_line" in
+  *"\\$nl"*)
+    if printf '%s' "$command_line" | grep -qE 'gh[[:space:]]+pr[[:space:]]+merge'; then
+      shipshape_trace merge-gate "denied: merge command uses line continuations; cannot be judged safely"
+      shipshape_emit_deny "This command mentions gh pr merge and uses backslash-newline continuations, which this gate cannot attribute safely. Write the merge as a single line — gh pr merge <number> [flags] — so it can be judged." \
+        merge_gate_unparseable "gh pr merge <number> --squash"
+      exit 0
+    fi
+    ;;
+esac
 
 printf '%s' "$command_line" | grep -qE \
   '(^|[;&|(]|&&|\|\|)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)' \
@@ -74,18 +87,16 @@ invocations="$(printf '%s\n' "$command_line" | grep -cE \
 merge_line="$(printf '%s\n' "$command_line" | grep -E \
   '(^|[;&|(]|&&|\|\|)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)' \
   | head -1)"
-# The same-line occurrence count reads the line with quoted regions removed:
-# a --body that mentions "gh pr merge" is prose, not a second invocation.
-# Quoting can also hide a real second merge from this count (`gh "pr" merge`)
-# — that is the boundary of regex-matching shell, shared with pr-wrapper-gate
-# and accepted there too; the defense in depth is that the hidden merge's own
-# PR still has no stamp when its turn comes.
-merge_line_unquoted="$(printf '%s' "$merge_line" \
-  | sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g')"
+# The same-line occurrence count reads the raw line, quotes included. A
+# --body that mentions "gh pr merge" therefore false-trips this — stripping
+# quoted regions first was tried, and an ordinary apostrophe in a body let the
+# strip span a real second invocation into silence: a verified false-allow.
+# Over-counting into a refusal costs a rephrased body; under-counting ships an
+# unevidenced merge. The count errs toward the refusal.
 if [ "$invocations" -gt 1 ] \
-  || [ "$(printf '%s' "$merge_line_unquoted" | grep -o 'gh[[:space:]][[:space:]]*pr[[:space:]][[:space:]]*merge' | grep -c .)" -gt 1 ]; then
-  shipshape_trace merge-gate "denied: $invocations merge invocations in one command"
-  shipshape_emit_deny "This command runs more than one gh pr merge. The gate judges one pull request per merge — its evidence, its stamp, its verdict — and a compound merge would let the unjudged ones ship. Merge them one command at a time.$unreasoned_note" \
+  || [ "$(printf '%s' "$merge_line" | grep -o 'gh[[:space:]][[:space:]]*pr[[:space:]][[:space:]]*merge' | grep -c .)" -gt 1 ]; then
+  shipshape_trace merge-gate "denied: multiple merge mentions in one command"
+  shipshape_emit_deny "This command mentions gh pr merge more than once. The gate judges one pull request per merge — its evidence, its stamp, its verdict — and a compound merge would let the unjudged ones ship. Merge one PR per command; if the extra mention is prose in a quoted body, rephrase the body.$unreasoned_note" \
     merge_gate_compound "gh pr merge <one-pr-number>"
   exit 0
 fi

@@ -122,23 +122,38 @@ gh pr merge 57")" "$repo")"
 assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "a number on an unrelated line is not read as the PR being merged"
 
-# A backslash continuation is one command wearing two lines — the number after
-# the fold belongs to this merge, not to a bare merge of the current branch.
-out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge \\
-444 --squash")" "$repo")"
-assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "a continuation-line PR number is judged as this merge's target"
-assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "444" \
-  "and the refusal names that PR, not the current branch's"
+# A merge behind backslash-newline continuations cannot be attributed safely
+# — folding was tried and opened its own false-allows — so it is refused with
+# the one-line form to run instead. Fail closed, never clever.
 out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge \\
 57 --squash")" "$repo")"
-assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "a continuation-line merge of the stamped PR is allowed"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a continuation-line merge is refused even for a stamped PR"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "single line" \
+  "and the refusal says how to phrase the merge so it can be judged"
 
-# Prose in a quoted body is not a second invocation.
+# The two shapes that defeated the folding approach stay denied.
+out="$(run_hook merge-gate.sh "$(merge_payload "echo x \\\\
+gh pr merge 444")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a double-backslash continuation cannot smuggle a merge past the gate"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 444 \\")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a trailing lone backslash does not make the command invisible"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "444" \
+  "it is parsed normally and judged on its PR"
+
+# A quoted mention of the command over-counts into a refusal — never into an
+# allow. Quote-stripping was tried; an apostrophe in a body let it span a real
+# second merge into silence.
 out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 57 --body \"reverts what gh pr merge did\"")" "$repo")"
-assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "a quoted mention of the command is prose, not a compound merge"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "prose naming the command false-trips toward refusal, the safe direction"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "rephrase" \
+  "and the refusal says the cheap way out"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 58 --body \"it's x\" && gh pr merge 57 --body \"y's z\"")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "apostrophes in bodies cannot hide a real second merge"
 
 # --- earn-then-merge: evidence completed this turn, no Stop yet --------------
 #
