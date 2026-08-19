@@ -41,7 +41,8 @@ record behind as a side effect. The record cannot exist without the work.
 
 | Hook | Event | What it does |
 |---|---|---|
-| `done-gate` | `Stop` | Arms when a pull request exists. Disarms only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD**. Soft nudge every turn; hard block on a completion claim. On a branch other than the one it was armed from it nudges but does not block, and it never disarms. |
+| `done-gate` | `Stop` | Arms per pull request, one obligation record each, so a cascade's second PR cannot evaporate the first one's debt. Disarms a record only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD** — and stamps it `pr-satisfied-<n>` for the merge gate. The soft nudge speaks when the outstanding state changes and stays silent while it does not; the hard block on a completion claim never dedupes. On a branch other than the record's it nudges but does not block, and it never disarms. |
+| `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp. A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. |
 | `review-capture` | `PostToolUse` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:`. The hook writing it, rather than the session, is what makes the artifact mean something (see *Where enforcement stops*). |
 | `task-capture` | `TaskCreated` | Remembers each task's metadata fence. |
 | `task-completion-gate` | `TaskCompleted` | A fenced task closes only on a fresh, passing verify record whose command matches the one the fence demanded. |

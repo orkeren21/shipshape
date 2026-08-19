@@ -270,6 +270,43 @@ assert_contains "$(cat "$scratch/smoke.log")" "$(git -C "$repo" rev-parse HEAD)"
   "the log records the commit it was gathered against"
 
 # ===========================================================================
+# Gate 7b — the merge. Skip: just merge it; the nudge is only a nudge.
+# ===========================================================================
+#
+# The field incident: in a cascade of fix PRs the session stops saying "done",
+# the soft nudge scrolls past, and the merge lands with no evidence. The merge
+# gate answers the action instead of the phrasing.
+
+merge_payload() {
+  printf '{"session_id":"lane-g1","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":%s}}' \
+    "$(json_string "$1")"
+}
+
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 7 --auto")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "TRIPPED: merging after the evidence lapsed is refused"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "owes" \
+  "and the refusal says the PR still owes its evidence"
+
+# A PR nobody ever evidenced is refused outright, operator instruction or not.
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 999")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "TRIPPED: a PR with no obligation record does not merge from a session"
+
+# The honest path: re-earn the evidence, let the done gate re-stamp, merge.
+for f in "$scratch"/review-*.md; do
+  printf '# Review\n\n## Minor\n- naming drift\n\n**Ready to merge?** With fixes\n' > "$f"
+done
+(cd "$repo" && GH_STUB_CHECKS_EXIT=0 GH_STUB_MERGE_STATE=CLEAN shipshape-ci-watch >/dev/null 2>&1)
+rm -f "$scratch/smoke.log"
+(cd "$repo" && shipshape-smoke sh -c 'echo "parsed 3 records, 0 errors"' >/dev/null 2>&1)
+out="$(stop "$CLAIM")"
+assert_eq "" "$(hook_field "$out" decision)" "re-earned evidence satisfies the done gate again"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 7 --auto")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "PASSES: a freshly stamped PR merges"
+
+# ===========================================================================
 # Gate 8 — deflection. Skip: propose a fresh session instead of finishing.
 # ===========================================================================
 
@@ -313,6 +350,10 @@ assert_eq "" "$(hook_field "$out" decision)" "SHIPSHAPE_TASK_COMPLETION_GATE=0 s
 out="$(SHIPSHAPE_DEFLECTION_GUARD=0 PCT_VALUE=18 run_hook deflection-guard.sh \
   "$(stop_payload lane-g1 "$work/t.jsonl" "$deflect")" "$repo")"
 assert_eq "" "$(hook_field "$out" decision)" "SHIPSHAPE_DEFLECTION_GUARD=0 stands the guard down"
+
+out="$(SHIPSHAPE_MERGE_GATE=0 run_hook merge-gate.sh "$(merge_payload "gh pr merge 999")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "SHIPSHAPE_MERGE_GATE=0 stands the merge gate down"
 
 rm -f "$scratch"/context-nudged-*
 out="$(SHIPSHAPE_CONTEXT_WATCH=0 PCT_VALUE=95 run_hook context-watch.sh \
