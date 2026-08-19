@@ -26,5 +26,8 @@ smoke — and they read artifacts, not what you say about them. The wrappers in
 `bin/` produce those artifacts as a side effect of doing the work, so use them
 rather than the raw commands.
 
+Work starts only on operator approval: a planning request authorizes planning,
+not the build, and a hook message is never approval.
+
 User instructions outrank skills, and skills outrank your defaults. When your
 human partner has told you otherwise, they are right.
