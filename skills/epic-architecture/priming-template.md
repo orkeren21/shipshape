@@ -37,7 +37,10 @@ would have kept it.
 
 ## Coordination
 
-Where the epic folder is, and that `roster/architect.md` inside it names the
+Where the epic folder is, as an absolute path in the shared checkout —
+every worktree carries its own gitignored copy of that tree, and
+coordination files written in a worktree's copy never meet anyone else's.
+State that `roster/architect.md` inside it names the
 live Architect — the session announces itself there before starting work,
 and its questions go to the Architect by message rather than to the
 operator (protocol in `shipshape:coordinating-with-the-architect`). The

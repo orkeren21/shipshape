@@ -34,14 +34,17 @@ by:* the command or flow that shows it working on its own. That line is what
 the lane's scoped smoke later runs.
 
 **`roster/` and `decisions.md`** — the coordination surfaces, created with
-the epic folder. `roster/` holds one file per live session, each written by
-its subject alone; the Architect's own `roster/architect.md` carries the
-stable session id (`get_session("self")`), the current harness name (the
-`ListAgents` header), a status, and when the name was last checked. Primings
-point at the roster rather than embedding an address — names churn on
-restarts, ids hold, and a lane that reads `roster/architect.md` finds
-whoever holds the seat now. `decisions.md` is the append-only ruling log;
-the questions section below says what goes in it.
+the epic folder. `roster/` holds one file per seat — the Architect's, and
+one per lane — each written only by the session currently holding that
+seat; the Architect's own `roster/architect.md` carries the stable session
+id (`get_session("self")`), the current harness name (the `ListAgents`
+header), a status, and when the name was last checked. Primings point at
+the roster rather than embedding an address — names churn on restarts, ids
+hold, and a lane that reads `roster/architect.md` finds whoever holds the
+seat now. A roster file is worth its freshest line, so the seat re-checks
+its own entry at every coordination touchpoint — the Architect's included.
+`decisions.md` is the append-only ruling log; the questions section below
+says what goes in it.
 
 **One priming per feature** — see [priming-template.md](priming-template.md).
 
@@ -81,8 +84,10 @@ Every ruling — yours and the operator's — goes into `decisions.md` as it is
 made: the question, who asked, the ruling, the reason, who ruled. A ruling
 that lives only in a message gets re-litigated the first time it is
 inconvenient; the log is what makes it stick, and it is what keeps the
-Architect in context of every decision across the epic. Record in `EPIC.md`
-as well anything that binds more than the lane that asked.
+Architect in context of every decision across the epic. The Architect is
+the log's only writer — rulings reach the lanes as `RULING` messages, and
+one writer is what keeps the epic's single shared file uncontended. Record
+in `EPIC.md` as well anything that binds more than the lane that asked.
 
 An answer authorizes what it answered, nothing more. Work a lane proposes —
 or the Architect proposes — starts on the operator's go; a hook

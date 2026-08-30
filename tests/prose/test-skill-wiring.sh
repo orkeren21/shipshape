@@ -50,7 +50,8 @@ router_body="$(cat "$router")"
 for dest in systematic-debugging brainstorming direct-implementation \
             subagent-driven-development finishing-with-evidence \
             write-handoff read-handoff writing-skills \
-            epic-architecture dispatching-parallel-agents; do
+            epic-architecture coordinating-with-the-architect \
+            dispatching-parallel-agents; do
   assert_contains "$router_body" "shipshape:$dest" "the router routes to $dest"
 done
 
