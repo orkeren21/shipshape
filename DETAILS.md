@@ -104,8 +104,8 @@ before this repo existed and the lane that built this repo:
 ## Where the skills came from
 
 **New:** `direct-implementation` · `finishing-with-evidence` ·
-`writing-retros` · `epic-architecture` · `write-handoff` · `read-handoff` ·
-`plain-english-reporting`
+`writing-retros` · `epic-architecture` · `coordinating-with-the-architect` ·
+`write-handoff` · `read-handoff` · `plain-english-reporting`
 
 **Rewritten:** `shipshape` (the entrypoint and router, injected at session
 start) · `brainstorming` · `writing-plans` · `subagent-driven-development` ·
