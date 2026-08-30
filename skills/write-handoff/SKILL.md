@@ -44,6 +44,14 @@ the code in less time than it takes you to summarise. Anything you did not
 verify — if it needs saying but you could not check it, mark it as unverified
 so the successor knows to look.
 
+## In an epic lane
+
+The handoff doubles as the milestone notice: send the Architect
+`MILESTONE (<lane>):` with the document's path and an honest estimate of
+what remains, then carry on as ever. Work continues until a `RULING: stop`
+arrives — the stop is the Architect's call, not the threshold's
+(`shipshape:coordinating-with-the-architect` has the exchange).
+
 ## Where it goes
 
 Next to the work item's design document: `<design>-handoff.md` (layout in

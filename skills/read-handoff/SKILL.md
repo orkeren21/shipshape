@@ -31,6 +31,15 @@ out to have moved.
 Short. This is a checkpoint, not a report — it exists so a misunderstanding
 costs one exchange instead of an afternoon.
 
+## In an epic, take the seat visibly
+
+A successor lane writes its own `roster/` file and announces itself to the
+Architect before picking up the next action
+(`shipshape:coordinating-with-the-architect`). A successor Architect works
+the other way around: rewrite `roster/architect.md` first, then announce
+the succession to the lanes — the order and the duties are in
+`shipshape:epic-architecture`.
+
 ## Then continue
 
 Pick up the next action and work. You are the same lane, not a new one: the
