@@ -59,6 +59,7 @@ Start with `/shipshape` — it routes your situation to the skill that handles i
 | `finishing-with-evidence` | Ending a branch: PR, CI watched to green, smoke, retro |
 | `writing-retros` | Closing a feature session with a defect-by-catch-point record |
 | `epic-architecture` | Splitting a large effort into feature lanes with an architect session |
+| `coordinating-with-the-architect` | Working a feature lane inside an epic — messaging the Architect directly |
 | `write-handoff` | Context is getting full (~70%) and a successor session will continue |
 | `read-handoff` | Picking up a predecessor session's work |
 | `dispatching-parallel-agents` | Fanning out independent investigation work |

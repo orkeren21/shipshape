@@ -22,11 +22,29 @@ for this feature only. If a skill should *not* be invoked — because its output
 already exists as one of the documents below — say so explicitly, since the
 default is to invoke it.
 
+Name the skills the session invokes, in order:
+`shipshape:coordinating-with-the-architect` for any lane in an epic,
+`shipshape:read-handoff` when the session continues a predecessor, then the
+mode skill. A priming silent on skills leaves each session to infer its own
+set from context, and lane N and lane N+1 infer differently; the priming
+saying so is what makes them run the same process.
+
 State the expected verification multiple for this surface — high-assurance
 code in the field runs 2–3× proof-to-fix — so a conceptually small change
 arriving as a large diff reads as the house bar, not as scope creep. That
 dispute has consumed operator trust once already; the number, stated up front,
 would have kept it.
+
+## Coordination
+
+Where the epic folder is, and that `roster/architect.md` inside it names the
+live Architect — the session announces itself there before starting work,
+and its questions go to the Architect by message rather than to the
+operator (protocol in `shipshape:coordinating-with-the-architect`). The
+Architect's identity as of this priming, dated, for the first announce.
+Where rulings land (`decisions.md`), and the boundary in one line: the
+Architect answers inside the operator-approved scope; scope changes and
+irreversible actions go to the operator.
 
 ## Read first, in order
 
@@ -80,9 +98,10 @@ as accepted stops the session treating it as a discovery that needs escalating.
 ## Questions
 
 How to raise one, and what qualifies. Material decisions the priming does not
-answer go to the operator, batched, with the session's own lean. Questions with
-one sensible answer get decided and recorded as assumptions in the retro rather
-than asked.
+answer go to the Architect as `QUESTION` messages, each with the session's
+own lean; the Architect answers inside its boundary and escalates the rest
+to the operator, batched. Questions with one sensible answer get decided and
+recorded as assumptions in the retro rather than asked.
 
 ## Smoke
 

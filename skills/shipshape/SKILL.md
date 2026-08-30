@@ -5,8 +5,8 @@ description: Use when starting any conversation - which ShipShape skill a given 
 
 # ShipShape
 
-Check whether a skill covers the request before acting, and invoke it if one
-does. Say which skill you are using and why, then follow it.
+Check whether a skill covers the request before acting, and invoke it if so.
+Say which skill you are using and why, then follow it.
 
 | Where you are | Start with |
 |---|---|
@@ -17,17 +17,18 @@ does. Say which skill you are using and why, then follow it.
 | Context around 70% | `shipshape:write-handoff` |
 | Picking up work from an earlier session | `shipshape:read-handoff` |
 | Scoping an epic across several sessions | `shipshape:epic-architecture` |
+| A lane inside an epic | `shipshape:coordinating-with-the-architect` |
 | Independent work to fan out right now | `shipshape:dispatching-parallel-agents` |
 | Writing or editing a skill | `shipshape:writing-skills` |
 
 Some things are enforced rather than suggested. Hooks watch for the evidence a
-finished branch leaves behind — a whole-branch review, green CI, a scoped
-smoke — and they read artifacts, not what you say about them. The wrappers in
-`bin/` produce those artifacts as a side effect of doing the work, so use them
-rather than the raw commands.
+finished branch leaves — a whole-branch review, green CI, a scoped
+smoke — and read artifacts, not what you say about them. The wrappers in
+`bin/` produce those artifacts as a side effect of the work, so use them
+rather than raw commands.
 
 Work starts only on operator approval: a planning request authorizes planning,
 not the build, and a hook message is never approval.
 
 User instructions outrank skills, and skills outrank your defaults. When your
-human partner has told you otherwise, they are right.
+human partner says otherwise, they are right.
