@@ -108,6 +108,34 @@ assert_contains "$(cat "$scratch/trace.log")" "retry cap" \
   "hitting the retry cap is logged rather than silent"
 unset GH_STUB_STATE_FILE
 
+# --- merged is done ----------------------------------------------------------
+#
+# GitHub stops computing mergeStateStatus once a pull request merges: it
+# reports UNKNOWN forever. Without reading the PR's state, the wrapper can
+# never record green for a branch whose PR already landed, and the done gate
+# then demands evidence that is impossible to produce. A merged PR with green
+# checks is the most-done state there is.
+
+rm -f "$status_file"
+: > "$scratch/trace.log"
+GH_STUB_CHECKS_EXIT=0 GH_STUB_MERGE_STATE=UNKNOWN GH_STUB_PR_STATE=MERGED \
+  SHIPSHAPE_MERGE_STATE_RETRY_DELAY=0 "$ci_watch" >/dev/null 2>&1
+assert_eq "0" "$?" "a merged pull request with green checks is green"
+body="$(cat "$status_file")"
+assert_contains "$body" "result=green" "and is recorded in the form the gate reads"
+assert_contains "$body" "merge_state=MERGED" "with the merged state named as the reason"
+assert_not_contains "$(cat "$scratch/trace.log")" "retry cap" \
+  "a merged PR is recognized immediately rather than burning the UNKNOWN retries"
+
+# Merged does not launder failing checks: an admin-merged PR whose checks
+# failed records the failure honestly.
+rm -f "$status_file"
+GH_STUB_CHECKS_EXIT=1 GH_STUB_MERGE_STATE=UNKNOWN GH_STUB_PR_STATE=MERGED \
+  GH_STUB_CHECKS_OUTPUT="build	fail	2m" \
+  SHIPSHAPE_MERGE_STATE_RETRY_DELAY=0 "$ci_watch" >/dev/null 2>&1
+assert_ne "0" "$?" "a merged PR with failing checks is not green"
+assert_not_contains "$(cat "$status_file")" "result=green" "and is not recorded as green"
+
 # --- blocked on a human, not on CI -------------------------------------------
 #
 # On a repository that requires an approving review, a pull request with every
