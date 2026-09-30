@@ -129,7 +129,7 @@ assert_contains "$out" "verdict yes" "the template's colon form is still a forma
 # read as yes). One row per case: the review body, then the leg the gate and
 # doctor must reach. A gate reads an unclear answer as no verdict, never as yes.
 verdict_case() { # <body (printf format)> <expected leg phrase> <why>
-  printf "$1" > "$scratch/review-1.md"
+  printf -- "$1" > "$scratch/review-1.md"
   local got
   got="$(cd "$repo" && "$doctor" 2>&1)"
   assert_contains "$got" "$2" "$3"
@@ -153,10 +153,25 @@ verdict_case '**Ready to merge?** Not yet\n' "verdict is no" "not yet is a no"
 verdict_case '**Ready to merge?** N/A\n' "no verdict" "an answer that is neither yes nor no is no verdict"
 verdict_case '**Ready to merge?** [Yes | No | With fixes]\n' "no verdict" "the unfilled template placeholder is no verdict"
 verdict_case '**Ready to merge?**\n' "no verdict" "a question with no answer is no verdict"
-verdict_case '**Ready to merge?** No\n\n**Ready to merge?**\n' "no verdict" "a later unanswered question is not a yes"
+verdict_case '**Ready to merge?** No\n\n**Ready to merge?**\n' "verdict is no" "a later unanswered question does not soften the No"
+verdict_case '**Ready to merge?** Yes\n\n**Ready to merge?**\n' "no verdict" "and a later unanswered question is not a yes"
 verdict_case '**Ready to merge?**\r\n\r\nNo\r\n' "verdict is no" "CRLF line endings read the same"
 verdict_case '**Ready to merge?** Nothing blocks it; yes.\n' "no verdict" "a word merely starting with no is not a No, and not a clear yes either"
 verdict_case 'Ready to merge \xe2\x80\x94 Yes\n' "verdict yes" "an em dash after the question is a separator too"
+# The Assessment heading joined to the verdict, as real reviews write it.
+verdict_case '### Assessment \xe2\x80\x94 Ready to merge? **Yes**\n' "verdict yes" "a heading-joined verdict is formal"
+verdict_case '### Assessment - Ready to merge? **With fixes**\n' "verdict yes" "with a hyphen joining them too"
+verdict_case '### Assessment \xe2\x80\x94 **Ready to merge? With fixes.**\n' "verdict yes" "and with the bold inside"
+verdict_case '**Assessment: Ready to merge? With fixes.**\n' "verdict yes" "and as one bold label"
+verdict_case '### Assessment \xe2\x80\x94 Ready to merge? No\n' "verdict is no" "a heading-joined No is a No"
+# Several formal answers: the most severe one wins, so nothing later can turn a No into a yes.
+verdict_case '**Ready to merge?** No\n\n> **Ready to merge?** Yes\n' "verdict is no" "a quoted earlier Yes after the No does not override it"
+verdict_case '**Ready to merge?** No\n\nReady to merge: yes, once the Critical is fixed.\n' "verdict is no" "nor does a later conditional yes"
+verdict_case '**Ready to merge?** Yes\n\n~~~\n**Ready to merge?** No\n~~~\n' "verdict yes" "a tilde fence is a fence too"
+verdict_case '**Ready to merge?** [Yes / No / With fixes]\n' "no verdict" "a placeholder in any spelling is no verdict"
+verdict_case '## Ready to merge? No\n' "verdict is no" "a heading can be the formal line"
+verdict_case '- Ready to merge? No\n' "verdict is no" "so can a list item"
+verdict_case '**Ready to merge?** Yes. No blockers remain.\n' "verdict yes" "a Yes followed by a sentence is a Yes"
 printf '# Review\n\n**Ready to merge?** Yes\n' > "$scratch/review-1.md"
 
 # --- waivers are part of the state, so the doctor reports them ---------------

@@ -424,39 +424,57 @@ shipshape_leg_review() { # <scratch>
     printf 'stale|%s' "$(basename "$review")"
     return 0
   fi
-  # The verdict is the FORMAL line: one that STARTS with "Ready to merge" (after
-  # markdown decoration only) followed by "?", ":" or an em dash, as in the
-  # reviewer template; the last such line outside a fenced block wins. The answer
-  # is the rest of that line, or the next line with any letter or digit when the
-  # question stands alone. tests/bin/test-doctor.sh holds the shapes this has to
-  # read, including the ones that used to read a No as a yes.
-  local verdict
-  verdict="$(awk '
-    { sub(/\r$/, "") }
+  # The verdict is read from FORMAL lines: ones that START with "Ready to merge"
+  # (after markdown decoration, and optionally an "Assessment" or "Verdict" label)
+  # followed by "?", ":" or an em dash. Lines inside a fenced block don't count.
+  # Each formal line's answer is the rest of that line, or the next line with a
+  # letter or digit when the question stands alone. When there are several, the
+  # most severe answer wins, so no later line can turn a No into a yes.
+  # tests/bin/test-doctor.sh holds the shapes this has to read.
+  local answers answer leg="" worst=ok
+  answers="$(awk '
     /^[ \t]*(```|~~~)/ { fenced = !fenced; next }
     fenced { next }
     { line = tolower($0) }
-    line ~ /^[ \t>#|*_-]*ready to merge[ \t*_]*([?:]|—)/ {
-      found = 1
+    line ~ /^[ \t>#|*_-]*((assessment|verdict)[ \t*_]*(:|—|-)[ \t>#|*_-]*)?ready to merge[ \t*_]*([?:]|—)/ {
+      if (pending) print "answer:"
       rest = line
-      sub(/^[ \t>#|*_-]*ready to merge[ \t*_]*([?:]|—)/, "", rest)
-      if (rest ~ /[a-z0-9]/) { answer = rest; pending = 0 } else { answer = ""; pending = 1 }
+      sub(/^[ \t>#|*_-]*((assessment|verdict)[ \t*_]*(:|—|-)[ \t>#|*_-]*)?ready to merge[ \t*_]*([?:]|—)/, "", rest)
+      if (rest ~ /[a-z0-9]/) { print "answer:" rest; pending = 0 } else { pending = 1 }
       next
     }
-    pending && line ~ /[a-z0-9]/ { answer = line; pending = 0 }
-    END { if (found) print "answer:" answer }
+    pending && line ~ /[a-z0-9]/ { print "answer:" line; pending = 0 }
+    END { if (pending) print "answer:" }
   ' "$review" 2>/dev/null)"
-  # Trim everything that isn't a letter or digit from both ends: quotes, bold,
-  # backticks, a table cell's pipes, an emoji, a leading dash or colon.
-  verdict="$(printf '%s' "${verdict#answer:}" | sed -e 's/^[^[:alnum:]]*//' -e 's/[^[:alnum:]]*$//')"
-  # A gate reads an unclear answer as no verdict, never as a yes: an empty
-  # answer, the template's unfilled "[Yes | No | With fixes]", or anything else.
-  case "$verdict" in
-    *"|"*) printf 'no-verdict|%s' "$(basename "$review")" ;;
-    yes|yes[!a-z]*|"with fixes"*) printf 'ok|%s' "$(basename "$review")" ;;
-    no|no[!a-z]*|not|not[!a-z]*) printf 'verdict-no|%s' "$(basename "$review")" ;;
-    *) printf 'no-verdict|%s' "$(basename "$review")" ;;
-  esac
+  if [ -z "$answers" ]; then
+    printf 'no-verdict|%s' "$(basename "$review")"
+    return 0
+  fi
+  while IFS= read -r answer; do
+    answer="${answer#answer:}"
+    # A bracketed answer is the template's unfilled placeholder, however spelled.
+    case "$(printf '%s' "$answer" | sed 's/^[[:space:]*_]*//')" in
+      "["*) leg=no-verdict ;;
+      *)
+        # Trim everything that isn't a letter or digit from both ends: quotes,
+        # bold, backticks, a table cell's pipes, an emoji, a dash or colon.
+        answer="$(printf '%s' "$answer" | sed -e 's/^[^[:alnum:]]*//' -e 's/[^[:alnum:]]*$//')"
+        case "$answer" in
+          *"|"*) leg=no-verdict ;;
+          yes|yes[!a-z]*|"with fixes"*) leg=ok ;;
+          no|no[!a-z]*|not|not[!a-z]*) leg=verdict-no ;;
+          *) leg=no-verdict ;; # a gate reads an unclear answer as no verdict, never as a yes
+        esac
+        ;;
+    esac
+    case "$leg" in
+      verdict-no) worst=verdict-no ;;
+      no-verdict) [ "$worst" = verdict-no ] || worst=no-verdict ;;
+    esac
+  done <<EOF
+$answers
+EOF
+  printf '%s|%s' "$worst" "$(basename "$review")"
 }
 
 shipshape_leg_ci() { # <scratch>
