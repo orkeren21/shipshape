@@ -424,31 +424,38 @@ shipshape_leg_review() { # <scratch>
     printf 'stale|%s' "$(basename "$review")"
     return 0
   fi
-  # The verdict is the FORMAL line — "Ready to merge" followed by "?" or ":", as
-  # in the reviewer template — and the last one wins. Prose that merely says
-  # "ready to merge, with no blocking issues" is not an answer, and reading it
-  # as one took its "no" for the verdict. The answer is the rest of that line,
-  # or the next non-blank line when the question stands alone.
+  # The verdict is the FORMAL line: one that STARTS with "Ready to merge" (after
+  # markdown decoration only) followed by "?", ":" or an em dash, as in the
+  # reviewer template; the last such line outside a fenced block wins. The answer
+  # is the rest of that line, or the next line with any letter or digit when the
+  # question stands alone. tests/bin/test-doctor.sh holds the shapes this has to
+  # read, including the ones that used to read a No as a yes.
   local verdict
   verdict="$(awk '
-    pending && /[^ \t*_]/ { answer = $0; pending = 0 }
-    tolower($0) ~ /ready to merge[ \t*_]*[?:]/ {
+    { sub(/\r$/, "") }
+    /^[ \t]*(```|~~~)/ { fenced = !fenced; next }
+    fenced { next }
+    { line = tolower($0) }
+    line ~ /^[ \t>#|*_-]*ready to merge[ \t*_]*([?:]|—)/ {
       found = 1
-      rest = tolower($0)
-      sub(/.*ready to merge[ \t*_]*[?:]/, "", rest)
-      if (rest ~ /[^ \t*_]/) { answer = rest; pending = 0 } else { answer = ""; pending = 1 }
+      rest = line
+      sub(/^[ \t>#|*_-]*ready to merge[ \t*_]*([?:]|—)/, "", rest)
+      if (rest ~ /[a-z0-9]/) { answer = rest; pending = 0 } else { answer = ""; pending = 1 }
+      next
     }
-    END { if (found) print "answer:" tolower(answer) }
+    pending && line ~ /[a-z0-9]/ { answer = line; pending = 0 }
+    END { if (found) print "answer:" answer }
   ' "$review" 2>/dev/null)"
-  if [ -z "$verdict" ]; then
-    printf 'no-verdict|%s' "$(basename "$review")"
-    return 0
-  fi
-  verdict="$(printf '%s' "${verdict#answer:}" | sed 's/^[][[:space:]*_]*//')"
+  # Trim everything that isn't a letter or digit from both ends: quotes, bold,
+  # backticks, a table cell's pipes, an emoji, a leading dash or colon.
+  verdict="$(printf '%s' "${verdict#answer:}" | sed -e 's/^[^[:alnum:]]*//' -e 's/[^[:alnum:]]*$//')"
+  # A gate reads an unclear answer as no verdict, never as a yes: an empty
+  # answer, the template's unfilled "[Yes | No | With fixes]", or anything else.
   case "$verdict" in
-    yes*|"with fixes"*) printf 'ok|%s' "$(basename "$review")" ;;
-    no*) printf 'verdict-no|%s' "$(basename "$review")" ;;
-    *) printf 'ok|%s' "$(basename "$review")" ;;
+    *"|"*) printf 'no-verdict|%s' "$(basename "$review")" ;;
+    yes|yes[!a-z]*|"with fixes"*) printf 'ok|%s' "$(basename "$review")" ;;
+    no|no[!a-z]*|not|not[!a-z]*) printf 'verdict-no|%s' "$(basename "$review")" ;;
+    *) printf 'no-verdict|%s' "$(basename "$review")" ;;
   esac
 }
 

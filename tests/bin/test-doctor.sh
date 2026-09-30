@@ -124,6 +124,39 @@ assert_contains "$out" "verdict is no" "an answer on the line after the question
 printf '# Review\n\n**Ready to merge: With fixes**\n' > "$scratch/review-1.md"
 out="$(cd "$repo" && "$doctor" 2>&1)"
 assert_contains "$out" "verdict yes" "the template's colon form is still a formal verdict"
+
+# Every shape below was found to read wrong, most of them failing OPEN (a No
+# read as yes). One row per case: the review body, then the leg the gate and
+# doctor must reach. A gate reads an unclear answer as no verdict, never as yes.
+verdict_case() { # <body (printf format)> <expected leg phrase> <why>
+  printf "$1" > "$scratch/review-1.md"
+  local got
+  got="$(cd "$repo" && "$doctor" 2>&1)"
+  assert_contains "$got" "$2" "$3"
+}
+verdict_case '**Ready to merge?** No\n\n**Reasoning:** Not ready to merge: the token check fails open.\n' \
+  "verdict is no" "a Reasoning line that mentions merging does not override the formal No"
+verdict_case '**Ready to merge?** No\n\n**Reasoning:** It will be ready to merge: once the Critical is fixed.\n' \
+  "verdict is no" "nor does one that says when it will be ready"
+verdict_case '**Ready to merge?** Yes\n\n**Reasoning:** Ready to merge? No blockers remain.\n' \
+  "verdict yes" "a Reasoning line phrased as the question is not a second verdict"
+verdict_case '**Ready to merge?** Yes\n\nIs it ready to merge? Not until the docs land.\n' \
+  "verdict yes" "a question in prose is not a formal line"
+verdict_case '**Ready to merge?** No\n\n```\n**Ready to merge?** [Yes | No | With fixes]\n```\n' \
+  "verdict is no" "the template quoted in a fenced block is not a verdict"
+verdict_case 'Ready to merge?: No\n' "verdict is no" "punctuation before the answer is not the answer"
+verdict_case 'Ready to merge? \xe2\x80\x94 No\n' "verdict is no" "an em dash before the answer is not the answer"
+verdict_case 'Ready to merge? `No`\n' "verdict is no" "a backtick-quoted No is a No"
+verdict_case '| Ready to merge? | No |\n' "verdict is no" "a table row is a formal line"
+verdict_case '**Ready to merge?**\n\n> No\n' "verdict is no" "a quoted answer on the next line is the answer"
+verdict_case '**Ready to merge?** Not yet\n' "verdict is no" "not yet is a no"
+verdict_case '**Ready to merge?** N/A\n' "no verdict" "an answer that is neither yes nor no is no verdict"
+verdict_case '**Ready to merge?** [Yes | No | With fixes]\n' "no verdict" "the unfilled template placeholder is no verdict"
+verdict_case '**Ready to merge?**\n' "no verdict" "a question with no answer is no verdict"
+verdict_case '**Ready to merge?** No\n\n**Ready to merge?**\n' "no verdict" "a later unanswered question is not a yes"
+verdict_case '**Ready to merge?**\r\n\r\nNo\r\n' "verdict is no" "CRLF line endings read the same"
+verdict_case '**Ready to merge?** Nothing blocks it; yes.\n' "no verdict" "a word merely starting with no is not a No, and not a clear yes either"
+verdict_case 'Ready to merge \xe2\x80\x94 Yes\n' "verdict yes" "an em dash after the question is a separator too"
 printf '# Review\n\n**Ready to merge?** Yes\n' > "$scratch/review-1.md"
 
 # --- waivers are part of the state, so the doctor reports them ---------------

@@ -51,7 +51,7 @@ else
     missing)    leg_line review 'missing — dispatch the reviewer with "whole-branch-review:" in the description' ;;
     empty)      leg_line review "ignored (empty): $detail — an empty file is not a review; dispatch the reviewer" ;;
     stale)      leg_line review "stale — $detail predates HEAD; re-review the branch" ;;
-    no-verdict) leg_line review "no verdict — $detail never answers \"Ready to merge?\"" ;;
+    no-verdict) leg_line review "no verdict — $detail never answers \"Ready to merge?\" with Yes, No or With fixes" ;;
     verdict-no) leg_line review "verdict is no — fix what $detail found and re-review" ;;
     ok)         leg_line review "ok — $detail, fresh, verdict yes" ;;
   esac

@@ -149,7 +149,7 @@ case "${leg%%|*}" in
     add "review report — stale: it predates the current HEAD commit, so it did not see the code being shipped. Re-review the branch."
     ;;
   no-verdict)
-    add "review report — no verdict in it. The reviewer template ends with \"Ready to merge?\"; a report without that line is not a completed review."
+    add "review report — no verdict in it. The reviewer template ends with \"Ready to merge?\" answered Yes, No or With fixes; a report without that answer is not a completed review."
     ;;
   verdict-no)
     add "review report — the reviewer's verdict is no. Fix what it found and re-review; a branch does not become finished by ignoring the answer."
