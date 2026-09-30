@@ -428,16 +428,16 @@ shipshape_leg_review() { # <scratch>
   # (after markdown decoration, and optionally an "Assessment" or "Verdict" label)
   # followed by "?", ":" or an em dash. Lines inside a fenced block don't count.
   # Each formal line's answer is the rest of that line, or the next line with a
-  # letter or digit when the question stands alone. When there are several, the
-  # most severe answer wins, so no later line can turn a No into a yes.
+  # letter or digit when the question stands alone (a question heading followed
+  # by the formal line is answered by that line). When there are several, the most
+  # severe answer wins, so no later formal line can turn a No into a yes.
   # tests/bin/test-doctor.sh holds the shapes this has to read.
-  local answers answer leg="" worst=ok
+  local answers answer leg="" worst=ok read_any=0
   answers="$(awk '
     /^[ \t]*(```|~~~)/ { fenced = !fenced; next }
     fenced { next }
     { line = tolower($0) }
     line ~ /^[ \t>#|*_-]*((assessment|verdict)[ \t*_]*(:|—|-)[ \t>#|*_-]*)?ready to merge[ \t*_]*([?:]|—)/ {
-      if (pending) print "answer:"
       rest = line
       sub(/^[ \t>#|*_-]*((assessment|verdict)[ \t*_]*(:|—|-)[ \t>#|*_-]*)?ready to merge[ \t*_]*([?:]|—)/, "", rest)
       if (rest ~ /[a-z0-9]/) { print "answer:" rest; pending = 0 } else { pending = 1 }
@@ -451,6 +451,7 @@ shipshape_leg_review() { # <scratch>
     return 0
   fi
   while IFS= read -r answer; do
+    read_any=1
     answer="${answer#answer:}"
     # A bracketed answer is the template's unfilled placeholder, however spelled.
     case "$(printf '%s' "$answer" | sed 's/^[[:space:]*_]*//')" in
@@ -474,6 +475,9 @@ shipshape_leg_review() { # <scratch>
   done <<EOF
 $answers
 EOF
+  # A here-document bash could not create leaves the loop unrun; that is no
+  # verdict, not the "ok" worst started at.
+  [ "$read_any" = 1 ] || worst=no-verdict
   printf '%s|%s' "$worst" "$(basename "$review")"
 }
 

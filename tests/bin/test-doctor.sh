@@ -172,6 +172,8 @@ verdict_case '**Ready to merge?** [Yes / No / With fixes]\n' "no verdict" "a pla
 verdict_case '## Ready to merge? No\n' "verdict is no" "a heading can be the formal line"
 verdict_case '- Ready to merge? No\n' "verdict is no" "so can a list item"
 verdict_case '**Ready to merge?** Yes. No blockers remain.\n' "verdict yes" "a Yes followed by a sentence is a Yes"
+verdict_case '**Verdict: Ready to merge? No**\n' "verdict is no" "a Verdict label works like Assessment"
+verdict_case '### Ready to merge?\n\n**Ready to merge?** Yes\n' "verdict yes" "a question heading is answered by the formal line under it"
 printf '# Review\n\n**Ready to merge?** Yes\n' > "$scratch/review-1.md"
 
 # --- waivers are part of the state, so the doctor reports them ---------------
