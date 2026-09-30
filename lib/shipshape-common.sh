@@ -424,16 +424,30 @@ shipshape_leg_review() { # <scratch>
     printf 'stale|%s' "$(basename "$review")"
     return 0
   fi
-  if ! grep -qi 'ready to merge' "$review" 2>/dev/null; then
+  # The verdict is the FORMAL line — "Ready to merge" followed by "?" or ":", as
+  # in the reviewer template — and the last one wins. Prose that merely says
+  # "ready to merge, with no blocking issues" is not an answer, and reading it
+  # as one took its "no" for the verdict. The answer is the rest of that line,
+  # or the next non-blank line when the question stands alone.
+  local verdict
+  verdict="$(awk '
+    pending && /[^ \t*_]/ { answer = $0; pending = 0 }
+    tolower($0) ~ /ready to merge[ \t*_]*[?:]/ {
+      found = 1
+      rest = tolower($0)
+      sub(/.*ready to merge[ \t*_]*[?:]/, "", rest)
+      if (rest ~ /[^ \t*_]/) { answer = rest; pending = 0 } else { answer = ""; pending = 1 }
+    }
+    END { if (found) print "answer:" tolower(answer) }
+  ' "$review" 2>/dev/null)"
+  if [ -z "$verdict" ]; then
     printf 'no-verdict|%s' "$(basename "$review")"
     return 0
   fi
-  local verdict
-  verdict="$(grep -i 'ready to merge' "$review" 2>/dev/null | head -1 \
-             | sed 's/.*[Rr]eady to [Mm]erge//' | tr 'A-Z' 'a-z')"
+  verdict="$(printf '%s' "${verdict#answer:}" | sed 's/^[][[:space:]*_]*//')"
   case "$verdict" in
-    *yes*|*"with fixes"*) printf 'ok|%s' "$(basename "$review")" ;;
-    *no*) printf 'verdict-no|%s' "$(basename "$review")" ;;
+    yes*|"with fixes"*) printf 'ok|%s' "$(basename "$review")" ;;
+    no*) printf 'verdict-no|%s' "$(basename "$review")" ;;
     *) printf 'ok|%s' "$(basename "$review")" ;;
   esac
 }

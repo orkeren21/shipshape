@@ -97,6 +97,35 @@ assert_contains "$out" "verdict is no" \
   "a verdict of No is reported as the failure the gate treats it as"
 printf '# Review\n\n**Ready to merge?** Yes\n' > "$scratch/review-1.md"
 
+# --- the verdict is the formal line, not the first mention -------------------
+#
+# The reported defect: a summary saying "...ready to merge, with no blocking
+# issues" came before the formal "Ready to merge? **Yes.**", and the doctor read
+# the summary's "no" as the verdict.
+
+summary='The branch is ready to merge, with no blocking issues.'
+printf '# Review\n\n%s\n\n### Assessment\n\nReady to merge? **Yes.**\n' "$summary" > "$scratch/review-1.md"
+out="$(cd "$repo" && "$doctor" 2>&1)"
+assert_not_contains "$out" "verdict is no" "a summary line mentioning \"no\" is not the verdict"
+assert_contains "$out" "verdict yes" "the formal Yes is read"
+
+printf '# Review\n\n%s\n\n### Assessment\n\nReady to merge? **No.**\n' "$summary" > "$scratch/review-1.md"
+out="$(cd "$repo" && "$doctor" 2>&1)"
+assert_contains "$out" "verdict is no" "the formal No is read even after a summary that says yes-ish"
+
+printf '# Review\n\n%s\n' "$summary" > "$scratch/review-1.md"
+out="$(cd "$repo" && "$doctor" 2>&1)"
+assert_contains "$out" "no verdict" "a report that only mentions merging in prose never answered the question"
+
+printf '# Review\n\n**Ready to merge?**\n\nNo\n' > "$scratch/review-1.md"
+out="$(cd "$repo" && "$doctor" 2>&1)"
+assert_contains "$out" "verdict is no" "an answer on the line after the question is still the answer"
+
+printf '# Review\n\n**Ready to merge: With fixes**\n' > "$scratch/review-1.md"
+out="$(cd "$repo" && "$doctor" 2>&1)"
+assert_contains "$out" "verdict yes" "the template's colon form is still a formal verdict"
+printf '# Review\n\n**Ready to merge?** Yes\n' > "$scratch/review-1.md"
+
 # --- waivers are part of the state, so the doctor reports them ---------------
 
 printf 'skip_smoke: true  # reason: docs-only change\n' > "$repo/.shipshape.yaml"
