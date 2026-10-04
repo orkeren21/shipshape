@@ -424,18 +424,61 @@ shipshape_leg_review() { # <scratch>
     printf 'stale|%s' "$(basename "$review")"
     return 0
   fi
-  if ! grep -qi 'ready to merge' "$review" 2>/dev/null; then
+  # The verdict is read from FORMAL lines: ones that START with "Ready to merge"
+  # (after markdown decoration, and optionally an "Assessment" or "Verdict" label)
+  # followed by "?", ":" or an em dash. Lines inside a fenced block don't count.
+  # Each formal line's answer is the rest of that line, or the next line with a
+  # letter or digit when the question stands alone (a question heading followed
+  # by the formal line is answered by that line). When there are several, the most
+  # severe answer wins, so no later formal line can turn a No into a yes.
+  # tests/bin/test-doctor.sh holds the shapes this has to read.
+  local answers answer leg="" worst=ok read_any=0
+  answers="$(awk '
+    /^[ \t]*(```|~~~)/ { fenced = !fenced; next }
+    fenced { next }
+    { line = tolower($0) }
+    line ~ /^[ \t>#|*_-]*((assessment|verdict)[ \t*_]*(:|—|-)[ \t>#|*_-]*)?ready to merge[ \t*_]*([?:]|—)/ {
+      rest = line
+      sub(/^[ \t>#|*_-]*((assessment|verdict)[ \t*_]*(:|—|-)[ \t>#|*_-]*)?ready to merge[ \t*_]*([?:]|—)/, "", rest)
+      if (rest ~ /[a-z0-9]/) { print "answer:" rest; pending = 0 } else { pending = 1 }
+      next
+    }
+    pending && line ~ /[a-z0-9]/ { print "answer:" line; pending = 0 }
+    END { if (pending) print "answer:" }
+  ' "$review" 2>/dev/null)"
+  if [ -z "$answers" ]; then
     printf 'no-verdict|%s' "$(basename "$review")"
     return 0
   fi
-  local verdict
-  verdict="$(grep -i 'ready to merge' "$review" 2>/dev/null | head -1 \
-             | sed 's/.*[Rr]eady to [Mm]erge//' | tr 'A-Z' 'a-z')"
-  case "$verdict" in
-    *yes*|*"with fixes"*) printf 'ok|%s' "$(basename "$review")" ;;
-    *no*) printf 'verdict-no|%s' "$(basename "$review")" ;;
-    *) printf 'ok|%s' "$(basename "$review")" ;;
-  esac
+  while IFS= read -r answer; do
+    read_any=1
+    answer="${answer#answer:}"
+    # A bracketed answer is the template's unfilled placeholder, however spelled.
+    case "$(printf '%s' "$answer" | sed 's/^[[:space:]*_]*//')" in
+      "["*) leg=no-verdict ;;
+      *)
+        # Trim everything that isn't a letter or digit from both ends: quotes,
+        # bold, backticks, a table cell's pipes, an emoji, a dash or colon.
+        answer="$(printf '%s' "$answer" | sed -e 's/^[^[:alnum:]]*//' -e 's/[^[:alnum:]]*$//')"
+        case "$answer" in
+          *"|"*) leg=no-verdict ;;
+          yes|yes[!a-z]*|"with fixes"*) leg=ok ;;
+          no|no[!a-z]*|not|not[!a-z]*) leg=verdict-no ;;
+          *) leg=no-verdict ;; # a gate reads an unclear answer as no verdict, never as a yes
+        esac
+        ;;
+    esac
+    case "$leg" in
+      verdict-no) worst=verdict-no ;;
+      no-verdict) [ "$worst" = verdict-no ] || worst=no-verdict ;;
+    esac
+  done <<EOF
+$answers
+EOF
+  # A here-document bash could not create leaves the loop unrun; that is no
+  # verdict, not the "ok" worst started at.
+  [ "$read_any" = 1 ] || worst=no-verdict
+  printf '%s|%s' "$worst" "$(basename "$review")"
 }
 
 shipshape_leg_ci() { # <scratch>
