@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# TaskCompleted — a fenced task closes on a fresh, passing verify record.
+# TaskCompleted — a fenced task closes only after the tasks it is blockedBy,
+# and, when its fence names a verify command, on a fresh, passing verify record.
 #
 # The record at verify/<fence-id> is written by shipshape-verify as a side
 # effect of running the task's verifyCommand. It carries the command, the exit

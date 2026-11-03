@@ -118,7 +118,7 @@ if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
     # when the stop's checkout has no folder for the session, because the
     # agent's worktree can hold one: the same probe saw the agent's commands
     # run there with this session's id, so a wrapper that records evidence
-    # writes there, and gates firing for its tool calls resolve there. A
+    # writes there, and the Bash gates firing for its commands resolve there. A
     # marker older hooks left in the main checkout is found the same way, and
     # its report lands beside it too, where the doctor names it. The hook
     # moves to the marker's checkout, so the report and the trace land there.

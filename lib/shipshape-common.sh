@@ -258,8 +258,9 @@ shipshape_read_payload() {
     # for the session, so the line goes to the first of the session's folders
     # in another checkout that git lists. git sorts linked worktrees by path
     # (seen with git 2.50.1), so with an isolated agent's worktree holding a
-    # folder too, that is often the agent's, and an agent worktree with no
-    # changes was removed after its stop in the one run probed.
+    # folder too, that is often the agent's. In the one run probed, an agent
+    # that only ran an echo had its worktree removed after its stop; whether a
+    # worktree holding a .shipshape/ folder is removed too is unprobed.
     here="$(shipshape_scratch_path)"
     dir="$here"
     [ -d "$dir" ] || dir="$(shipshape_other_scratch_dirs "$here" | head -1)"

@@ -187,7 +187,8 @@ main_clean "isolated capture"
 # The reason the search runs whenever the marker is missing, rather than only
 # when the stop's checkout has no folder for the session: the agent's own
 # worktree can hold one. A probe (2.1.309) saw an isolated agent's commands run
-# there carrying this session's id, so a wrapper it runs writes there.
+# there carrying this session's id, so a wrapper that records evidence writes
+# there.
 rm -rf "$wt/.shipshape"
 run_hook review-capture.sh "$(launch iso6)" "$main" >/dev/null
 assert_file "$wt_scratch/pending-capture/iso6" "the launch is remembered in the session's folder"

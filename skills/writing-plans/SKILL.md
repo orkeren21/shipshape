@@ -52,8 +52,9 @@ independent can be marked as such and picked up in any order.
 Create the tasks natively, with the fence in each description and `blockedBy`
 wired between them. The fence survives session boundaries, which prose in a
 document does not, and it gives the gates something concrete to read: the
-completion gate will not close a task without a passing verify record, and the
-ordering gate will not start one whose dependencies are open.
+completion gate will not close a task ahead of its dependencies or without a
+passing verify record, and the ordering gate will not start one whose
+dependencies are open.
 
 ## Where it lives
 

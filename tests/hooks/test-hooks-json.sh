@@ -42,6 +42,16 @@ check_registration "task-capture.sh"         TaskCreated
 check_registration "task-completion-gate.sh" TaskCompleted
 check_registration "blockedby-gate.sh"       PreToolUse
 check_registration "pr-wrapper-gate.sh"      PreToolUse
+check_registration "merge-gate.sh"           PreToolUse
+
+# Both directions, so the list above cannot fall behind the directory: every
+# hook script is registered, and every registered script exists.
+for hook in "$SHIPSHAPE_REPO_ROOT"/hooks/*.sh; do
+  assert_contains "$body" "hooks/$(basename "$hook")" "$(basename "$hook") is registered in hooks.json"
+done
+for script in $(printf '%s' "$body" | grep -o 'hooks/[A-Za-z0-9_-]*\.sh' | sort -u); do
+  assert_file "$SHIPSHAPE_REPO_ROOT/$script" "$script, registered in hooks.json, exists"
+done
 
 # --- no invented events ------------------------------------------------------
 
@@ -55,14 +65,10 @@ if command -v jq >/dev/null 2>&1; then
   done
 fi
 
-# --- every referenced script exists and runs ---------------------------------
+# --- every hook script parses ------------------------------------------------
 
-for script in session-start.sh done-gate.sh context-watch.sh \
-              review-capture.sh task-capture.sh task-completion-gate.sh blockedby-gate.sh \
-              pr-wrapper-gate.sh; do
-  assert_file "$SHIPSHAPE_REPO_ROOT/hooks/$script" "$script exists"
-  bash -n "$SHIPSHAPE_REPO_ROOT/hooks/$script" 2>/dev/null \
-    || fail "$script parses as bash"
+for hook in "$SHIPSHAPE_REPO_ROOT"/hooks/*.sh; do
+  bash -n "$hook" 2>/dev/null || fail "$(basename "$hook") parses as bash"
 done
 
 # --- the plugin root placeholder ---------------------------------------------

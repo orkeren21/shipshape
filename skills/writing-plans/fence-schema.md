@@ -31,7 +31,9 @@ no opinion about — nothing breaks, but nothing is checked either.
 `id` values are unique within a plan, and `blockedBy` names only ids that exist
 in the same plan. A dependency on an id that was never created is a dependency
 that will never be satisfied, and the gate will hold the task forever — it has
-no way to tell a typo from work that has not happened yet.
+no way to tell a typo from work that has not happened yet. The same holds for
+a task closed any other way than through the completion gate in this session:
+only a task that gate closed counts as done for the tasks that name it.
 
 `verifyCommand` runs from the repo root and exits non-zero on failure. A
 command that always exits 0 turns the completion gate into decoration.
