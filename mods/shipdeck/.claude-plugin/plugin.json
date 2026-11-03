@@ -1,0 +1,28 @@
+{
+  "name": "shipdeck",
+  "version": "0.1.0",
+  "description": "ShipShape's companion mod: refines dictated prompts before the session reads them, and keeps a band above the prompt with the session's seat, context and evidence. Reads and displays; never gates.",
+  "author": {
+    "name": "Or Keren",
+    "url": "https://github.com/orkeren21"
+  },
+  "homepage": "https://github.com/orkeren21/shipshape/tree/main/mods/shipdeck",
+  "repository": "https://github.com/orkeren21/shipshape",
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "refine": {
+      "type": "boolean",
+      "title": "Refine dictated prompts",
+      "description": "Rewrite a long dictated prompt into a structured one (with Sonnet 5.5) before the session reads it. Start a prompt with raw: to skip one.",
+      "default": true
+    },
+    "style": {
+      "type": "string",
+      "title": "Band style",
+      "description": "github: icons beside plain labels, a thin context bar. linear: hairline chips, a pie for context.",
+      "default": "github",
+      "options": ["github", "linear"]
+    }
+  }
+}
