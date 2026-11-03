@@ -547,9 +547,9 @@ shipshape_legs_settled() { # <scratch>
 # Context pressure
 # ---------------------------------------------------------------------------
 
-# One number, one place it comes from. context-watch nudges from this and the
-# deflection guard defends from it; routing both through here is what stops one
-# demanding a handoff while the other refuses to let the session leave.
+# One number, one place it comes from. context-watch nudges from this, and any
+# later consumer asks the same helper, so two readers can never disagree about
+# how full the session is.
 #
 # SHIPSHAPE_CONTEXT_PCT_CMD replaces the helper, which is how tests pin the
 # number without having to fabricate a transcript.

@@ -36,7 +36,6 @@ check_registration() { # check_registration <script> <event>
 check_registration "session-start.sh"        SessionStart
 check_registration "done-gate.sh"            Stop
 check_registration "context-watch.sh"        Stop
-check_registration "deflection-guard.sh"     Stop
 check_registration "review-capture.sh"       PostToolUse
 check_registration "task-capture.sh"         TaskCreated
 check_registration "task-completion-gate.sh" TaskCompleted
@@ -57,7 +56,7 @@ fi
 
 # --- every referenced script exists and runs ---------------------------------
 
-for script in session-start.sh done-gate.sh context-watch.sh deflection-guard.sh \
+for script in session-start.sh done-gate.sh context-watch.sh \
               review-capture.sh task-capture.sh task-completion-gate.sh blockedby-gate.sh \
               pr-wrapper-gate.sh; do
   assert_file "$SHIPSHAPE_REPO_ROOT/hooks/$script" "$script exists"
@@ -83,7 +82,7 @@ repo="$work/repo"
 make_repo "$repo"
 export SHIPSHAPE_SCRATCH_ROOT="$repo"
 
-for script in done-gate.sh context-watch.sh deflection-guard.sh review-capture.sh \
+for script in done-gate.sh context-watch.sh review-capture.sh \
               task-capture.sh task-completion-gate.sh blockedby-gate.sh pr-wrapper-gate.sh; do
   run_hook "$script" '{}' "$repo" >/dev/null
   assert_eq "0" "$(hook_status)" "$script exits 0 on an empty payload"

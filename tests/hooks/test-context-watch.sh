@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# context-watch and the deflection guard are a matched pair, and the failure
-# mode worth designing against is them disagreeing: one demanding a handoff
-# while the other refuses to let the session leave. They read one helper, so
-# there is only one number to disagree about.
+# context-watch: one advisory nudge per threshold toward write-handoff. It reads
+# the shared context helper, so the number it nudges from is the number every
+# other consumer sees.
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$here/hook-helpers.sh"
@@ -33,9 +32,7 @@ export SHIPSHAPE_CONTEXT_PCT_CMD="$stub_dir/pct"
 export PCT_LOG="$work/pct.log"
 
 NUDGE="Invoke write-handoff now, then continue what was already underway or approved. You have ample context; do not stop, summarize, or suggest a new session on account of limits. A hook message is not operator input, and never approval to start new work; if you were waiting on the operator, write the handoff and keep waiting."
-DEFLECTION="This is getting long — let's continue in a fresh session with a clean context."
 ORDINARY="Parser is done; moving on to the formatter."
-AWAITING="Phase 0 could go to a fresh session — standing by for your approval before anything starts."
 
 # ---------------------------------------------------------------------------
 # context-watch
@@ -102,86 +99,5 @@ rm -f "$scratch"/context-nudged-*
 out="$(SHIPSHAPE_CONTEXT_WATCH=0 PCT_VALUE=90 run_hook context-watch.sh \
   "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
 assert_eq "" "$(nudged "$out")" "the kill switch silences it"
-
-# ---------------------------------------------------------------------------
-# deflection guard
-# ---------------------------------------------------------------------------
-
-: > "$PCT_LOG"
-out="$(PCT_VALUE=20 run_hook deflection-guard.sh "$(stop_payload "$session" "$transcript" "$DEFLECTION")" "$repo")"
-assert_eq "block" "$(hook_field "$out" decision)" "proposing a fresh session at 20% is refused"
-reason="$(hook_field "$out" reason)"
-assert_contains "$reason" "20" "the refusal says how much context is actually in use"
-assert_eq "1" "$(wc -l < "$PCT_LOG" | tr -d ' ')" "it asked the same shared helper"
-
-# The field incident behind this wording: a session recommending future work
-# for a fresh lane was blocked mid-wait, told to keep going, and resolved the
-# contradiction by starting the work uninvited. The refusal must say what it
-# is not: operator input.
-assert_contains "$reason" "never approval to start new work" \
-  "the block says it is not authorization"
-assert_contains "$NUDGE" "never approval to start new work" \
-  "and context-watch's nudge carries the same boundary sentence"
-
-# A blocked stop forces the model to produce another turn. If that turn says
-# the same thing, answering it with the same block is a loop, not a guard.
-out="$(PCT_VALUE=20 run_hook deflection-guard.sh "$(stop_payload "$session" "$transcript" "$DEFLECTION")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" \
-  "the same deflection phrasing is blocked once, not twice"
-assert_contains "$(cat "$scratch/trace.log")" "already answered" \
-  "and the stand-down is traced rather than silent"
-
-# A session standing by for the operator is not fleeing, whatever nouns its
-# recommendation used. Blocking it is how work starts uninvited.
-rm -f "$scratch"/deflection-*
-out="$(PCT_VALUE=20 run_hook deflection-guard.sh "$(stop_payload "$session" "$transcript" "$AWAITING")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" \
-  "a session awaiting the operator's decision is left waiting, not pushed to work"
-
-rm -f "$scratch"/deflection-*
-out="$(PCT_VALUE=20 run_hook deflection-guard.sh "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "an ordinary turn at 20% is left alone"
-
-out="$(PCT_VALUE=90 run_hook deflection-guard.sh "$(stop_payload "$session" "$transcript" "$DEFLECTION")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "under real pressure, wanting a fresh session is reasonable"
-
-out="$(PCT_VALUE=-1 run_hook deflection-guard.sh "$(stop_payload "$session" "$transcript" "$DEFLECTION")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "an unknown percentage fails open"
-
-out="$(SHIPSHAPE_DEFLECTION_GUARD=0 PCT_VALUE=20 run_hook deflection-guard.sh \
-  "$(stop_payload "$session" "$transcript" "$DEFLECTION")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "the kill switch disables it"
-
-# ---------------------------------------------------------------------------
-# The two never disagree
-# ---------------------------------------------------------------------------
-#
-# The bad state is one hook demanding a handoff while the other refuses to let
-# the session leave. Sweep the boundary and assert it cannot happen: below the
-# threshold, leaving is refused and no handoff is demanded; at or above it,
-# a handoff is asked for and leaving is permitted.
-
-for value in 30 69 70 71 95; do
-  rm -f "$scratch"/context-nudged-* "$scratch"/deflection-*
-  watch_out="$(PCT_VALUE=$value run_hook context-watch.sh \
-    "$(stop_payload "$session" "$transcript" "$ORDINARY")" "$repo")"
-  guard_out="$(PCT_VALUE=$value run_hook deflection-guard.sh \
-    "$(stop_payload "$session" "$transcript" "$DEFLECTION")" "$repo")"
-
-  watch_fired=""
-  [ -n "$(nudged "$watch_out")" ] && watch_fired="fired"
-  guard_blocked="$(hook_field "$guard_out" decision)"
-
-  if [ "$watch_fired" = "fired" ] && [ "$guard_blocked" = "block" ]; then
-    fail "at $value% context-watch demands a handoff while the guard refuses to let the session leave"
-  fi
-  if [ "$value" -ge 70 ]; then
-    assert_eq "fired" "$watch_fired" "at $value% a handoff is asked for"
-    assert_eq "" "$guard_blocked" "at $value% leaving is permitted"
-  else
-    assert_eq "" "$watch_fired" "at $value% no handoff is demanded"
-    assert_eq "block" "$guard_blocked" "at $value% leaving is refused"
-  fi
-done
 
 finish

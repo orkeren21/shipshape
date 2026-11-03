@@ -50,12 +50,19 @@ record behind as a side effect. The record cannot exist without the work.
 | `blockedby-gate` | `PreToolUse` | Refuses a task whose dependencies are open. |
 | `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create` and hands back the `shipshape-pr-open` form. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. |
 | `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, worded as an action rather than an alarm. |
-| `deflection-guard` | `Stop` | Holds the session when it proposes moving its own in-progress work to a fresh start below real context pressure. A session standing by for the operator is left waiting; the same deflection is answered once, not in a loop; and the hold says it is never approval to start new work. |
 | `session-start` | `SessionStart` | Injects the entrypoint skill. |
 
 Every hook **fails open**, has a kill switch (`SHIPSHAPE_<HOOK>=0`), and logs
 what it decided to `.shipshape/<session-id>/trace.log`. All scratch is
 session-scoped, so two lanes running against one repo cannot collide.
+
+**Retired in 0.4.0: the deflection guard.** It was a `Stop` hook that held a
+session when it proposed moving its work to a fresh session below 70% context.
+It was the only hook that read prose, and three months of field traces showed
+it was right about 1 time in 233. Almost every block landed on an Architect
+telling the operator to open a lane's session, which is the Architect's job.
+Once sessions can start sessions, that vocabulary is routine. The context nudge
+now does the remaining work without blocking anything.
 
 ## Kill switches are for hooks, not wrappers
 
