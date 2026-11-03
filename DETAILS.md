@@ -131,9 +131,9 @@ refined prompt, as its last two sections, whose headings tell the session to
 raise them before starting. `raw:` skips one prompt; `/refine off`, the
 `refine` option and `SHIPSHAPE_REFINE=0` turn the refiner off.
 
-Operator prompts enter in the order typed: each is refined (or not) at once,
-then waits for the operator prompt before it to enter, but only for 8
-seconds. A hook's own budget is 10 seconds, and waiting on another prompt
+Operator prompts keep their typed order within a bound: each is refined (or
+not) at once, then waits for every operator prompt ahead of it to enter, for
+at most 8 seconds after its own shaping ends. A hook's own budget is 10 seconds, and waiting on another prompt
 counts against it (only `$` calls and `next` do not), so a refinement slower
 than that lets a follow-up through first.
 

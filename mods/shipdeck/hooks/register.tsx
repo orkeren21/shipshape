@@ -88,7 +88,7 @@ async function refreshEpic($: EngineInterface): Promise<void> {
 async function refreshDoctor($: EngineInterface, isForced: boolean): Promise<void> {
   const now = await $.clock.now()
   if (isReadingDoctor) {
-    // A refresh asked for during a read runs once more after it, not never.
+    // A forced refresh asked for during a read runs once more after it.
     if (isForced) isDoctorDirty = true
     return
   }
@@ -205,7 +205,8 @@ async function refinePrompt($: EngineInterface, split: Split, signal: AbortSigna
     $.ui.toast(`shipdeck: prompt refined (${from} → ${countWords(reply.text)} words). Start a prompt with raw: to send it as typed.`)
     return assemble(split, reply.text)
   } finally {
-    await update($, refining, n => Math.max(0, n - 1))
+    // A failed write must not turn a finished refinement into "as typed".
+    await update($, refining, n => Math.max(0, n - 1)).catch(() => {})
   }
 }
 
@@ -230,9 +231,15 @@ export const register: Register = (on, options) => {
     isOff = (await $.env.get('SHIPSHAPE_SHIPDECK')) === '0'
     if (isOff) return next(e)
     isRefineEnvOff = (await $.env.get('SHIPSHAPE_REFINE')) === '0'
-    await update($, refining, () => 0)
-    // A reload keeps the drawn reading; the module starts from it.
-    lastDoctor = await read($, doctor)
+    // Fail open: a state call that throws must not leave the commands and
+    // clocks unregistered.
+    try {
+      await update($, refining, () => 0)
+      // A reload keeps the drawn reading; the module starts from it.
+      lastDoctor = await read($, doctor)
+    } catch {
+      lastDoctor = null
+    }
     await $.command.register({ name: 'refine', description: 'shipdeck: turn prompt refining on or off for this session', argumentHint: 'on | off' })
     await $.command.register({ name: 'shipdeck', description: 'shipdeck: open the epic pane, or switch the band style', argumentHint: 'style github | style linear' })
     void refreshUsage($).catch(() => {})
@@ -297,6 +304,8 @@ export const register: Register = (on, options) => {
         const stop = new AbortController()
         const abort = () => stop.abort()
         next.signal.addEventListener('abort', abort)
+        // An abort that landed while the prompt was shaped fires no event.
+        if (next.signal.aborted) stop.abort()
         try {
           await Promise.race([prior, $.clock.sleep(8_000, { signal: stop.signal }).catch(() => {})])
         } finally {

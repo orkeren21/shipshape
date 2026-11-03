@@ -374,3 +374,37 @@ test('a failed save sends the dictation as typed, with a toast', async ($, on) =
   expect(seen.toasts.some(t => t.includes('could not be saved'))).toBe(true)
 })
 
+test('two dumps refined at once keep the spinner until the second is done', async ($, on) => {
+  const { clock } = world(on, { modelDelays: [5_000, 10_000] })
+  await start($, clock, 'terminal')
+  const first = submit($, DUMP)
+  await clock.advance(1_000)
+  const second = submit($, `${DUMP} and one more thing`)
+  await clock.advance(5_000)
+  expect(await isRefining($)).toBe(true)
+  await clock.advance(10_000)
+  await Promise.all([first, second])
+  expect(await isRefining($)).toBe(false)
+})
+
+test('a session.start mid-refinement clears the spinner', async ($, on) => {
+  const { clock } = world(on, { modelDelays: [60_000] })
+  await start($, clock, 'terminal')
+  void submit($, DUMP)
+  await clock.settle()
+  expect(await isRefining($)).toBe(true)
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true } as never)
+  await clock.settle()
+  expect(await isRefining($)).toBe(false)
+})
+
+test('a second dump is refined while the first is, and enters right after it', async ($, on) => {
+  const { clock, seen } = world(on, { modelDelays: [5_000, 3_000] })
+  await start($, clock)
+  const first = submit($, DUMP)
+  await clock.advance(1_000)
+  const second = submit($, `${DUMP} and one more thing`)
+  await clock.advance(4_500)
+  expect(seen.entered.filter(t => t.includes('## Goal'))).toHaveLength(2)
+  await Promise.all([first, second])
+})
