@@ -129,7 +129,7 @@ assert_file "$skills/read-handoff/SKILL.md" "read-handoff exists for the success
 # The nudge is worded as actions rather than an alarm — surfacing context
 # pressure is itself what makes a model start winding down — and without the
 # prohibitions a session echoes back ("I'm not suggesting a new session").
-assert_contains "$nudge" "carry on with what was already underway" "the nudge tells the session to keep going"
+assert_contains "$nudge" "finish the step in flight" "the nudge has the work in hand finished, not dropped"
 assert_not_contains "$nudge" "do not stop" "in positive words, not a prohibition it would echo"
 
 # Its thresholds come from the seat shipshape-seat records, read through the

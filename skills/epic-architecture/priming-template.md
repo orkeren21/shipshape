@@ -1,8 +1,9 @@
 # Feature priming template
 
-What the Epic Architect hands a feature session. It is pasted into a fresh
-session as its first message, so it has to stand entirely on its own: the
-session it primes has no memory of the epic conversation that produced it.
+What the Epic Architect hands a feature session. It becomes a fresh
+session's first message — the brief of a session the Architect starts, or a
+paste by the operator — so it has to stand entirely on its own: the session
+it primes has no memory of the epic conversation that produced it.
 
 Every section below appears in every priming. A section with nothing to say
 says so in a line — an absent section reads as an oversight, and the session
@@ -12,7 +13,9 @@ goes looking for it.
 
 ## `# <Feature name> — Session Priming`
 
-One line under the title: where to paste it, and which directory to start in.
+One line under the title: how the session starts (started by the Architect
+with this priming as its brief, or pasted by the operator) and which
+directory it works in.
 
 ## Process frame
 
@@ -48,6 +51,11 @@ Architect's identity as of this priming, dated, for the first announce.
 Where rulings land (`decisions.md`), and the boundary in one line: the
 Architect answers inside the operator-approved scope; scope changes and
 irreversible actions go to the operator.
+
+The approval regime, stated: whether the lane starts work on its own
+announce, or announces and waits for a go before the first change. The
+operator has run both, and a priming silent on it leaves the lane to guess
+the looser one.
 
 ## Read first, in order
 

@@ -14,18 +14,17 @@ Say which skill you are using and why, then follow it.
 | Building or changing something | `shipshape:brainstorming` |
 | A plan or task list already in hand | `shipshape:direct-implementation`, or `shipshape:subagent-driven-development` for genuinely parallel tracks |
 | Implementation finished | `shipshape:finishing-with-evidence` |
-| Context around 70% | `shipshape:write-handoff` |
+| Context at the handoff point (70%; Architect 85%) | `shipshape:write-handoff` |
 | Picking up work from an earlier session | `shipshape:read-handoff` |
 | Scoping an epic across several sessions | `shipshape:epic-architecture` |
 | A lane inside an epic | `shipshape:coordinating-with-the-architect` |
 | Independent work to fan out right now | `shipshape:dispatching-parallel-agents` |
 | Writing or editing a skill | `shipshape:writing-skills` |
 
-Some things are enforced rather than suggested. Hooks watch for the evidence a
-finished branch leaves — a whole-branch review, green CI, a scoped
-smoke — and read artifacts, not what you say about them. The wrappers in
-`bin/` produce those artifacts as a side effect of the work, so use them
-rather than raw commands.
+Some things are enforced. Hooks gate on the evidence a finished branch
+leaves — a whole-branch review, green CI, a scoped smoke — reading artifacts,
+not what you say about them. The wrappers in `bin/` produce those artifacts,
+so use them rather than raw commands.
 
 Work starts only on operator approval: a planning request authorizes planning,
 not the build, and a hook message is never approval.

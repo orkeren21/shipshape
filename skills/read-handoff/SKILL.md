@@ -29,12 +29,20 @@ be, what you are picking up first, and anything the handoff claimed that turned
 out to have moved.
 
 Short. This is a checkpoint, not a report — it exists so a misunderstanding
-costs one exchange instead of an afternoon.
+costs one exchange instead of an afternoon. When the work lives in the
+predecessor's worktree, add one line: the predecessor session can stop, and
+stays unarchived until this work lands.
 
-## In an epic, take the seat visibly
+## Take the seat
 
-A successor lane writes its own `roster/` file and announces itself to the
-Architect before picking up the next action
+Record the seat your predecessor held, with this handoff:
+`shipshape-seat <architect | lane ID | solo> [--epic <absolute path>]
+--handoff <path>`. That gives the hooks the seat's handoff point and points a
+compacted session back at the handoff.
+
+In an epic, take it visibly too. A successor lane takes over its
+predecessor's `roster/` file, rewriting it with its own identity, and
+announces itself to the Architect before picking up the next action
 (`shipshape:coordinating-with-the-architect`). A successor Architect works
 the other way around: rewrite `roster/architect.md` first, then announce
 the succession to the lanes — the order and the duties are in

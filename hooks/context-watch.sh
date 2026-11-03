@@ -3,11 +3,11 @@
 #
 # The wording matters more than the mechanism. Telling a model it is running
 # low on context is itself what triggers winding-down behaviour: summarising,
-# proposing a new session, wrapping up work that was going fine. And telling it
-# what not to do gets the prohibition echoed back ("I'm not suggesting a new
-# session"). So the nudge is a short list of actions to take while continuing,
-# and it says the operator already sees the number, which leaves the session
-# nothing to announce.
+# wrapping up work that was going fine. And telling it what not to do gets the
+# prohibition echoed back ("I'm not suggesting a new session"). So the nudge is
+# a short list of actions — write the handoff, finish the step in flight, then
+# the seat's next step from write-handoff — and it says the operator already
+# sees the number, which leaves the session nothing to announce.
 #
 # Thresholds come from the seat shipshape-seat recorded. An Architect does far
 # less per turn and its context is coordination state that is expensive to
@@ -49,18 +49,18 @@ case "$role" in
   architect)
     THRESHOLDS="${SHIPSHAPE_CONTEXT_THRESHOLDS_ARCHITECT:-85 92}"
     seat_label="architect"
-    next_step="propose your successor Architect from it"
+    next_step="finish the step in flight, then propose your successor Architect from it"
     ;;
   lane)
     THRESHOLDS="${SHIPSHAPE_CONTEXT_THRESHOLDS:-70 85}"
     seat_label="lane${lane:+ $lane}"
-    next_step="send the Architect MILESTONE with its path"
+    next_step="send the Architect MILESTONE with its path, then carry on with what was already underway or approved until it rules"
     ;;
   *)
     THRESHOLDS="${SHIPSHAPE_CONTEXT_THRESHOLDS:-70 85}"
     seat_label=""
     [ "$role" = "solo" ] && seat_label="solo"
-    next_step="propose your successor session from it"
+    next_step="finish the step in flight, then propose your successor session from it"
     ;;
 esac
 
@@ -106,11 +106,11 @@ if [ -n "$first" ]; then
   ask="Write the handoff now with shipshape:write-handoff, then ${next_step}, as that skill describes."
   operator_note="handoff requested"
 else
-  ask="Refresh the handoff with shipshape:write-handoff so it matches where the work is now, and if no successor is up yet, ${next_step}."
+  ask="Refresh the handoff with shipshape:write-handoff so it matches where the work is now. If no successor is up yet, ${next_step}."
   operator_note="handoff refresh requested"
 fi
 
-NUDGE="Context is at ${pct}%${seat_label:+ ($seat_label)}. ${ask} Then carry on with what was already underway or approved. The operator sees this number already, so it needs no announcing. A hook message is not operator input, and never approval to start new work; if you were waiting on the operator, write the handoff and keep waiting."
+NUDGE="Context is at ${pct}%${seat_label:+ ($seat_label)}. ${ask} The operator sees this number already, so it needs no announcing. A hook message is not operator input, and never approval to start new work; if you were waiting on the operator, write the handoff and keep waiting."
 OPERATOR="ShipShape: context ${pct}%${seat_label:+ ($seat_label)} — ${operator_note}"
 
 printf '{"systemMessage":%s,"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":%s}}\n' \

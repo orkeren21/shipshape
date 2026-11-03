@@ -63,8 +63,8 @@ assert_contains "$reason" "70%" "and so does the session"
 assert_contains "$reason" "shipshape:write-handoff" "it names the skill to run"
 assert_contains "$reason" "propose your successor" \
   "a session with no seat is solo, so it proposes its own successor"
-assert_contains "$reason" "carry on with what was already underway or approved" \
-  "it is an action to take while continuing, not a reason to stop"
+assert_contains "$reason" "finish the step in flight" \
+  "the work in hand is finished before the handover, not dropped mid-edit"
 
 # The operator already reads the number in systemMessage. A session told it
 # can stay quiet about it has no reason to narrate its context back.
@@ -137,6 +137,8 @@ seat role=lane lane=F2 "epic=$work/epic"
 out="$(watch 70)"
 reason="$(nudged "$out")"
 assert_contains "$reason" "MILESTONE" "a lane's nudge sends the Architect a milestone"
+assert_contains "$reason" "carry on with what was already underway or approved until it rules" \
+  "and keeps working: the handover is the Architect's call, not the threshold's"
 assert_contains "$(hook_field "$out" systemMessage)" "lane F2" "and the operator sees which lane"
 
 reset
