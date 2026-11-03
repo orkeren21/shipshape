@@ -256,7 +256,8 @@ export const register: Register = (on, options) => {
     const ran = await next(e)
     if (isOff) return ran
     try {
-      void refreshUsage($).catch(() => {})
+      // A subagent's usage is its own context, not the session's.
+      if (!(e as { agentId?: string }).agentId) void refreshUsage($).catch(() => {})
       const tool = String(e.tool)
       if (tool === 'Bash' || tool === 'Agent' || tool === 'Task') void refreshDoctor($, false).catch(() => {})
       // The successor card write-handoff prescribes: proposed, briefed with read-handoff.

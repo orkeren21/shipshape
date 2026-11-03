@@ -75,10 +75,17 @@ export async function findCore($: EngineInterface): Promise<{ root: string } | {
 // A failure is transient when the doctor did not run at all (a timeout, a
 // process error): the last good reading still stands. Output that is not a
 // format 1 reading is a core the mod cannot read, and clears it.
+//
+// The doctor finds its scratch from git in the folder it runs in. A reading
+// a subagent's tool call asks for would default to that subagent's folder (a
+// worktree of its own, for an isolated one), so every reading runs in the
+// session's project root, which only /cd or a worktree move changes.
 export async function runDoctor($: EngineInterface, root: string): Promise<{ doctor: DoctorJson } | { note: string; isTransient: boolean }> {
   try {
     const sid = await $.session.id()
+    const dir = await $.session.root()
     const ran = await $.process.run(['bash', `${root}/bin/shipshape-doctor`, '--json'], {
+      cwd: dir,
       env: { SHIPSHAPE_SESSION_ID: sid },
       timeoutMs: 10_000,
     })

@@ -15,7 +15,8 @@ export function paneTree(view: EpicView | null, epic: string | null, now: number
     return <Text dimColor>No epic folder recorded for this seat. Take the seat with shipshape-seat architect --epic &lt;abs path&gt;.</Text>
   }
   if (!view) return <Text dimColor>Reading {epic}…</Text>
-  const seatW = Math.max(8, Math.min(18, ...view.rows.map(r => r.seat.length)))
+  const longest = view.rows.reduce((n, r) => Math.max(n, r.seat.length), 0)
+  const seatW = Math.max(8, Math.min(18, longest))
   const statusW = Math.max(10, Math.min(28, columns - seatW - 12))
   return (
     <Box flexDirection="column" gap={1}>

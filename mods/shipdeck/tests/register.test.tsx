@@ -47,7 +47,7 @@ type World = {
 
 // The engine beneath shipdeck: every $ call it makes, answered from memory.
 function world(on: On, w: World = {}) {
-  const seen = { model: [] as unknown[], runs: [] as unknown[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[] }
+  const seen = { model: [] as unknown[], runs: [] as unknown[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[], usage: 0 }
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, w.env ?? {})
   on('command.register', (_, e) => {
@@ -55,8 +55,9 @@ function world(on: On, w: World = {}) {
     seen.writes.push(`command:${e.name}`)
     return { value: { command: e.name } } as never
   })
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000, tokens: 370_000, percent: 37 }, rateLimits: [] } }) as never)
+  on('session.usage', () => { seen.usage += 1; return { value: { startedAt: 0, context: { window: 1_000_000, tokens: 370_000, percent: 37 }, rateLimits: [] } } as never })
   on('session.id', () => ({ value: 'sess-1' }) as never)
+  on('session.root', () => ({ value: '/repo' }) as never)
   on('fs.stat', (_, e) => {
     const isDoctor = e.path.endsWith('/bin/shipshape-doctor')
     if (!isDoctor && !e.resolve) throw new Error(`ENOENT ${e.path}`)
@@ -308,6 +309,8 @@ test('an Architect gets the epic pane, and a lane finishing raises a notice', as
   for (const surface of ['terminal', 'desktop'] as const) {
     const pane = await $.ui.mount({ plugin: 'shipdeck', surface, component: 'Pane', requestId: 'shipdeck-epic', props: { title: 'Epic', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as never })
     expect(await pane.find({ type: 'Text', text: /^f1$/ })).toBeDefined()
+    // The seat column fits the longest seat, so `architect` is not cut.
+    expect((await pane.find({ type: 'Box', text: /^architect$/ }))?.props.width).toBe(9)
     expect(await pane.find({ type: 'Text', text: /D1\. Ship the band\./ })).toBeDefined()
     expect(await pane.find({ type: 'Text', text: /^10m$/ })).toBeDefined()
     await pane.unmount()
@@ -479,4 +482,17 @@ test('a refused command costs that command alone', async ($, on) => {
   await submit($, DUMP)
   expect(seen.entered.at(-1)).toContain('## Goal')
   expect(seen.writes).toContain('command:shipdeck')
+})
+
+test("a subagent's Bash reads the doctor in the session's root and leaves the gauge alone", async ($, on) => {
+  const { clock, seen } = world(on)
+  await start($, clock)
+  await clock.advance(6_000)
+  const runs = seen.runs.length
+  const usage = seen.usage
+  await $.tool.call({ tool: 'Bash', agentId: 'agent-1', command: 'ls' } as never)
+  await clock.settle()
+  expect(seen.runs.length).toBe(runs + 1)
+  for (const run of seen.runs as { init?: { cwd?: string } }[]) expect(run.init?.cwd).toBe('/repo')
+  expect(seen.usage).toBe(usage)
 })
