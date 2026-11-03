@@ -18,13 +18,11 @@
 # The last such entry that belongs to this session — subagent entries are
 # marked isSidechain and describe a different context — divided by the window.
 #
-# One source, two consumers: context-watch nudges from this number and the
-# deflection guard defends from it, so they can never disagree about whether
-# the session is under pressure.
+# One source: context-watch nudges from this number, and anything else that
+# needs to know how full the session is asks the same question here.
 #
 # -1 is a real answer meaning "unknown", not an error, so the exit status stays
-# 0. Consumers treat it as unknown: context-watch stays silent, the deflection
-# guard fails open.
+# 0. Consumers treat it as unknown: context-watch stays silent.
 
 set -uo pipefail
 

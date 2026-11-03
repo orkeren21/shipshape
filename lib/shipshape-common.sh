@@ -194,9 +194,9 @@ shipshape_field() {
 #
 # The result is an object, not a string: {status, content:[{type,text}], ...}.
 # A background dispatch is a different shape again — status "async_launched",
-# an agentId, and no content, because the agent has not finished. There is no
-# later event carrying the result, so a background reviewer is one whose report
-# can never be captured. Prints nothing in that case; the caller says so.
+# an agentId, and no content, because the agent has not finished. Its report
+# arrives later, on SubagentStop. Prints nothing in that case; the caller
+# remembers the agent and captures the report when it stops.
 shipshape_agent_text() {
   local payload="${1:-$SHIPSHAPE_PAYLOAD}"
   if command -v jq >/dev/null 2>&1; then
@@ -547,9 +547,20 @@ shipshape_legs_settled() { # <scratch>
 # Context pressure
 # ---------------------------------------------------------------------------
 
-# One number, one place it comes from. context-watch nudges from this and the
-# deflection guard defends from it; routing both through here is what stops one
-# demanding a handoff while the other refuses to let the session leave.
+# shipshape_seat_field <scratch> <key> -> the value shipshape-seat recorded.
+#
+# The seat file is key=value lines; the first '=' splits, so a path holding one
+# survives. Prints nothing for a missing file or key, and callers read nothing
+# as "no seat" — the solo defaults, which nudge early rather than late.
+shipshape_seat_field() {
+  local file="$1/seat" key="$2"
+  [ -f "$file" ] || return 0
+  sed -n "s/^${key}=//p" "$file" 2>/dev/null | head -1
+}
+
+# One number, one place it comes from. context-watch nudges from this, and any
+# later consumer asks the same helper, so two readers can never disagree about
+# how full the session is.
 #
 # SHIPSHAPE_CONTEXT_PCT_CMD replaces the helper, which is how tests pin the
 # number without having to fabricate a transcript.

@@ -307,7 +307,8 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "PASSES: a freshly stamped PR merges"
 
 # ===========================================================================
-# Gate 8 — deflection. Skip: propose a fresh session instead of finishing.
+# Nudge 8 — context, advisory. It catches nothing; it fires at the handoff
+# point so the session writes a handoff there rather than later.
 # ===========================================================================
 
 pct_stub="$work/pct"
@@ -315,17 +316,9 @@ printf '#!/bin/sh\nprintf "%%s\\n" "${PCT_VALUE:-0}"\n' > "$pct_stub"
 chmod +x "$pct_stub"
 export SHIPSHAPE_CONTEXT_PCT_CMD="$pct_stub"
 
-deflect="This is getting long — let's pick it up in a fresh session."
-out="$(PCT_VALUE=18 run_hook deflection-guard.sh "$(stop_payload lane-g1 "$work/t.jsonl" "$deflect")" "$repo")"
-assert_eq "block" "$(hook_field "$out" decision)" \
-  "TRIPPED: proposing a fresh session at 18% context is refused"
-
-out="$(PCT_VALUE=88 run_hook deflection-guard.sh "$(stop_payload lane-g1 "$work/t.jsonl" "$deflect")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "PASSES: at 88% the same proposal is reasonable"
-
 out="$(PCT_VALUE=74 run_hook context-watch.sh "$(stop_payload lane-g1 "$work/t.jsonl" "still working")" "$repo")"
 nudge="$(hook_field "$out" hookSpecificOutput.additionalContext)"
-assert_ne "" "$nudge" "TRIPPED: past 70% the handoff nudge fires"
+assert_ne "" "$nudge" "FIRES: past 70% the handoff nudge fires"
 assert_contains "$nudge" "write-handoff" "and names the skill to invoke"
 assert_eq "" "$(hook_field "$out" decision)" "advisory: it does not stop the turn to deliver advice"
 
@@ -346,10 +339,6 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
 rm -f "$scratch/verify/g1a"
 out="$(SHIPSHAPE_TASK_COMPLETION_GATE=0 run_hook task-completion-gate.sh "$close1" "$repo")"
 assert_eq "" "$(hook_field "$out" decision)" "SHIPSHAPE_TASK_COMPLETION_GATE=0 stands the completion gate down"
-
-out="$(SHIPSHAPE_DEFLECTION_GUARD=0 PCT_VALUE=18 run_hook deflection-guard.sh \
-  "$(stop_payload lane-g1 "$work/t.jsonl" "$deflect")" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "SHIPSHAPE_DEFLECTION_GUARD=0 stands the guard down"
 
 out="$(SHIPSHAPE_MERGE_GATE=0 run_hook merge-gate.sh "$(merge_payload "gh pr merge 999")" "$repo")"
 assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \

@@ -123,17 +123,71 @@ assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
 
 # --- a backgrounded reviewer -------------------------------------------------
 #
-# Agent dispatches run in the background by default. There is no later event
-# carrying the result, so a background reviewer is one whose report can never
-# be captured — and the session has to be told that, not left believing a
-# review happened.
+# In the desktop app every Agent dispatch runs in the background: PostToolUse
+# sees only the launch — status async_launched and an agentId — and the report
+# arrives later, on SubagentStop, as last_assistant_message. SubagentStop
+# carries no dispatch description, so the marker is remembered at launch under
+# the agent's id and matched when that agent stops. Payload shapes probed
+# against Claude Code 2.1.310 in a headless run: the launch's
+# tool_response.agentId equals SubagentStop's agent_id, and both carry the
+# parent session's session_id.
 
-rm -f "$scratch"/review-*.md
+stop_payload_for() { # stop_payload_for <agent id> <last message>
+  printf '{"session_id":"%s","hook_event_name":"SubagentStop","agent_id":%s,"agent_type":"general-purpose","stop_hook_active":false,"last_assistant_message":%s}' \
+    "$session" "$(json_string "$1")" "$(json_string "$2")"
+}
+
+rm -f "$scratch"/review-*.md "$scratch"/conformance-*.md
+rm -rf "$scratch/pending-capture"
 run_hook review-capture.sh "$(async_payload "whole-branch-review: backgrounded")" "$repo" >/dev/null
 assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
-  "a backgrounded dispatch captures nothing, because there is nothing yet to capture"
-assert_contains "$(cat "$scratch/trace.log")" "background" \
-  "and the trace says so, naming the cause rather than reporting a silent reviewer"
+  "the launch alone writes no report, because there is nothing yet to capture"
+assert_file "$scratch/pending-capture/abc123" "it remembers the marked agent by its id"
+assert_contains "$(cat "$scratch/trace.log")" "abc123" "and the trace names the agent it is waiting on"
+
+run_hook review-capture.sh "$(stop_payload_for abc123 "$REPORT")" "$repo" >/dev/null
+captured="$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)"
+[ -n "$captured" ] || fail "when that agent stops, its report is written"
+[ -n "$captured" ] && assert_eq "$REPORT" "$(cat "$captured")" "verbatim, from what the reviewer returned"
+assert_no_file "$scratch/pending-capture/abc123" "and the agent is no longer pending"
+assert_eq "0" "$(hook_status)" "SubagentStop is never blocked by it"
+assert_eq "" "$(hook_field "$(run_hook review-capture.sh "$(stop_payload_for abc123 "$REPORT")" "$repo")" decision)" \
+  "and it answers nothing that could hold the subagent"
+
+rm -f "$scratch"/review-*.md
+run_hook review-capture.sh "$(stop_payload_for abc123 "$REPORT")" "$repo" >/dev/null
+assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
+  "a second stop of the same agent writes nothing more: it was captured once"
+
+run_hook review-capture.sh "$(stop_payload_for someone-else "$REPORT")" "$repo" >/dev/null
+assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
+  "an agent that was never a marked dispatch is left alone"
+
+# A conformance dispatch files as conformance, never as the review the done
+# gate reads — in the background as in the foreground.
+bg_conformance="$(printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"design-conformance: bg"},"tool_response":{"status":"async_launched","agentId":"conf9","isAsync":true}}' "$session")"
+run_hook review-capture.sh "$bg_conformance" "$repo" >/dev/null
+run_hook review-capture.sh "$(stop_payload_for conf9 "the diff conforms")" "$repo" >/dev/null
+assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
+  "a background conformance report is not filed as a review"
+[ -n "$(find "$scratch" -maxdepth 1 -name 'conformance-*.md' | head -1)" ] \
+  || fail "it is filed as conformance"
+
+# A stop with no text keeps waiting rather than recording an empty review.
+run_hook review-capture.sh "$(async_payload "whole-branch-review: quiet")" "$repo" >/dev/null
+run_hook review-capture.sh "$(stop_payload_for abc123 "")" "$repo" >/dev/null
+assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
+  "a stop with no text writes no report"
+assert_file "$scratch/pending-capture/abc123" "and the agent stays pending for a later stop"
+
+# A hostile agent id cannot walk out of the pending directory.
+hostile="$(printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"whole-branch-review: x"},"tool_response":{"status":"async_launched","agentId":"../../escape","isAsync":true}}' "$session")"
+run_hook review-capture.sh "$hostile" "$repo" >/dev/null
+assert_no_file "$scratch/escape" "a hostile agent id stays inside pending-capture"
+assert_file "$scratch/pending-capture/escape" "reduced to a safe name there"
+
+rm -rf "$scratch/pending-capture"
+rm -f "$scratch"/review-*.md "$scratch"/conformance-*.md
 
 # --- a plain-string result ---------------------------------------------------
 

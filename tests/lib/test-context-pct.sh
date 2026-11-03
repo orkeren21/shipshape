@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # shipshape-context-pct is the single source of context usage: context-watch
-# nudges from it and the deflection guard defends from it, so they can never
-# disagree.
+# nudges from it, and a plain shell command reaches the same number.
 #
 # It is not an estimate. Every assistant entry in a transcript carries the
 # API's own accounting for that request, and the context the next request will
@@ -74,8 +73,8 @@ assert_eq "100" "$("$pct" "$t")" "usage beyond the window clamps to 100"
 # --- the unknown path --------------------------------------------------------
 #
 # -1 means "cannot determine". Consumers must treat it as unknown: context-watch
-# stays silent, the deflection guard fails open. It is a real answer, not an
-# error, so the exit status stays 0 and callers do not have to branch twice.
+# stays silent. It is a real answer, not an error, so the exit status stays 0
+# and callers do not have to branch twice.
 
 assert_eq "-1" "$("$pct" "$work/does-not-exist.jsonl")" \
   "a missing transcript is unknown, not a crash"

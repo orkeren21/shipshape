@@ -27,12 +27,6 @@
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/context-watch.sh\"",
             "shell": "bash",
             "async": false
-          },
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/deflection-guard.sh\"",
-            "shell": "bash",
-            "async": false
           }
         ]
       }
@@ -98,6 +92,18 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/task-completion-gate.sh\"",
+            "shell": "bash",
+            "async": false
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/review-capture.sh\"",
             "shell": "bash",
             "async": false
           }

@@ -40,12 +40,12 @@ done
 
 # --- every wrapper and hook in the tables exists ------------------------------
 
-for wrapper in shipshape-pr-open shipshape-ci-watch shipshape-verify shipshape-smoke; do
+for wrapper in shipshape-pr-open shipshape-ci-watch shipshape-verify shipshape-smoke shipshape-seat; do
   assert_contains "$detail_body" "$wrapper" "DETAILS.md documents $wrapper"
 done
 
 for hook in done-gate review-capture task-capture task-completion-gate \
-            blockedby-gate context-watch deflection-guard session-start; do
+            blockedby-gate context-watch session-start; do
   assert_contains "$detail_body" "$hook" "DETAILS.md documents the $hook hook"
   assert_file "$SHIPSHAPE_REPO_ROOT/hooks/$hook.sh" "$hook.sh exists to be documented"
 done

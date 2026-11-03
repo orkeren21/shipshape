@@ -140,10 +140,10 @@ leg="$(shipshape_leg_review "$scratch")"
 detail="${leg#*|}"
 case "${leg%%|*}" in
   empty)
-    add "review report — ignored: $detail (empty). An empty file at the right name is not a review; dispatch the reviewer synchronously with \"whole-branch-review:\" in the description."
+    add "review report — ignored: $detail (empty). An empty file at the right name is not a review; dispatch the reviewer with \"whole-branch-review:\" in the description."
     ;;
   missing)
-    add "review report — no whole-branch review has been captured. Dispatch the reviewer synchronously with \"whole-branch-review:\" in the description; the hook writes the report from what it returns."
+    add "review report — no whole-branch review has been captured. Dispatch the reviewer with \"whole-branch-review:\" in the description; the hook writes the report from what it returns, or for a background dispatch from what it says when it stops."
     ;;
   stale)
     add "review report — stale: it predates the current HEAD commit, so it did not see the code being shipped. Re-review the branch."

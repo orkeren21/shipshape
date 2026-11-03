@@ -37,8 +37,11 @@ the lane's scoped smoke later runs.
 the epic folder. `roster/` holds one file per seat — the Architect's, and
 one per lane — each written only by the session currently holding that
 seat; the Architect's own `roster/architect.md` carries the stable session
-id (`get_session("self")`), the current harness name (the `ListAgents`
-header), a status, and when the name was last checked. Primings point at
+id, the current harness name (the `ListAgents` header), a status, and when
+the name was last checked. `shipshape-seat architect --epic <absolute path>`
+records the seat for the hooks — it moves this session's handoff point to
+85% — and prints the session id line, the same id `get_session("self")`
+gives. Primings point at
 the roster rather than embedding an address — names churn on restarts, ids
 hold, and a lane that reads `roster/architect.md` finds whoever holds the
 seat now. A roster file is worth its freshest line, so the seat re-checks
@@ -47,6 +50,32 @@ its own entry at every coordination touchpoint — the Architect's included.
 says what goes in it.
 
 **One priming per feature** — see [priming-template.md](priming-template.md).
+
+## Starting the lanes
+
+When the operator says go — "dispatch F1 and F2", in their own words — the
+Architect starts each named lane itself, if its tools include a
+session-starting tool (in the desktop app, `start_session`; it may be listed
+as deferred and need loading by name). Each lane starts `user_asked`, with a
+`fresh` context, its own worktree, its priming as the brief, a `background`
+naming the epic folder and the lane's place in it, and the title
+`<epic> · <feature ID>`. A `fork` would hand the lane this whole
+conversation, which is exactly the context a lane exists to leave behind.
+Where the app offers sidebar groups, one named after the epic keeps the
+lanes together.
+
+The operator's go is what makes those starts direct. A lane the go did not
+name is proposed instead, as a card (`own_initiative`) the operator starts
+with a click — and on a turn a lane's message started, the app refuses a
+direct start anyway.
+
+Without a session-starting tool, hand each priming to the operator to paste
+into a new session, as before.
+
+Sessions the Architect started report back to it when they end a turn. That
+is a convenience on top of the protocol, not a replacement for it: the notes
+reach only the session that did the starting, so they stop at the first
+succession, and the roster does not.
 
 ## Splitting
 
@@ -98,9 +127,10 @@ message, in any lane, is never that go.
 A lane at its context threshold sends `MILESTONE`: handoff written, an
 estimate of what remains. Weigh that remainder against the context the lane
 has left. A small remainder gets `RULING: continue`; a large one gets
-`RULING: stop` plus a successor priming handed to the operator, who opens
-the new session — opening sessions is the one act the harness keeps human.
-Log the verdict like any ruling.
+`RULING: stop, successor`, and the lane proposes its own successor from its
+handoff. The lane proposes rather than the Architect because only a session
+inside the lane's worktree can start one there, on the lane's branch and
+pull request. Log the verdict like any ruling.
 
 A lane gone quiet without a `MILESTONE` or `DONE` gets a nudge, then the
 operator. When dispatching, an idle notice can stand in for polling —
@@ -120,9 +150,11 @@ without it means priming it with a world-state that is already wrong.
 
 ## Handing over
 
-At around 70% context, write a handoff with `shipshape:write-handoff` and keep
-going. A successor Architect picks it up with `shipshape:read-handoff` and
-continues the epic rather than restarting it.
+At the Architect's handoff point — 85%, where context-watch nudges once the
+seat is recorded — write a handoff with `shipshape:write-handoff` and propose
+the successor Architect as that skill describes. A successor Architect picks
+it up with `shipshape:read-handoff` and continues the epic rather than
+restarting it.
 
 The epic outlasts the session; the Architect role has to survive that. A
 successor Architect's first act after `shipshape:read-handoff` is taking
@@ -130,3 +162,7 @@ the seat visibly: rewrite `roster/architect.md` with its own id and name,
 then `ANNOUNCE` the succession to every lane whose roster status is
 `active`. The lanes route by the roster, so the seat moves the moment the
 file says it did.
+
+The predecessor goes idle once that announce lands. A note that still
+reaches it — a lane it started, ending a turn — gets one read of
+`roster/architect.md`, which names the new holder, and no reply.

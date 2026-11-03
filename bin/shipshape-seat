@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# Record which seat this session holds, and print what a roster file needs.
+#
+#   shipshape-seat architect [--epic <abs path>] [--handoff <path>]
+#   shipshape-seat lane <ID>  [--epic <abs path>] [--handoff <path>]
+#   shipshape-seat solo       [--handoff <path>]
+#   shipshape-seat --handoff <path>     update the handoff, keep the rest
+#   shipshape-seat                      report the current seat
+#
+# The seat lives at .shipshape/<session>/seat as key=value lines. Two hooks
+# read it: context-watch picks the handoff thresholds for the seat (an
+# Architect hands off later than a lane), and session-start points a
+# compacted session back at its roster file, rulings and handoff. The roster
+# in an epic folder stays the coordination record — the hooks cannot know
+# where an epic folder is, but they can always reach the session's own
+# scratch dir.
+#
+# No kill switch: with no seat file, context-watch uses the solo thresholds,
+# which nudge earlier rather than later. Not running this is the off switch.
+
+set -uo pipefail
+
+lib="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../lib" && pwd)"
+# shellcheck source=../lib/shipshape-common.sh
+. "$lib/shipshape-common.sh"
+
+usage() {
+  echo "usage: shipshape-seat architect [--epic <abs path>] [--handoff <path>]" >&2
+  echo "       shipshape-seat lane <ID> [--epic <abs path>] [--handoff <path>]" >&2
+  echo "       shipshape-seat solo [--handoff <path>]" >&2
+  echo "       shipshape-seat --handoff <path>" >&2
+  echo "       shipshape-seat" >&2
+  exit 64
+}
+
+# A value becomes one line of the record. A newline inside it would forge a
+# second line — role=, say — so it is refused rather than escaped.
+one_line() {
+  case "$1" in
+    *$'\n'*|*$'\r'*) echo "shipshape-seat: a value cannot span lines" >&2; usage ;;
+  esac
+}
+
+scratch="$(shipshape_scratch_dir)"
+file="$scratch/seat"
+
+label() { # label <role> <lane> -> "lane F2" | "architect" | "solo"
+  if [ "$1" = "lane" ] && [ -n "$2" ]; then printf 'lane %s' "$2"; else printf '%s' "$1"; fi
+}
+
+identity() {
+  if [ -n "${CLAUDE_CODE_HOST_SESSION_ID:-}" ]; then
+    printf 'session id: %s\n' "$CLAUDE_CODE_HOST_SESSION_ID"
+  else
+    printf 'session id: not in this environment; get_session("self") gives it where the desktop session tools exist\n'
+  fi
+  printf 'seat file: %s\n' "$file"
+}
+
+# --- report ------------------------------------------------------------------
+
+if [ "$#" -eq 0 ]; then
+  role="$(shipshape_seat_field "$scratch" role)"
+  if [ -z "$role" ]; then
+    printf 'no seat recorded for this session\n'
+  else
+    printf 'seat: %s\n' "$(label "$role" "$(shipshape_seat_field "$scratch" lane)")"
+    epic="$(shipshape_seat_field "$scratch" epic)"
+    handoff="$(shipshape_seat_field "$scratch" handoff)"
+    [ -n "$epic" ] && printf 'epic: %s\n' "$epic"
+    [ -n "$handoff" ] && printf 'handoff: %s\n' "$handoff"
+  fi
+  identity
+  exit 0
+fi
+
+# --- parse -------------------------------------------------------------------
+
+role=""
+lane=""
+epic=""
+handoff=""
+handoff_only=""
+
+case "$1" in
+  architect|solo) role="$1"; shift ;;
+  lane)
+    shift
+    [ "$#" -gt 0 ] || usage
+    case "$1" in --*) usage ;; esac
+    one_line "$1"
+    lane="$(shipshape_safe_id "$1" "")"
+    [ -n "$lane" ] || usage
+    role="lane"
+    shift
+    ;;
+  --handoff) handoff_only="yes" ;;
+  *) usage ;;
+esac
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --epic)
+      [ "$#" -ge 2 ] || usage
+      [ -z "$handoff_only" ] || usage
+      one_line "$2"
+      # Each worktree carries its own gitignored copy of a relative path, and
+      # coordination files written into a copy never meet anyone else's.
+      case "$2" in
+        /*) epic="$2" ;;
+        *) echo "shipshape-seat: --epic takes an absolute path" >&2; usage ;;
+      esac
+      shift 2
+      ;;
+    --handoff)
+      [ "$#" -ge 2 ] || usage
+      [ -n "$2" ] || usage
+      one_line "$2"
+      case "$2" in
+        /*) handoff="$2" ;;
+        *) handoff="$PWD/$2" ;;
+      esac
+      shift 2
+      ;;
+    *) usage ;;
+  esac
+done
+
+# --- write -------------------------------------------------------------------
+
+if [ -n "$handoff_only" ]; then
+  [ -n "$handoff" ] || usage
+  role="$(shipshape_seat_field "$scratch" role)"
+  lane="$(shipshape_seat_field "$scratch" lane)"
+  epic="$(shipshape_seat_field "$scratch" epic)"
+  # A handoff written with no seat taken is a solo session's handoff.
+  [ -n "$role" ] || role="solo"
+fi
+
+# A seat that was not written is reported as not written: the hooks would read
+# the old seat, or none, and a session told otherwise trusts the wrong one.
+tmp="$file.tmp.$$"
+if ! {
+  printf 'role=%s\n' "$role"
+  if [ -n "$lane" ]; then printf 'lane=%s\n' "$lane"; fi
+  if [ -n "$epic" ]; then printf 'epic=%s\n' "$epic"; fi
+  if [ -n "$handoff" ]; then printf 'handoff=%s\n' "$handoff"; fi
+  printf 'written=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "$tmp" 2>/dev/null || ! mv -f "$tmp" "$file" 2>/dev/null; then
+  rm -f "$tmp" 2>/dev/null
+  shipshape_trace seat "could not write the seat file at $file"
+  echo "shipshape-seat: could not write $file" >&2
+  exit 1
+fi
+
+shipshape_trace seat "took seat: $(label "$role" "$lane")${handoff:+, handoff $handoff}"
+printf 'seat: %s\n' "$(label "$role" "$lane")"
+identity
+exit 0

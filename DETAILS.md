@@ -36,6 +36,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `shipshape-ci-watch` | `gh pr checks --watch` | `ci-status` — green means *mergeable*, not "the checks that ran passed". A pull request blocked only on a human approval, with a clean check rollup, is recorded `green-pending-review` and accepted. |
 | `shipshape-verify` | a task's verify command | `verify/<task-id>` |
 | `shipshape-smoke` | any command | `smoke.log` |
+| `shipshape-seat` | nothing — records a fact | `seat` — whether the session is an Architect, a lane or solo, its epic folder and its handoff. context-watch picks thresholds from it; session-start re-orients a compacted session from it. Also prints the session id a roster file needs. |
 | `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Always exits 0; diagnosis is not enforcement. |
 
 ## The hooks
@@ -44,18 +45,39 @@ record behind as a side effect. The record cannot exist without the work.
 |---|---|---|
 | `done-gate` | `Stop` | Arms per pull request, one obligation record each, so a cascade's second PR cannot evaporate the first one's debt. Disarms a record only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD** — and stamps it `pr-satisfied-<n>` for the merge gate. The soft nudge speaks when the outstanding state changes and stays silent while it does not; the hard block on a completion claim never dedupes. On a branch other than the record's it nudges but does not block, and it never disarms. |
 | `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp. A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. |
-| `review-capture` | `PostToolUse` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:`. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
-| `task-capture` | `TaskCreated` | Remembers each task's metadata fence. |
+| `review-capture` | `PostToolUse`, `SubagentStop` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:` — at once for a foreground dispatch, and for a background one (the only kind the desktop app launches) when that agent stops, matched by its agent id. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
+| `task-capture` | `TaskCreated` | Remembers each task's metadata fence. The three task hooks act only where Claude Code's own task tools exist — the desktop app replaces them with its plan tool — and field traces show them capturing fences but never enforcing; a plan-file replacement is planned. |
 | `task-completion-gate` | `TaskCompleted` | A fenced task closes only on a fresh, passing verify record whose command matches the one the fence demanded. |
 | `blockedby-gate` | `PreToolUse` | Refuses a task whose dependencies are open. |
 | `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create` and hands back the `shipshape-pr-open` form. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. |
-| `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, worded as an action rather than an alarm. |
-| `deflection-guard` | `Stop` | Holds the session when it proposes moving its own in-progress work to a fresh start below real context pressure. A session standing by for the operator is left waiting; the same deflection is answered once, not in a loop; and the hold says it is never approval to start new work. |
-| `session-start` | `SessionStart` | Injects the entrypoint skill. |
+| `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, at the seat's handoff point: 70/85% for a lane or solo session, 85/92% for an Architect. Worded as actions, with no prohibitions to echo back; the operator gets the number in a one-line `systemMessage`, so the session has nothing to announce. |
+| `session-start` | `SessionStart` | Injects the entrypoint skill. After a compaction it clears context-watch's markers, so the climb back is nudged again, and points a seated session at its roster file, rulings and handoff. |
 
 Every hook **fails open**, has a kill switch (`SHIPSHAPE_<HOOK>=0`), and logs
 what it decided to `.shipshape/<session-id>/trace.log`. All scratch is
 session-scoped, so two lanes running against one repo cannot collide.
+
+**Retired in 0.4.0: the deflection guard.** It was a `Stop` hook that held a
+session when it proposed moving its work to a fresh session below 70% context.
+It was the only hook that read prose. Three months of field traces logged
+134 blocks, most between 15% and 40% context, and a pattern classification of
+the 233 distinct blocked messages in session transcripts found one case of
+the failure it was built for. Almost every block landed on an Architect
+telling the operator to open a lane's session, which is the Architect's job.
+Once sessions can start sessions, that vocabulary is routine. The context
+nudge now does the remaining work without blocking anything.
+
+**Handoff points, and what changed in 0.4.0.** context-watch nudges at the
+seat's handoff points: `SHIPSHAPE_CONTEXT_THRESHOLDS` (default `70 85`) for
+lanes and solo sessions, `SHIPSHAPE_CONTEXT_THRESHOLDS_ARCHITECT` (default
+`85 92`) for an Architect, with the percentage taken against
+`SHIPSHAPE_CONTEXT_WINDOW` (default 1,000,000 tokens — set it for a smaller
+window, or the percentage undercounts). Through 0.3.0 the handoff was
+insurance and the session carried on. From 0.4.0 the first handoff point is
+the switch point for a solo session or an Architect: finish the step in
+flight, commit, refresh the handoff, propose the successor (or hand over its
+path), and wait for the operator. A lane carries on until its Architect
+rules.
 
 ## Kill switches are for hooks, not wrappers
 
@@ -105,7 +127,8 @@ before this repo existed and the lane that built this repo:
 
 **New:** `direct-implementation` · `finishing-with-evidence` ·
 `writing-retros` · `epic-architecture` · `coordinating-with-the-architect` ·
-`write-handoff` · `read-handoff` · `plain-english-reporting`
+`write-handoff` · `read-handoff` · `plain-english-reporting` ·
+`refining-prompts`
 
 **Rewritten:** `shipshape` (the entrypoint and router, injected at session
 start) · `brainstorming` · `writing-plans` · `subagent-driven-development` ·

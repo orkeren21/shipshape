@@ -27,10 +27,11 @@ HEAD_SHA=$(git rev-parse HEAD)
 ```
 
 Dispatch a `general-purpose` subagent using the template at
-[code-reviewer.md](code-reviewer.md), and **dispatch it synchronously**
-(`run_in_background: false`) — agents run in the background by default, a
-backgrounded one returns before it has written anything, and no later event
-carries the report, so its review can never be captured.
+[code-reviewer.md](code-reviewer.md), in the foreground or the background —
+the desktop app runs every dispatch in the background. A foreground report is
+captured when the dispatch returns; a background one when its agent stops,
+and the finished report arrives as a notification. Wait for that before
+finishing.
 
 **Start the dispatch description with `whole-branch-review:`.** That marker is
 what the `review-capture` hook watches for; on a marked return, the hook writes
@@ -51,8 +52,8 @@ a second reader for.
 
 ## The conformance lane
 
-When the branch implements a design document, dispatch a **second** reviewer —
-synchronously, like the first — marked `design-conformance:`, with the design
+When the branch implements a design document, dispatch a **second** reviewer,
+marked `design-conformance:`, with the design
 and the diff. Its question is
 not "is this code sound" but "is this the code the design ordered": every gap
 typed as **missing**, **partial**, **contradicts**, or **unrequested** — code
