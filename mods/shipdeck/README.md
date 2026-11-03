@@ -50,7 +50,10 @@ skill's own text, plus how to deliver the result. The session receives the
 refined prompt. Its open questions and suggestions come last, under headings
 that tell the session to raise them with you before it starts. Your
 transcript row shows what the session received. The original is saved under
-`.shipshape/<session>/shipdeck/` and is never shown to the session.
+`.shipshape/<session>/shipdeck/` and is never shown to the session. If it
+cannot be saved (no core 0.5.0, so no scratch folder, or the write fails),
+the prompt goes as typed: a dictation is never replaced by a refinement
+nothing recorded.
 
 - It never touches a slash command, a hidden prompt, or a message that is not
   yours (another session's, a background task's, a `claude -p` pipeline's).
@@ -58,7 +61,11 @@ transcript row shows what the session received. The original is saved under
   failed call or an unusable reply sends your prompt as typed.
 - `raw:` at the start of a prompt sends it as typed.
 - `/refine off` and `/refine on` switch it for the session; `/refine` alone
-  says where it stands.
+  says where it stands. `/refine on` cannot override the `refine` option or
+  `SHIPSHAPE_REFINE=0`.
+- A prompt you type while one is being refined waits for it, for up to 8
+  seconds (a hook's budget is 10), so it normally enters after the dump it
+  follows.
 
 Refining sends the dictated text to Sonnet through the session's own model
 client, the same way the session sends everything else.

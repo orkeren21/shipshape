@@ -96,6 +96,10 @@ refuses anything.
 | refiner | `prompt.submit` | Rewrites a dictated dump with Sonnet 5.5, using `refiner/instructions.md`: the `refining-prompts` skill's body verbatim (a packaging test pins it), plus a delivery section. |
 | refresh | `session.start`, `tool.call`, `turn.complete`, a 60 s clock | Re-reads `$.session.usage()` and runs `shipshape-doctor --json`, at most every 5 s after `Bash`, `Agent` or `Task`. |
 | epic pane | `ui.render` `Pane` | For an Architect seat: the roster, the lanes done, the last five rulings. |
+| epic refresh | a 30 s clock | Re-reads the epic folder while the seat is `architect`; a lane whose status turns `done` raises a notice. |
+| successor watch | `tool.call` | This session's own `start_session` call, proposed `own_initiative` with a brief naming `read-handoff`, raises the successor-card notice. Observed only. |
+| `/refine` | `command.run` | `on`, `off` (for this session) or the status; `on` cannot override the `refine` option or `SHIPSHAPE_REFINE=0`. |
+| `/shipdeck` | `command.run` | Opens the epic pane for an Architect, otherwise says what the band says; `style github` or `style linear` switches the style through the config row. |
 
 **Evidence comes from bash, once.** The band never reads an artifact
 itself. It runs the core's `shipshape-doctor --json`, passing
@@ -120,10 +124,18 @@ signals of dictation fire:
 The desktop puts `<system-reminder>` blocks around the operator's words;
 the refiner sets them aside and puts them back verbatim. Sonnet may answer
 `KEEP`. That answer, a failed call, or a reply without a `Goal` section all
-send the prompt as typed. Open questions and suggestions travel inside the
+send the prompt as typed. So does having nowhere to keep the original:
+with no core 0.5.0 there is no scratch path, and a dictation is never replaced
+by a refinement nothing recorded. Open questions and suggestions travel inside the
 refined prompt, as its last two sections, whose headings tell the session to
 raise them before starting. `raw:` skips one prompt; `/refine off`, the
 `refine` option and `SHIPSHAPE_REFINE=0` turn the refiner off.
+
+A prompt typed while another is being refined waits for it, so it does not
+overtake the dump it follows, but only for 8 seconds. A hook's own budget is
+10 seconds, and waiting on another prompt's refinement counts against it
+(only `$` calls and `next` do not), so a refinement slower than that lets the
+follow-up through first.
 
 **What the desktop app draws** was probed in a live session before the
 design was settled:

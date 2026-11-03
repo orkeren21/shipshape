@@ -36,7 +36,10 @@ export function legs(doctor: DoctorJson, now: number): Leg[] {
   const review: Leg = { name: 'review', state: REVIEW[doctor.legs.review.state] ?? 'missing' }
   // A reviewer still out outranks what is on disk, except a waiver: the next
   // report is coming, and the operator wants to know before asking to merge.
-  const out = doctor.pending.filter(p => p.kind === 'review' || p.kind === 'conformance')
+  // Only a code reviewer counts. The review leg never reads a conformance
+  // report (review-capture files it apart), so a conformance pass running
+  // must not make the band say a review is.
+  const out = doctor.pending.filter(p => p.kind === 'review')
   if (out.length > 0 && review.state !== 'waived') {
     review.state = 'running'
     const oldest = Math.min(...out.map(p => (p.since ?? now / 1000) * 1000))
@@ -50,7 +53,8 @@ export function legs(doctor: DoctorJson, now: number): Leg[] {
 }
 
 // Green below the seat's first handoff threshold, amber to its second, red
-// past it: the colour says what context-watch is about to say.
+// past it. These are context-watch's defaults; a session that overrides them
+// with SHIPSHAPE_CONTEXT_THRESHOLDS* is coloured by the defaults still.
 export function ctxTone(pct: number, role: string | null): Tone {
   const [first, second] = role === 'architect' ? [85, 92] : [70, 85]
   if (pct >= second) return 'bad'
@@ -58,19 +62,24 @@ export function ctxTone(pct: number, role: string | null): Tone {
   return 'ok'
 }
 
+// Legs: the doctor's reading; [] (nothing drawn) before its first answer and
+// outside a git repo, where there is no branch to have evidence for; null,
+// "evidence unavailable", once the doctor could not be read.
 export function bandModel(input: {
   doctor: DoctorJson | null
+  isUnavailable: boolean
   percent: number | null
   notices: string[]
   refining: boolean
   now: number
 }): BandModel {
   const { doctor } = input
+  const inRepo = !!doctor && (doctor.branch !== null || doctor.head !== null)
   return {
     seat: doctor ? seatLabel(doctor.seat) : null,
     role: doctor?.seat?.role ?? null,
     ctx: input.percent,
-    legs: doctor ? legs(doctor, input.now) : null,
+    legs: doctor ? (inRepo ? legs(doctor, input.now) : []) : input.isUnavailable ? null : [],
     notices: input.notices.slice(-2),
     refining: input.refining,
   }
@@ -84,7 +93,10 @@ export function describe(m: BandModel): string {
   const parts: string[] = []
   if (m.refining) parts.push('refining your prompt')
   if (m.seat) parts.push(m.seat)
-  if (m.ctx !== null) parts.push(`context ${m.ctx}%`)
+  if (m.ctx !== null) {
+    const tone = ctxTone(m.ctx, m.role)
+    parts.push(`context ${m.ctx}%${tone === 'bad' ? ', past the handoff point' : tone === 'warn' ? ', at the handoff point' : ''}`)
+  }
   if (m.legs) for (const l of m.legs) parts.push(`${l.name} ${word[l.state]}${l.age ? ` for ${l.age}` : ''}`)
   else parts.push('evidence unavailable')
   parts.push(...m.notices)

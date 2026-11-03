@@ -94,6 +94,9 @@ describe('checkReply', () => {
   test('a fenced reply is unwrapped', () => {
     expect(checkReply('```markdown\n## Goal\nShip.\n```')).toEqual({ kind: 'refined', text: '## Goal\nShip.' })
   })
+  test('a preamble before the Goal is unusable: it would reach the session as the operator\'s words', () => {
+    expect(checkReply('Sure, here it is:\n\n## Goal\nShip.').kind).toBe('bad')
+  })
   test('anything else is unusable', () => {
     expect(checkReply('Sure! Here is your prompt.').kind).toBe('bad')
     expect(checkReply('').kind).toBe('bad')
@@ -106,6 +109,7 @@ describe('rows', () => {
   })
   test('the row names the refinement and where the original is', () => {
     const text = rowText('## Goal\nShip.', 140, '.shipshape/s/shipdeck/refine-x.md')
+    expect(text.startsWith(HEADER)).toBe(true)
     expect(text).toContain('## Goal\nShip.')
     expect(text).toContain('140 → 3 words')
     expect(text).toContain('original in .shipshape/s/shipdeck/refine-x.md')

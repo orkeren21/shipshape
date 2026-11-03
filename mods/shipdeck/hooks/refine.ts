@@ -84,13 +84,14 @@ export function score(body: string): Score {
 }
 
 export const MODEL = 'claude-sonnet-5-5'
+export const MAX_TOKENS = 4096
 
 export function request(instructions: string, body: string) {
   return {
     model: MODEL,
     system: [{ text: instructions, cache: true }],
     prompt: `<dictated>\n${body}\n</dictated>`,
-    maxTokens: 4096,
+    maxTokens: MAX_TOKENS,
     timeoutMs: 90_000,
   }
 }
@@ -102,7 +103,9 @@ export function checkReply(text: string): Reply {
   if (t === 'KEEP') return { kind: 'keep' }
   const fenced = /^```[a-z]*\n([\s\S]*?)\n```$/.exec(t)
   if (fenced) t = (fenced[1] ?? '').trim()
-  if (!/^##\s+Goal\b/m.test(t)) return { kind: 'bad', reason: 'the reply had no Goal section' }
+  // The reply opens with its Goal: a preamble ("Sure, here it is:") would
+  // reach the session as if the operator had said it.
+  if (!/^##\s+Goal\b/.test(t)) return { kind: 'bad', reason: 'the reply did not open with a Goal section' }
   return { kind: 'refined', text: t }
 }
 
@@ -121,5 +124,5 @@ export function rowKey(typed: string): string {
 export function rowText(refined: string, fromWords: number, saved: string | null): string {
   const to = countWords(refined)
   const where = saved ? `; original in ${saved}` : ''
-  return `${refined}\n\n(refined by shipdeck from your dictation, ${fromWords} → ${to} words${where})`
+  return `${HEADER}\n\n${refined}\n\n(refined by shipdeck from your dictation, ${fromWords} → ${to} words${where})`
 }

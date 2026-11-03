@@ -93,6 +93,12 @@ three task-list hooks act only where Claude Code's own task tools exist (the
 desktop app replaces them with its plan tool), and they have not been seen
 enforcing in the field; a replacement that reads the plan file is planned.
 
+```bash
+tests/run-tests.sh   # hermetic; same command CI runs on Linux and macOS
+```
+
+Bug reports and pull requests: [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## shipdeck, the companion mod
 
 An optional second plugin in the same marketplace, for Claude Code 2.1.309 or
@@ -109,7 +115,7 @@ same artifacts through `shipshape-doctor --json`.
   requirements, constraints and done-when, then the open questions and
   suggestions it must raise before starting. Your transcript row shows what
   the session received, and the original stays in the session's scratch
-  folder. Start a prompt with `raw:` to send it as typed, or run
+  folder (with no core 0.5.0 to give it one, nothing is refined). Start a prompt with `raw:` to send it as typed, or run
   `/refine off` to stop refining for the session.
 - **An Architect pane.** It lists the epic's roster, the lanes that
   reported done, and the latest rulings.
@@ -124,12 +130,6 @@ prompt box, then **Plugins**, and add shipdeck from the shipshape
 marketplace. The mod API is early access and changes between releases. When
 it breaks, what breaks is the display, never a gate. Settings, kill switches
 and what it reads are in [mods/shipdeck/README.md](mods/shipdeck/README.md).
-
-```bash
-tests/run-tests.sh   # hermetic; same command CI runs on Linux and macOS
-```
-
-Bug reports and pull requests: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 

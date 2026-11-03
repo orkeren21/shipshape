@@ -130,12 +130,39 @@ touch -t 202001010000 "$scratch/review-1.md"
 leg_case review stale "stale" "a report older than HEAD"
 rm -f "$scratch/review-1.md"
 
+# The remaining states, each against its text-mode line.
+leg_case review missing 'missing — dispatch the reviewer' "no review"
+leg_case ci missing "missing — run shipshape-ci-watch" "no CI"
+leg_case smoke missing "missing — exercise the changed flows" "no smoke"
+
+printf 'result=green\nchecks_exit=0\nmerge_state=CLEAN\n' > "$scratch/ci-status"
+touch -t 202001010000 "$scratch/ci-status"
+leg_case ci stale "stale — predates HEAD" "CI recorded before HEAD"
+rm -f "$scratch/ci-status"
+
+printf 'head=%s\n=== exit 0\n' "$head" > "$scratch/smoke.log"
+leg_case smoke ok "ok — all commands exit 0" "a passing smoke at HEAD"
+printf 'head=%s\n=== exit 0\n=== exit 2\n' "$head" > "$scratch/smoke.log"
+leg_case smoke failures "1 of 2 commands failed" "a smoke with a failing command"
+out="$(json)"
+assert_eq "1/2" "$(jget "$out" legs.smoke.detail)" "the failures detail is failed/run"
+printf 'head=0000000000000000000000000000000000000000\n=== exit 0\n' > "$scratch/smoke.log"
+leg_case smoke stale "stale — gathered against 00000000" "a smoke gathered at another HEAD"
+rm -f "$scratch/smoke.log"
+
 # --- waivers ---------------------------------------------------------------------
 
 printf 'skip_smoke: true  # reason: docs-only change\n' > "$repo/.shipshape.yaml"
+leg_case smoke waived "waived — skip_smoke" "a waived smoke"
 out="$(json)"
-assert_eq "waived" "$(jget "$out" legs.smoke.state)" "a waived leg reads waived"
 assert_contains "$(jget "$out" legs.smoke.detail)" "docs-only" "with the waiving line as its detail"
+printf 'skip_review: true  # reason: generated code\nskip_ci: true  # reason: no CI here\n' > "$repo/.shipshape.yaml"
+leg_case review waived "waived — skip_review" "a waived review"
+leg_case ci waived "waived — skip_ci" "a waived CI"
+printf 'skip_merge_gate: true  # reason: operator merges\n' > "$repo/.shipshape.yaml"
+out="$(json)"
+assert_eq "true" "$(jget "$out" merge_gate_waived)" "a waived merge gate reads true"
+assert_contains "$(text)" "gate waived" "and the text mode says so"
 rm -f "$repo/.shipshape.yaml"
 
 # --- running reviewers ------------------------------------------------------------
@@ -167,6 +194,14 @@ assert_eq "satisfied" "$(jget "$out" prs.0.state)" "satisfied at HEAD"
 assert_eq "https://x/pull/57" "$(jget "$out" prs.0.url)" "with its url"
 assert_eq "58" "$(jget "$out" prs.1.number)" "the second PR"
 assert_eq "owing" "$(jget "$out" prs.1.state)" "owing evidence"
+rm -f "$scratch"/pr-armed-* "$scratch"/pr-satisfied-*
+
+# A stamp from before the branch moved is stale, in both forms.
+printf 'url=https://x/pull/60\nnumber=60\nbranch=%s\n' "$branch" > "$scratch/pr-armed-60"
+printf 'head=deadbeefdeadbeef\nbranch=%s\n' "$branch" > "$scratch/pr-satisfied-60"
+out="$(json)"
+assert_eq "stale" "$(jget "$out" prs.0.state)" "a stamp at an old head is stale"
+assert_contains "$(text)" "PR #60 (https://x/pull/60, branch $branch) — STALE" "and the text mode agrees"
 rm -f "$scratch"/pr-armed-* "$scratch"/pr-satisfied-*
 
 # A record with no url keeps its other fields in place: an empty field must

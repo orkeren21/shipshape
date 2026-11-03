@@ -72,7 +72,10 @@ export async function findCore($: EngineInterface): Promise<{ root: string } | {
   return { note: 'ShipShape core not found' }
 }
 
-export async function runDoctor($: EngineInterface, root: string): Promise<{ doctor: DoctorJson } | { note: string }> {
+// A failure is transient when the doctor did not run at all (a timeout, a
+// process error): the last good reading still stands. Output that is not a
+// format 1 reading is a core the mod cannot read, and clears it.
+export async function runDoctor($: EngineInterface, root: string): Promise<{ doctor: DoctorJson } | { note: string; isTransient: boolean }> {
   try {
     const sid = await $.session.id()
     const ran = await $.process.run(['bash', `${root}/bin/shipshape-doctor`, '--json'], {
@@ -81,9 +84,9 @@ export async function runDoctor($: EngineInterface, root: string): Promise<{ doc
     })
     const doctor = parseDoctor(ran.stdout)
     if (doctor) return { doctor }
-    return { note: 'ShipShape core is older than 0.5.0 (no doctor --json)' }
+    return { note: 'shipshape-doctor --json gave no format 1 reading (a core older than 0.5.0, or newer than this shipdeck)', isTransient: false }
   } catch {
-    return { note: 'shipshape-doctor did not run' }
+    return { note: 'shipshape-doctor did not run', isTransient: true }
   }
 }
 

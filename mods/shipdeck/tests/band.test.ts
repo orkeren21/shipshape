@@ -45,6 +45,14 @@ describe('the doctor\'s words become marks', () => {
     const stuck = doctor({ pending: [{ agent: 'a1', kind: 'review', since: NOW / 1000 - 18 * 60 }] })
     expect(legs(stuck, NOW)[0]).toEqual({ name: 'review', state: 'running', age: '18m' })
   })
+  test('a design-conformance pass running is not a review running', () => {
+    // The review leg never reads conformance reports, so the band must not
+    // say a review is under way while the gates would still refuse.
+    for (const state of ['missing', 'verdict-no', 'ok']) {
+      const d = doctor({ legs: { review: { state, detail: null }, ci: { state: 'ok', detail: null }, smoke: { state: 'ok', detail: null } }, pending: [{ agent: 'c1', kind: 'conformance', since: NOW / 1000 - 60 }] })
+      expect(legs(d, NOW)[0]?.state).toBe(({ missing: 'missing', 'verdict-no': 'fail', ok: 'ok' } as Record<string, string>)[state])
+    }
+  })
   test('a waiver outranks a running reviewer', () => {
     const d = doctor({ legs: { review: { state: 'waived', detail: '# why' }, ci: { state: 'ok', detail: null }, smoke: { state: 'ok', detail: null } }, pending: [{ agent: 'a', kind: 'review', since: 1 }] })
     expect(legs(d, NOW)[0]?.state).toBe('waived')
@@ -70,16 +78,31 @@ describe('seat and context', () => {
 
 describe('the model and its words', () => {
   test('no doctor reading is evidence unavailable, never a pass', () => {
-    const m = bandModel({ doctor: null, percent: 40, notices: [], refining: false, now: NOW })
+    const m = bandModel({ doctor: null, isUnavailable: true, percent: 40, notices: [], refining: false, now: NOW })
     expect(m.legs).toBeNull()
     expect(say(m)).toBe('context 40%; evidence unavailable')
   })
+  test('before the doctor first answers, no legs are drawn and none is called unavailable', () => {
+    const m = bandModel({ doctor: null, isUnavailable: false, percent: 40, notices: [], refining: false, now: NOW })
+    expect(m.legs).toEqual([])
+    expect(say(m)).toBe('context 40%')
+  })
+  test('outside a git repo there is no branch to have evidence for', () => {
+    const m = bandModel({ doctor: doctor({ branch: null, head: null }), isUnavailable: false, percent: 40, notices: [], refining: false, now: NOW })
+    expect(m.legs).toEqual([])
+  })
+  test('alt text puts the handoff point into words, not colour alone', () => {
+    const at = bandModel({ doctor: doctor(), isUnavailable: false, percent: 72, notices: [], refining: false, now: NOW })
+    expect(say(at)).toContain('context 72%, at the handoff point')
+    const past = bandModel({ doctor: doctor(), isUnavailable: false, percent: 90, notices: [], refining: false, now: NOW })
+    expect(say(past)).toContain('context 90%, past the handoff point')
+  })
   test('alt text names every state in words', () => {
-    const m = bandModel({ doctor: doctor(), percent: 37, notices: ['F1 done'], refining: true, now: NOW })
+    const m = bandModel({ doctor: doctor(), isUnavailable: false, percent: 37, notices: ['F1 done'], refining: true, now: NOW })
     expect(say(m)).toBe('refining your prompt; lane F2; context 37%; review passed; CI not run; smoke not run; F1 done')
   })
   test('at most two notices show', () => {
-    const m = bandModel({ doctor: doctor(), percent: null, notices: ['a', 'b', 'c'], refining: false, now: NOW })
+    const m = bandModel({ doctor: doctor(), isUnavailable: false, percent: null, notices: ['a', 'b', 'c'], refining: false, now: NOW })
     expect(m.notices).toEqual(['b', 'c'])
   })
   test('parseDoctor takes format 1 and refuses anything else', () => {
@@ -90,7 +113,7 @@ describe('the model and its words', () => {
 })
 
 describe('drawing', () => {
-  const m = bandModel({ doctor: doctor(), percent: 37, notices: ['F1 done'], refining: false, now: NOW })
+  const m = bandModel({ doctor: doctor(), isUnavailable: false, percent: 37, notices: ['F1 done'], refining: false, now: NOW })
 
   for (const style of ['github', 'linear'] as const) {
     test(`${style}: one SVG with text pinned to its measured width`, () => {
@@ -115,13 +138,13 @@ describe('drawing', () => {
       const narrow = drawBand(m, style, wide.width - 20)
       expect(wide.source).toContain('>context<')
       expect(narrow.source).not.toContain('>context<')
-      const long = bandModel({ doctor: doctor({ seat: { role: 'lane', lane: 'auth-ui-refactor-two', epic: null, handoff: null } }), percent: 37, notices: [], refining: false, now: NOW })
+      const long = bandModel({ isUnavailable: false, doctor: doctor({ seat: { role: 'lane', lane: 'auth-ui-refactor-two', epic: null, handoff: null } }), percent: 37, notices: [], refining: false, now: NOW })
       const cut = drawBand(long, style, 200)
       expect(cut.source).toContain('lane auth-u…')
     })
 
     test(`${style}: evidence unavailable says so`, () => {
-      const none = bandModel({ doctor: null, percent: 12, notices: [], refining: false, now: NOW })
+      const none = bandModel({ doctor: null, isUnavailable: true, percent: 12, notices: [], refining: false, now: NOW })
       expect(drawBand(none, style, 2000).source).toContain('evidence unavailable')
     })
   }

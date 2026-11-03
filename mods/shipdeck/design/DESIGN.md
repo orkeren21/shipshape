@@ -151,8 +151,14 @@ that is not a notice.
 
 **The Seat Threshold Rule.** The context fill turns brass at the seat's
 first handoff threshold and red at its second: 70 and 85 for lanes and solo
-sessions, 85 and 92 for an Architect. The colour tells the operator what the
-hooks are about to say.
+sessions, 85 and 92 for an Architect (context-watch's defaults). The colour
+repeats what the number already says; the alt text puts it in words ("at the
+handoff point", "past the handoff point"), so it is never colour alone.
+
+**The Terminal Exception.** The terminal has no gauge to fill, so there the
+percentage itself carries the context tone, and state glyphs stand in for
+drawn icons: ● ok, ◌ running, ◷ stale, ✕ failed, ○ not run, ⊘ waived. One
+glyph per state, so shape still tells them apart.
 
 ## Typography
 
@@ -168,7 +174,8 @@ size.
 - **Seat** (600, 12.5px): the leftmost word in the GitHub style.
 - **Value** (500, 12px, tabular): `37%`, and chip text in the Linear style.
 - **Label** (400, 12px): `context`, `review`, `CI`, `smoke`.
-- **Notice** (500, 11.5px): text inside the notice pill.
+- **Notice** (500, 11.5px in the GitHub pill, 12px in a Linear chip).
+- **Refining** (400, 12px, slate): the one label that is a status, not a value.
 
 ### Named Rules
 
@@ -177,11 +184,19 @@ size.
 
 ## Layout
 
-One row, 26px tall, left-aligned, in a fixed order: seat, context, legs,
-notices. Spacing: 4px inside a unit (icon to label), 6px between Linear
-chips, 14px between GitHub legs, and 16px after the context group. On a
-narrow band, the row first drops the word `context`, then cuts the seat to
-12 characters with an ellipsis. Order never changes.
+One row, 26px tall, left-aligned, in a fixed order: refining (when it is),
+seat, context, legs, notices. Spacing, as built and approved in the rendered
+mocks:
+- An icon sits in its own slot (GitHub 19px, Linear 18px), with about 5px
+  between the icon and its label.
+- 4px between a value and its word (`37%` `context`); 7px from the GitHub
+  bar to its value.
+- 14px between GitHub legs and 16px after the GitHub context group; 6px
+  between Linear chips.
+- 14px after the seat (GitHub), 12px when it is a chip.
+
+On a narrow band, the row first drops the word `context`, then cuts the seat
+to 12 characters with an ellipsis. Order never changes.
 
 ## Elevation & Depth
 
@@ -191,9 +206,13 @@ hairline and a 4.5% tint, not by lift.
 
 ## Shapes
 
-Circles for state (13 to 14px icons), a 6px bar or a 13px pie for context,
-5px-radius chips in the Linear style, and 10px pills for notices. Strokes
-are 1.5px for icons and 1.2px for macOS-weight outlines.
+Circles for state: filled states (ok, failed) at 12 to 13px, rings (not run,
+waived, running, stale) at 10.5 to 12px, so a filled mark reads a touch
+heavier than an open one. A 6px bar (GitHub) or a 13px ring and pie (Linear)
+for context. Linear chips have a 5px radius; GitHub notices are 10px-radius
+pills with a 1px edge, while Linear notices are tinted 5px chips like every
+other Linear item. Strokes are 1.4 to 1.8px: thinner for marks inside a
+filled circle, heavier for the spinner arc.
 
 ## Components
 
@@ -228,9 +247,9 @@ A running reviewer older than 15 minutes shows its age beside the label
 
 ### Notice
 
-A green-tint pill, with a dot in the Linear style and a 1px green edge in
-the GitHub style, reading `F1 done` or `successor card waiting`. At most
-two show; it stays until the operator's next prompt.
+GitHub: a green-tint pill with a 1px green edge. Linear: a green-tint chip
+with a dot. It reads `F1 done` or `successor card waiting`. At most two show,
+and they stay until the operator's next prompt.
 
 ### Refining
 
@@ -239,8 +258,10 @@ While a prompt is with the refiner, a brass spinner and
 
 ### Unavailable
 
-When the core is missing or older than `--json`, a mist circle with a `?`
-and `evidence unavailable` take the legs' place.
+When the core is missing, or gives no format 1 reading, a mist circle with
+a `?` and `evidence unavailable` take the legs' place. Before the doctor's
+first answer, and outside a git repo, no legs are drawn at all: nothing is
+not the same as unavailable.
 
 ## Do's and Don'ts
 

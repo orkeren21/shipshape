@@ -15,7 +15,8 @@ export type BandModel = {
   seat: string | null
   role: string | null
   ctx: number | null
-  // null: the evidence is unavailable (no core, or one older than --json).
+  // null: the evidence is unavailable (no core, or one older than --json);
+  // []: nothing to show yet (before the first reading, or outside a repo).
   legs: Leg[] | null
   notices: string[]
   refining: boolean

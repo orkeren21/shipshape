@@ -120,7 +120,9 @@ test('the band draws as one SVG on desktop and as text on the terminal', async (
   const terminal = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await terminal.findAll({ type: 'Svg' })).toHaveLength(0)
   expect(await terminal.find({ type: 'Text', text: /lane F2/ })).toBeDefined()
-  expect(await terminal.find({ type: 'Text', text: /review/ })).toBeDefined()
+  // One glyph per state: ok is a filled dot, not run an empty one.
+  expect(await terminal.find({ type: 'Text', text: /^● review$/ })).toBeDefined()
+  expect(await terminal.find({ type: 'Text', text: /^○ CI$/ })).toBeDefined()
   await terminal.unmount()
 })
 
@@ -147,11 +149,33 @@ test('a dictated dump reaches the session refined, reminders kept, and its row s
   expect(entered).not.toContain('basically')
   expect(seen.writes.some(p => p.startsWith('/repo/.shipshape/sess-1/shipdeck/refine-'))).toBe(true)
 
-  const row = await $.ui.mount({ plugin: 'shipdeck', surface: 'desktop', component: 'UserMessage', requestId: 'm1', props: { text: DUMP, origin: { kind: 'composer' }, isExpanded: true } as never })
-  const drawn = await row.find({ type: 'Text' })
-  expect(drawn?.text).toContain('## Goal')
-  expect(drawn?.text).toContain('refined by shipdeck from your dictation')
-  await row.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const row = await $.ui.mount({ plugin: 'shipdeck', surface, component: 'UserMessage', requestId: `m-${surface}`, props: { text: DUMP, origin: { kind: 'composer' }, isExpanded: true } as never })
+    const drawn = await row.find({ type: 'Text' })
+    expect(drawn?.text).toContain('## Goal')
+    expect(drawn?.text).toContain('refined by shipdeck from your dictation')
+    await row.unmount()
+  }
+  // A row that was not refined is drawn as the engine has it.
+  const other = await $.ui.mount({ plugin: 'shipdeck', surface: 'desktop', component: 'UserMessage', requestId: 'm-other', props: { text: 'something else', origin: { kind: 'composer' }, isExpanded: true } as never })
+  expect((await other.find({ type: 'Text' }))?.text).toBe('something else')
+  await other.unmount()
+})
+
+test('with no doctor reading there is nowhere to keep the original, so nothing is refined', async ($, on) => {
+  const { clock, seen } = world(on, { doctor: 'not json' })
+  await start($, clock)
+  await submit($, DUMP)
+  expect(seen.model).toHaveLength(0)
+  expect(seen.entered.at(-1)).toBe(DUMP)
+})
+
+test('a reply cut at its token cap is not used', async ($, on) => {
+  const { clock, seen } = world(on, { reply: { isAnswered: true, text: REFINED, usage: { input_tokens: 1, output_tokens: 4096, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } })
+  await start($, clock)
+  await submit($, DUMP)
+  expect(seen.entered.at(-1)).toBe(DUMP)
+  expect(seen.toasts.some(t => t.includes('cut short'))).toBe(true)
 })
 
 test('KEEP, a failed call or a bad reply all send the prompt as typed', async ($, on) => {
@@ -173,8 +197,18 @@ test('commands, hidden prompts, other sessions\' messages and short prompts are 
   await submit($, DUMP, 'task-notification')
   await submit($, DUMP, 'sdk')
   await submit($, 'fix the flaky test please')
+  await $.prompt.submit({ text: DUMP, origin: { kind: 'composer' }, wait: false, isMeta: true } as never)
+  await $.prompt.submit({ text: '', origin: { kind: 'composer' }, wait: false, command: { name: 'compact', args: DUMP } } as never)
   expect(seen.model).toHaveLength(0)
-  expect(seen.entered.slice(-4)).toEqual([DUMP, DUMP, DUMP, 'fix the flaky test please'])
+  expect(seen.entered.slice(-6, -2)).toEqual([DUMP, DUMP, DUMP, 'fix the flaky test please'])
+})
+
+test('SHIPSHAPE_SHIPDECK=0 turns the whole mod off', async ($, on) => {
+  const { clock, seen } = world(on, { env: { SHIPSHAPE_SHIPDECK: '0' } })
+  await start($, clock)
+  expect(seen.runs).toHaveLength(0)
+  await submit($, DUMP)
+  expect(seen.model).toHaveLength(0)
 })
 
 test('raw: skips one prompt, and /refine off holds for the session', async ($, on) => {
@@ -189,11 +223,16 @@ test('raw: skips one prompt, and /refine off holds for the session', async ($, o
   expect(seen.entered.at(-1)).toBe(DUMP)
 })
 
-test('SHIPSHAPE_REFINE=0 turns the refiner off', async ($, on) => {
+test('SHIPSHAPE_REFINE=0 turns the refiner off, and /refine on says it cannot override that', async ($, on) => {
   const { clock, seen } = world(on, { env: { SHIPSHAPE_REFINE: '0' } })
   await start($, clock)
   await submit($, DUMP)
   expect(seen.model).toHaveLength(0)
+  const on2 = await $.command.run({ command: 'refine', args: 'on', origin: { kind: 'composer' }, presentation: {} } as never)
+  expect(on2.text).toContain('stays off (SHIPSHAPE_REFINE=0)')
+  // raw: is still the operator's word with refining off.
+  await submit($, `raw: ${DUMP}`)
+  expect(seen.entered.at(-1)).toBe(DUMP)
 })
 
 test('the refine option set to false turns the refiner off', { options: { refine: false } }, async ($, on) => {

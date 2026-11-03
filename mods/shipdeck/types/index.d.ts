@@ -39,10 +39,13 @@ declare module 'claude-code' {
       note: string | null
       percent: number | null
       notices: Shaped<string[]>
-      refining: boolean
+      // How many refinements are in flight.
+      refining: number
       refineOff: boolean
       rows: Shaped<RefinedRow[]>
       epic: Shaped<EpicView | null>
+      seen: Shaped<Record<string, boolean> | null>
+      warned: boolean
     }
   }
 }
