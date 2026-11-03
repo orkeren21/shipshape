@@ -51,11 +51,11 @@ write_report() {
 
   # One file per round: a re-review of the fix diff is a second report, not an
   # overwrite of the first, and the retro wants both.
-  # Always sequence-suffixed, so the filenames sort in the order they were
-  # written. Two reports in the same second are exactly the case that matters —
-  # a re-review of the fix diff — and the gate picks the newest by modification
-  # time, which cannot distinguish them. Lexical order breaks the tie correctly
-  # only if it agrees with creation order.
+  # The name carries the landing time and a sequence suffix, so glob order is
+  # landing order. The gate reads two things from that: among reports with
+  # equal modification times (foreground reports landing in the same second, or
+  # background ones launched in the same second) the later name wins, and a
+  # "No" landing after the newest-by-launch report still stands.
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   suffix=0
   target="$scratch/$kind-$stamp-00.md"
@@ -67,10 +67,10 @@ write_report() {
   done
   if [ -e "$target" ]; then
     shipshape_trace review-capture "100 reports already written this second; discarding this one"
-    return 0
+    return 1
   fi
 
-  if ! printf '%s' "$report" > "$target" 2>/dev/null; then
+  if ! { printf '%s' "$report" > "$target"; } 2>/dev/null; then
     shipshape_trace review-capture "could not write $(basename "$target")"
     return 1
   fi
@@ -81,7 +81,7 @@ write_report() {
     shipshape_trace review-capture "could not date $(basename "$target") to its launch; discarded"
     return 1
   fi
-  shipshape_trace review-capture "wrote $(basename "$target") ($(printf '%s' "$report" | wc -c | tr -d ' ') bytes)"
+  shipshape_trace review-capture "wrote $(basename "$target") ($(printf '%s' "$report" | wc -c | tr -d ' ') bytes${dated_like:+, dated to its launch})"
 }
 
 # --- a background dispatch finishing -----------------------------------------
@@ -138,9 +138,11 @@ fi
 # agent id leaves nothing to match on, and the trace says so plainly rather
 # than logging a reviewer that returned nothing.
 if shipshape_agent_is_async; then
+  # A remote agent's stop was never probed to reach this session's hooks, so
+  # nothing waits on one; the trace says so rather than promising a capture.
   if [ "$(shipshape_field tool_response.status)" = "remote_launched" ]; then
     shipshape_trace review-capture \
-      "marked dispatch was launched remotely; no local stop will bring its report"
+      "marked dispatch was launched remotely; its report is not captured here (a remote stop reaching local hooks is unprobed)"
     exit 0
   fi
   agent="$(shipshape_safe_id "$(shipshape_field tool_response.agentId)" "")"
@@ -151,7 +153,13 @@ if shipshape_agent_is_async; then
   fi
   pending_dir="$(shipshape_scratch_dir)/pending-capture"
   mkdir -p "$pending_dir" 2>/dev/null
-  if ! printf '%s\n' "$kind" > "$pending_dir/$agent" 2>/dev/null; then
+  # The first launch's time is the one that counts: a second launch under the
+  # same id (ids look random, so this is a guard, not a case) keeps it.
+  if [ -e "$pending_dir/$agent" ]; then
+    shipshape_trace review-capture "marked agent $agent is already pending; keeping its first launch time"
+    exit 0
+  fi
+  if ! { printf '%s\n' "$kind" > "$pending_dir/$agent"; } 2>/dev/null; then
     shipshape_trace review-capture \
       "marked dispatch launched in the background as agent $agent, but it could not be recorded; its report will not be captured"
     exit 0

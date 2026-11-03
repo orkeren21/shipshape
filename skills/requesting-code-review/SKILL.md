@@ -28,12 +28,16 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 Dispatch a `general-purpose` subagent using the template at
 [code-reviewer.md](code-reviewer.md), in the foreground or the background —
-the desktop app runs every dispatch in the background. A foreground report is
+in the field since late October 2026, the desktop app has run every dispatch
+in the background. A foreground report is
 captured when the dispatch returns; a background one when its agent stops,
 and the finished report arrives as a notification. Wait for that before
 finishing. A background report is dated at its launch, so a commit made while
 the reviewer reads leaves its report stale when it lands: the review covers
 the code it was given, and the commits after it need a review of their own.
+That review is a new dispatch, not a continuation of the old reviewer: a
+continued agent's later report is not captured. A "No" that lands after a
+later review was launched still blocks, so answer it before finishing.
 
 **Start the dispatch description with `whole-branch-review:`.** That marker is
 what the `review-capture` hook watches for; on a marked return, the hook writes
