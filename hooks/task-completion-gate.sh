@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# TaskCompleted — a fenced task closes on a fresh, passing verify record.
+# TaskCompleted — a fenced task closes only after the tasks it is blockedBy,
+# and, when its fence names a verify command, on a fresh, passing verify record.
 #
 # The record at verify/<fence-id> is written by shipshape-verify as a side
 # effect of running the task's verifyCommand. It carries the command, the exit
@@ -11,8 +12,9 @@
 # What does matter is editing one of the task's files after verifying — then
 # the record describes code that no longer exists.
 #
-# Tasks with no fence, or a fence with no verifyCommand, are none of this
-# gate's business.
+# Tasks with no fence are none of this gate's business. A fence with no
+# verifyCommand is held to its ordering alone: blockedBy is checked before
+# anything else, so a task cannot close ahead of the tasks it leans on.
 
 set -uo pipefail
 
@@ -44,13 +46,6 @@ if [ -z "$fence_id" ]; then
   exit 0
 fi
 
-if [ -z "$verify_command" ]; then
-  mkdir -p "$scratch/tasks/completed" 2>/dev/null
-  : > "$scratch/tasks/completed/$fence_id"
-  shipshape_trace task-completion-gate "$fence_id has no verify command; closed"
-  exit 0
-fi
-
 # Ordering is checked here too, not only on the move into in_progress. Going
 # straight from pending to completed skipped the only gate that read blockedBy,
 # so the ordering the plan wrote down could be walked around by never claiming
@@ -73,6 +68,14 @@ set +f
 if [ -n "$unmet" ]; then
   shipshape_trace task-completion-gate "$fence_id blocked: still waiting on $unmet"
   shipshape_emit_block "Task $fence_id cannot close: it is blocked by $unmet, which has not closed. Finish that first — the plan put it earlier because this task leans on it."
+  exit 0
+fi
+
+# Ordering held, and with no verify command there is nothing more to check.
+if [ -z "$verify_command" ]; then
+  mkdir -p "$scratch/tasks/completed" 2>/dev/null
+  : > "$scratch/tasks/completed/$fence_id"
+  shipshape_trace task-completion-gate "$fence_id has no verify command; closed"
   exit 0
 fi
 

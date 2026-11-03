@@ -37,7 +37,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `shipshape-verify` | a task's verify command | `verify/<task-id>` |
 | `shipshape-smoke` | any command | `smoke.log` |
 | `shipshape-seat` | nothing — records a fact | `seat` — whether the session is an Architect, a lane or solo, its epic folder and its handoff. context-watch picks thresholds from it; session-start re-orients a compacted session from it. Also prints the session id a roster file needs. |
-| `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Always exits 0; diagnosis is not enforcement. `--json` prints the same evaluation as one object (format 1): each leg's state in the evaluator's own word, the seat, the scratch path, reviewers still running, and the armed PRs. shipdeck draws its band from it. |
+| `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Names any other checkout's folder for the same session: where older hooks in a desktop-app worktree session left their half of the evidence, or what a subagent working in its own worktree left there. Always exits 0; diagnosis is not enforcement. `--json` prints the same evaluation as one object (format 1): each leg's state in the evaluator's own word, the seat, the scratch path, reviewers still running, and the armed PRs. shipdeck draws its band from it. |
 
 ## The hooks
 
@@ -47,7 +47,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp, and, on the PR's own branch, while a review report the done gate would still count says No (a reasoned review waiver is honoured, as the done gate honours it). A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. |
 | `review-capture` | `PostToolUse`, `SubagentStop` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:` — at once for a foreground dispatch, and for a background one (in the field since late October 2026 the only kind the desktop app launches) when that agent stops, matched by its agent id and dated at its launch, so commits made while it read leave it stale. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
 | `task-capture` | `TaskCreated` | Remembers each task's metadata fence. The three task hooks act only where Claude Code's own task tools exist — the desktop app replaces them with its plan tool — and field traces show them capturing fences but never enforcing; a plan-file replacement is planned. |
-| `task-completion-gate` | `TaskCompleted` | A fenced task closes only on a fresh, passing verify record whose command matches the one the fence demanded. |
+| `task-completion-gate` | `TaskCompleted` | A fenced task closes only after the tasks it is `blockedBy` have closed, and only on a fresh, passing verify record whose command matches the one the fence demanded. A fence with no `verifyCommand` is held to the ordering alone. |
 | `blockedby-gate` | `PreToolUse` | Refuses a task whose dependencies are open. |
 | `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create` and hands back the `shipshape-pr-open` form. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. |
 | `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, at the seat's handoff point: 70/85% for a lane or solo session, 85/92% for an Architect. Worded as actions, with no prohibitions to echo back; the operator gets the number in a one-line `systemMessage`, so the session has nothing to announce. |
@@ -55,7 +55,13 @@ record behind as a side effect. The record cannot exist without the work.
 
 Every hook **fails open**, has a kill switch (`SHIPSHAPE_<HOOK>=0`), and logs
 what it decided to `.shipshape/<session-id>/trace.log`. All scratch is
-session-scoped, so two lanes running against one repo cannot collide.
+session-scoped, so two lanes running against one repo cannot collide. A hook
+resolves git, the scratch folder and the waiver file from the session's
+working directory, the `cwd` on its payload, because that is where the
+wrappers run (measured for a session that stays in the directory it was
+launched in). Its own directory can be another checkout: the desktop app
+launches a worktree session with `--project-config-root` at the main checkout,
+and its hooks then start there (measured with the app's Claude Code 2.1.309).
 
 **Retired in 0.4.0: the deflection guard.** It was a `Stop` hook that held a
 session when it proposed moving its work to a fresh session below 70% context.

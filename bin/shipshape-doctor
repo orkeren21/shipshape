@@ -36,7 +36,7 @@ esac
 
 # The scratch path is computed, never created — shipshape_scratch_dir would
 # mkdir, and looking must not leave footprints.
-scratch="$(shipshape_scratch_root)/.shipshape/$(shipshape_session_id)"
+scratch="$(shipshape_scratch_path)"
 
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 current_head="$(git rev-parse HEAD 2>/dev/null)"
@@ -169,6 +169,30 @@ fi
 printf 'ShipShape doctor — session %s, branch %s (HEAD %s)\n\n' \
   "$(shipshape_session_id)" "${current_branch:-none}" \
   "$(printf '%s' "${current_head:-no-git}" | cut -c1-8)"
+
+# A split session's other folder explains a leg that reads missing below.
+other_dirs="$(shipshape_other_scratch_dirs "$scratch")"
+if [ -n "$other_dirs" ]; then
+  printf 'note — this session also has scratch in another checkout, which the gates do not read:\n'
+  other_review=""
+  while IFS= read -r other; do
+    [ -n "$other" ] || continue
+    held="$(ls -A "$other" 2>/dev/null | paste -sd, - | sed 's/,/, /g')"
+    printf '  %s\n    holds: %s\n' "$other" "${held:-(empty)}"
+    for report in "$other"/review-*.md; do
+      [ -f "$report" ] && other_review="yes" && break
+    done
+  done <<SHIPSHAPE_OTHERS
+$other_dirs
+SHIPSHAPE_OTHERS
+  printf '  The usual causes: older ShipShape hooks, which ran from the main checkout\n'
+  printf '  in a desktop-app worktree session, or a subagent working in a worktree of\n'
+  printf '  its own. Nothing there counts here: a leg that reads missing below is\n'
+  printf '  produced again, in this checkout.\n'
+  [ -n "$other_review" ] &&
+    printf '  For the review, re-dispatch the whole-branch review rather than copying\n  its report.\n'
+  printf '\n'
+fi
 
 leg_line() { printf '  %-8s %s\n' "$1" "$2"; }
 

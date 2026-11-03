@@ -55,10 +55,17 @@ hook_field() {
   shipshape_json_get "$1" "$2"
 }
 
-# A Stop payload. stop_payload <session> <transcript> <last-message>
+# A Stop payload. stop_payload <session> <transcript> <last-message> [cwd]
+#
+# Hooks resolve from the payload's cwd when it carries one, so the field is
+# only set when asked for. Stamping the caller's $PWD would point every hook at
+# the directory the test runs from — the ShipShape checkout — instead of the
+# fixture run_hook was told to run it in.
 stop_payload() {
-  printf '{"session_id":"%s","transcript_path":"%s","cwd":"%s","hook_event_name":"Stop","last_assistant_message":%s,"stop_hook_active":false}' \
-    "$1" "$2" "$PWD" "$(json_string "$3")"
+  local cwd_field=""
+  [ -n "${4:-}" ] && cwd_field="\"cwd\":$(json_string "$4"),"
+  printf '{"session_id":"%s","transcript_path":"%s",%s"hook_event_name":"Stop","last_assistant_message":%s,"stop_hook_active":false}' \
+    "$1" "$2" "$cwd_field" "$(json_string "$3")"
 }
 
 # json_string <text> — quote text as a JSON string.

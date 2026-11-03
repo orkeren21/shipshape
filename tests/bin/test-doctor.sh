@@ -184,4 +184,42 @@ assert_contains "$out" "waived" "an active waiver is reported, not hidden"
 assert_contains "$out" "docs-only" "with its reason"
 rm -f "$repo/.shipshape.yaml"
 
+# --- a session whose evidence split across checkouts -------------------------
+#
+# Older hooks in a desktop-app worktree session wrote to the main checkout
+# while the wrappers wrote to the worktree. The gates read only the worktree's
+# folder, so the doctor names the other one rather than letting it pass for
+# missing evidence.
+
+unset SHIPSHAPE_SCRATCH_ROOT
+main="$(cd "$repo" && pwd -P)"
+git -C "$main" worktree add -q -b lane "$main/.claude/worktrees/lane"
+lane="$main/.claude/worktrees/lane"
+mkdir -p "$lane/.shipshape/doc-session"
+
+out="$(cd "$lane" && "$doctor" 2>&1)"
+assert_contains "$out" "$main/.shipshape/doc-session" "the main checkout's folder for this session is named"
+assert_contains "$out" "holds: ci-status, pr-armed-57" "with what that folder holds"
+assert_contains "$out" "Nothing there counts here" "and that none of it counts in this checkout"
+assert_contains "$out" "re-dispatch the whole-branch review" "a review there gets the review advice"
+assert_not_contains "$out" "  $lane/.shipshape/doc-session
+" "the session's own folder is not listed as the other one"
+
+rm -f "$main/.shipshape/doc-session"/review-*.md
+out="$(cd "$lane" && "$doctor" 2>&1)"
+assert_contains "$out" "Nothing there counts here" "a folder holding no review is still named as not counting"
+assert_not_contains "$out" "re-dispatch" "but gets no review advice"
+
+mkdir -p "$main/.shipshape/empty-session" "$lane/.shipshape/empty-session"
+out="$(cd "$lane" && SHIPSHAPE_SESSION_ID=empty-session "$doctor" 2>&1)"
+assert_contains "$out" "holds: (empty)" "an empty folder is named as empty"
+
+out="$(cd "$lane" && SHIPSHAPE_SCRATCH_ROOT="$lane" "$doctor" 2>&1)"
+assert_not_contains "$out" "another checkout" \
+  "under the scratch-root override the folder does not depend on the checkout, so nothing is another one's"
+
+out="$(cd "$lane" && SHIPSHAPE_SESSION_ID=lone-session "$doctor" 2>&1)"
+assert_not_contains "$out" "another checkout" "a session with one folder gets no note"
+[ -d "$lane/.shipshape/lone-session" ] && fail "looking for a split created a scratch folder"
+
 finish
