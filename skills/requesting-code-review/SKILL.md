@@ -28,9 +28,17 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 Dispatch a `general-purpose` subagent using the template at
 [code-reviewer.md](code-reviewer.md), in the foreground or the background —
-the desktop app runs every dispatch in the background. A foreground report is
+in the field since late October 2026, the desktop app has run every dispatch
+in the background. A foreground report is
 captured when the dispatch returns; a background one when its agent stops,
 and the finished report arrives as a notification. Wait for that before
+finishing. A background report is dated at its launch, so a commit made while
+the reviewer reads leaves its report stale when it lands: the review covers
+the code it was given, and the commits after it need a review of their own.
+That review is a new dispatch, not a continuation of the old reviewer: a
+continued agent's later report may not be captured. A "No" that lands after
+the newest background review was launched still blocks — whichever lands
+first — so answer it, and have a review launched after it say yes, before
 finishing.
 
 **Start the dispatch description with `whole-branch-review:`.** That marker is
@@ -72,8 +80,9 @@ document catches that.
 
 The highest-defect-density code in the field data was the fix written in
 answer to a finding — momentum, in code the author just learned was subtle.
-The gate already enforces the consequence: a review predating HEAD is stale,
-so every fix diff gets its scoped re-review before the branch is finished.
+The gate already enforces the consequence: a review predating HEAD is stale
+(a background review dates from its launch), so every fix diff gets its
+scoped re-review before the branch is finished.
 That is the mechanism working, not friction to route around.
 
 **Never tell the reviewer to be conservative, to filter, or to report only what

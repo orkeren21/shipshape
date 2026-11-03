@@ -397,33 +397,10 @@ shipshape_waiver_unreasoned() { # <leg> -> 0 when waived without a reason
 #   ci:     ok | missing | not-green:<merge-state> | stale
 #   smoke:  ok | missing | stale:<head> | no-runs | failures:<n>/<runs>
 
-shipshape_leg_review() { # <scratch>
-  local scratch="$1" review="" newest=0 empties="" candidate candidate_mtime
-  for candidate in "$scratch"/review-*.md; do
-    [ -f "$candidate" ] || continue
-    if [ ! -s "$candidate" ]; then
-      empties="$empties$(basename "$candidate") "
-      continue
-    fi
-    candidate_mtime="$(shipshape_mtime "$candidate")"
-    [ -n "$candidate_mtime" ] || continue
-    if [ "$candidate_mtime" -ge "$newest" ]; then
-      newest="$candidate_mtime"
-      review="$candidate"
-    fi
-  done
-  if [ -z "$review" ]; then
-    if [ -n "$empties" ]; then
-      printf 'empty|%s' "${empties% }"
-    else
-      printf 'missing|'
-    fi
-    return 0
-  fi
-  if ! shipshape_newer_than_head "$review"; then
-    printf 'stale|%s' "$(basename "$review")"
-    return 0
-  fi
+# shipshape_review_verdict <report> -> ok | verdict-no | no-verdict, read from
+# the report's formal "Ready to merge" lines.
+shipshape_review_verdict() {
+  local file="$1"
   # The verdict is read from FORMAL lines: ones that START with "Ready to merge"
   # (after markdown decoration, and optionally an "Assessment" or "Verdict" label)
   # followed by "?", ":" or an em dash. Lines inside a fenced block don't count.
@@ -445,9 +422,9 @@ shipshape_leg_review() { # <scratch>
     }
     pending && line ~ /[a-z0-9]/ { print "answer:" line; pending = 0 }
     END { if (pending) print "answer:" }
-  ' "$review" 2>/dev/null)"
+  ' "$file" 2>/dev/null)"
   if [ -z "$answers" ]; then
-    printf 'no-verdict|%s' "$(basename "$review")"
+    printf 'no-verdict'
     return 0
   fi
   while IFS= read -r answer; do
@@ -478,7 +455,86 @@ EOF
   # A here-document bash could not create leaves the loop unrun; that is no
   # verdict, not the "ok" worst started at.
   [ "$read_any" = 1 ] || worst=no-verdict
-  printf '%s|%s' "$worst" "$(basename "$review")"
+  printf '%s' "$worst"
+}
+
+shipshape_leg_review() { # <scratch>
+  local scratch="$1" review="" newest=0 empties="" candidate candidate_mtime
+  for candidate in "$scratch"/review-*.md; do
+    [ -f "$candidate" ] || continue
+    if [ ! -s "$candidate" ]; then
+      empties="$empties$(basename "$candidate") "
+      continue
+    fi
+    candidate_mtime="$(shipshape_mtime "$candidate")"
+    [ -n "$candidate_mtime" ] || continue
+    if [ "$candidate_mtime" -ge "$newest" ]; then
+      newest="$candidate_mtime"
+      review="$candidate"
+    fi
+  done
+  if [ -z "$review" ]; then
+    if [ -n "$empties" ]; then
+      printf 'empty|%s' "${empties% }"
+    else
+      printf 'missing|'
+    fi
+    return 0
+  fi
+  if ! shipshape_newer_than_head "$review"; then
+    printf 'stale|%s' "$(basename "$review")"
+    return 0
+  fi
+  local verdict
+  verdict="$(shipshape_review_verdict "$review")"
+
+  # The newest report by launch is the one that saw the most code, but a "No"
+  # that landed after that report was launched was never answered by it: it
+  # was sent before those findings existed. Any such "No" stands, whichever
+  # report lands first. A hook-written name carries its landing time
+  # (review-<UTC stamp>-NN.md). A background report's modification time is
+  # its launch, so the two compare as stamps. A foreground report is dated
+  # when it returns, so for it the rule reaches only a "No" that landed after
+  # it returned — dating foreground dispatches at launch is a recorded
+  # follow-up. The desktop app launches background reviewers only. A "No" landing in the
+  # same second as the launch counts: the tie goes to blocking. Only names the
+  # hook writes take part, so a stray review-notes.md can never block for good.
+  # Where the launch time cannot be formatted, landing after the chosen report
+  # in glob order (which is landing order) is the fallback rule.
+  local launched later="" seen="" name landed
+  launched="$(date -u -r "$review" +%Y%m%dT%H%M%SZ 2>/dev/null)"
+  case "$launched" in
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z) : ;;
+    *) launched="" ;;
+  esac
+  for candidate in "$scratch"/review-*.md; do
+    [ -f "$candidate" ] && [ -s "$candidate" ] || continue
+    if [ "$candidate" = "$review" ]; then
+      seen=1
+      continue
+    fi
+    name="$(basename "$candidate")"
+    case "$name" in
+      review-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z-[0-9][0-9].md) : ;;
+      *) continue ;;
+    esac
+    if [ -n "$launched" ]; then
+      landed="${name#review-}"
+      landed="${landed%%-*}"
+      [ "$landed" \< "$launched" ] && continue
+    else
+      [ -n "$seen" ] || continue
+    fi
+    if [ "$(shipshape_review_verdict "$candidate")" = "verdict-no" ]; then
+      later="$candidate"
+    fi
+  done
+  if [ -n "$later" ]; then
+    printf 'verdict-no|%s' "$(basename "$later")"
+    return 0
+  fi
+
+  printf '%s|%s' "$verdict" "$(basename "$review")"
 }
 
 shipshape_leg_ci() { # <scratch>

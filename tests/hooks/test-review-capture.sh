@@ -34,8 +34,8 @@ payload() { # payload <tool_name> <description> <returned text>
     "$session" "$1" "$(json_string "$2")" "$(json_string "$3")"
 }
 
-# A backgrounded dispatch: launched, no result yet, and no later event will
-# carry one.
+# A backgrounded dispatch: launched, no result yet. Its report arrives on the
+# agent's SubagentStop.
 async_payload() { # async_payload <description>
   printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":%s},"tool_response":{"status":"async_launched","agentId":"abc123","isAsync":true}}' \
     "$session" "$(json_string "$1")"
@@ -183,11 +183,131 @@ assert_file "$scratch/pending-capture/abc123" "and the agent stays pending for a
 # A hostile agent id cannot walk out of the pending directory.
 hostile="$(printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"whole-branch-review: x"},"tool_response":{"status":"async_launched","agentId":"../../escape","isAsync":true}}' "$session")"
 run_hook review-capture.sh "$hostile" "$repo" >/dev/null
-assert_no_file "$scratch/escape" "a hostile agent id stays inside pending-capture"
+assert_no_file "$repo/.shipshape/escape" "a hostile agent id stays inside pending-capture"
 assert_file "$scratch/pending-capture/escape" "reduced to a safe name there"
 
 rm -rf "$scratch/pending-capture"
 rm -f "$scratch"/review-*.md "$scratch"/conformance-*.md
+
+# --- a background review is as old as its launch ---------------------------
+#
+# The done gate counts a review fresh when its report is newer than HEAD. A
+# background reviewer reads while the session keeps working, and its report
+# lands when it stops — after any commit made in between. (A foreground one is
+# dated when it returns, which has the same hole for commits made in parallel
+# by a sibling agent or the operator; that one is a recorded follow-up.) Dated at the
+# stop, it would pass as fresh for code it never saw. So the report carries
+# the launch time, and a commit made during the review makes it stale.
+
+VERDICT_REPORT="$REPORT
+
+**Ready to merge?** Yes"
+leg() { (cd "$repo" && source "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" && shipshape_leg_review "$scratch"); }
+
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(async_payload "whole-branch-review: mid-flight")" "$repo" >/dev/null
+commit_more "$repo"
+run_hook review-capture.sh "$(stop_payload_for abc123 "$VERDICT_REPORT")" "$repo" >/dev/null
+assert_contains "$(leg)" "stale" \
+  "a commit made while a background reviewer ran makes its report stale when it lands"
+
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(async_payload "whole-branch-review: undisturbed")" "$repo" >/dev/null
+run_hook review-capture.sh "$(stop_payload_for abc123 "$VERDICT_REPORT")" "$repo" >/dev/null
+assert_eq "ok" "$(leg | cut -d'|' -f1)" \
+  "with no commit during the review, the same report counts as fresh"
+
+# A late "No" stands. Reviewer A reads the whole branch while the session
+# commits and launches a scoped re-review B. B is smaller, so it returns "Yes"
+# first; A's "No" lands after. B was launched later and saw more code, but it
+# never answered A's findings, which arrived after it was sent. The base hook
+# (reports dated at landing) blocked here; dating by launch must not lose that.
+launch_as() { # launch_as <agent id> <description>
+  printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":%s},"tool_response":{"status":"async_launched","agentId":"%s","isAsync":true}}' \
+    "$session" "$(json_string "$2")" "$1"
+}
+NO_REPORT="$REPORT
+
+**Ready to merge?** No"
+
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(launch_as revA "whole-branch-review: round one")" "$repo" >/dev/null
+commit_more "$repo"
+sleep 1
+run_hook review-capture.sh "$(launch_as revB "whole-branch-review: fix diff")" "$repo" >/dev/null
+run_hook review-capture.sh "$(stop_payload_for revB "$VERDICT_REPORT")" "$repo" >/dev/null
+sleep 1
+run_hook review-capture.sh "$(stop_payload_for revA "$NO_REPORT")" "$repo" >/dev/null
+assert_eq "verdict-no" "$(leg | cut -d'|' -f1)" \
+  "a No landing after a later-launched Yes still blocks"
+
+# The concurrent order: A's No lands while B, launched after the commit, is
+# still reading; B's Yes lands last. B was sent before A's findings existed,
+# so it never answered them, and the No stands whichever report lands first.
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(launch_as revA "whole-branch-review: round one")" "$repo" >/dev/null
+commit_more "$repo"
+sleep 1
+run_hook review-capture.sh "$(launch_as revB "whole-branch-review: fix diff")" "$repo" >/dev/null
+sleep 1
+run_hook review-capture.sh "$(stop_payload_for revA "$NO_REPORT")" "$repo" >/dev/null
+sleep 1
+run_hook review-capture.sh "$(stop_payload_for revB "$VERDICT_REPORT")" "$repo" >/dev/null
+assert_eq "verdict-no" "$(leg | cut -d'|' -f1)" \
+  "a No landing while a later-launched review still reads blocks too"
+
+# Only names the hook writes take part: a stray file can never block for good.
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(launch_as revS "whole-branch-review: settled")" "$repo" >/dev/null
+run_hook review-capture.sh "$(stop_payload_for revS "$VERDICT_REPORT")" "$repo" >/dev/null
+printf '%s\n' "$NO_REPORT" > "$scratch/review-notes.md"
+touch -t 202001010000 "$scratch/review-notes.md"
+assert_eq "ok" "$(leg | cut -d'|' -f1)" \
+  "a review-notes.md that says No is not a captured report and blocks nothing"
+rm -f "$scratch/review-notes.md"
+
+# Two reviewers stopping in the same second take two names; neither report
+# overwrites the other, because a lost report can be a lost No.
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(launch_as revX "whole-branch-review: x")" "$repo" >/dev/null
+run_hook review-capture.sh "$(launch_as revY "whole-branch-review: y")" "$repo" >/dev/null
+( cd "$repo" && printf '%s' "$(stop_payload_for revX "$NO_REPORT")" | bash "$HOOKS_DIR/review-capture.sh" ) &
+( cd "$repo" && printf '%s' "$(stop_payload_for revY "$VERDICT_REPORT")" | bash "$HOOKS_DIR/review-capture.sh" ) &
+wait
+assert_eq "2" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | wc -l | tr -d ' ')" \
+  "two reviewers stopping together leave two reports"
+
+# The other order is answered: A's No lands, the session fixes and commits,
+# and a review launched after that No says Yes.
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(launch_as revA "whole-branch-review: round one")" "$repo" >/dev/null
+run_hook review-capture.sh "$(stop_payload_for revA "$NO_REPORT")" "$repo" >/dev/null
+commit_more "$repo"
+sleep 1
+run_hook review-capture.sh "$(launch_as revC "whole-branch-review: after the fix")" "$repo" >/dev/null
+run_hook review-capture.sh "$(stop_payload_for revC "$VERDICT_REPORT")" "$repo" >/dev/null
+assert_eq "ok" "$(leg | cut -d'|' -f1)" \
+  "a Yes from a review launched after the No answered it"
+
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+
+# A remote launch has no local stop to bring its report, so nothing waits on
+# one, and the trace says why.
+remote="$(printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"whole-branch-review: remote"},"tool_response":{"status":"remote_launched","agentId":"far1","isAsync":true}}' "$session")"
+run_hook review-capture.sh "$remote" "$repo" >/dev/null
+assert_no_file "$scratch/pending-capture/far1" "a remote launch leaves nothing pending"
+assert_contains "$(cat "$scratch/trace.log")" "launched remotely" "and the trace says no local stop will come"
+
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
 
 # --- a plain-string result ---------------------------------------------------
 

@@ -146,13 +146,13 @@ case "${leg%%|*}" in
     add "review report — no whole-branch review has been captured. Dispatch the reviewer with \"whole-branch-review:\" in the description; the hook writes the report from what it returns, or for a background dispatch from what it says when it stops."
     ;;
   stale)
-    add "review report — stale: it predates the current HEAD commit, so it did not see the code being shipped. Re-review the branch."
+    add "review report — stale: it predates the current HEAD commit (a background review counts from its launch), so it did not see the code being shipped. Re-review the branch."
     ;;
   no-verdict)
     add "review report — no verdict in it. The reviewer template ends with \"Ready to merge?\" answered Yes, No or With fixes; a report without that answer is not a completed review."
     ;;
   verdict-no)
-    add "review report — the reviewer's verdict is no. Fix what it found and re-review; a branch does not become finished by ignoring the answer."
+    add "review report — the reviewer's verdict is no ($detail). Fix what it found, then get a review launched after that report landed; until one says yes, this \"No\" stands. A branch does not become finished by ignoring the answer."
     ;;
 esac
 [ "$missing" != "$before_review" ] && shipshape_waiver_unreasoned review && leg_note_unreasoned review
