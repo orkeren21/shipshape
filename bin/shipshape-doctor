@@ -38,14 +38,23 @@ printf 'ShipShape doctor — session %s, branch %s (HEAD %s)\n\n' \
 other_dirs="$(shipshape_other_scratch_dirs "$scratch")"
 if [ -n "$other_dirs" ]; then
   printf 'note — this session also has scratch in another checkout, which the gates do not read:\n'
+  other_review=""
   while IFS= read -r other; do
-    printf '  %s\n    holds: %s\n' "$other" "$(ls -A "$other" 2>/dev/null | paste -sd, - | sed 's/,/, /g')"
+    [ -n "$other" ] || continue
+    held="$(ls -A "$other" 2>/dev/null | paste -sd, - | sed 's/,/, /g')"
+    printf '  %s\n    holds: %s\n' "$other" "${held:-(empty)}"
+    for report in "$other"/review-*.md; do
+      [ -f "$report" ] && other_review="yes" && break
+    done
   done <<SHIPSHAPE_OTHERS
 $other_dirs
 SHIPSHAPE_OTHERS
   printf '  The usual cause is older ShipShape hooks, which ran from the main checkout\n'
-  printf '  in a desktop-app worktree session. A review there does not count here:\n'
-  printf '  re-dispatch the whole-branch review rather than copying its report.\n\n'
+  printf '  in a desktop-app worktree session. Nothing there counts here: a leg that\n'
+  printf '  reads missing below is produced again, in this checkout.\n'
+  [ -n "$other_review" ] &&
+    printf '  For the review, re-dispatch the whole-branch review rather than copying\n  its report.\n'
+  printf '\n'
 fi
 
 # ---- the evidence legs, as the done gate reads them -------------------------
