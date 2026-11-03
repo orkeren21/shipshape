@@ -87,12 +87,15 @@ shipshape_scratch_root() {
 # shipshape_other_scratch_dirs <scratch> -> every other folder holding this
 # session's scratch, one per line, across the repository's worktrees.
 #
-# Two callers. review-capture looks here for a reviewer's launch marker when
-# the reviewer stopped in a worktree of its own. The doctor lists them: older
-# hooks resolved from their own directory, which in a desktop-app worktree
-# session is the main checkout, so a session that ran them has part of its
-# evidence there. The gates read only the session's own folder; naming the
-# other one is what keeps a split from passing for missing evidence.
+# Three callers. review-capture looks here for a reviewer's launch marker
+# when it is not under the stop's own checkout, which usually means the
+# reviewer ran in a worktree of its own. shipshape_read_payload traces a cwd it
+# cannot follow into one of them. The doctor lists them: older hooks resolved
+# from their own directory, which in a desktop-app worktree session is the
+# main checkout, so a session that ran them has part of its evidence there,
+# and a subagent working in its own worktree leaves a folder in it. The gates
+# read only the session's own folder; naming the other one is what keeps a
+# split from passing for missing evidence.
 # Looks, never creates. Under SHIPSHAPE_SCRATCH_ROOT the folder does not
 # depend on the checkout, so there is no other one to find.
 shipshape_other_scratch_dirs() {
@@ -236,30 +239,32 @@ else:
 # naming a directory that is gone, leaves the hook where it started.
 shipshape_read_payload() {
   SHIPSHAPE_PAYLOAD="$(cat 2>/dev/null)"
-  local sid cwd here dir
+  local sid cwd unfollowed="" here dir
   sid="$(shipshape_json_get "$SHIPSHAPE_PAYLOAD" session_id)"
   [ -n "$sid" ] && export SHIPSHAPE_SESSION_ID="$sid"
   cwd="$(shipshape_json_get "$SHIPSHAPE_PAYLOAD" cwd)"
   # Absolute only: a relative one has nothing to be relative to, and would let
   # CDPATH choose the directory. Absolute means POSIX, which covers the Linux
-  # and macOS this runs on.
+  # and macOS this runs on. The cd is silenced: a hook's stdout is its answer.
   case "$cwd" in
-    /*) : ;;
-    *) cwd="" ;;
+    "") : ;;
+    /*) cd -- "$cwd" >/dev/null 2>&1 || unfollowed="cannot be entered" ;;
+    *) unfollowed="is not absolute" ;;
   esac
-  # Silenced: a hook's stdout is its answer.
-  if [ -n "$cwd" ] && ! cd -- "$cwd" >/dev/null 2>&1; then
+  if [ -n "$unfollowed" ]; then
     # Traced only into a folder that already exists: creating one in the
     # hook's own directory would start the very split this prevents. In the
     # desktop app that directory is the main checkout, which holds no folder
     # for the session, so the line goes to the first of the session's folders
-    # in another checkout that git lists. With an isolated agent's worktree
-    # holding one too, that can be the agent's, which goes when it does.
+    # in another checkout that git lists. git sorts linked worktrees by path
+    # (seen with git 2.50.1), so with an isolated agent's worktree holding a
+    # folder too, that is often the agent's, and an agent worktree with no
+    # changes was removed after its stop in the one run probed.
     here="$(shipshape_scratch_path)"
     dir="$here"
     [ -d "$dir" ] || dir="$(shipshape_other_scratch_dirs "$here" | head -1)"
     [ -n "$dir" ] &&
-      shipshape_trace_into "$dir" payload "the payload's cwd $cwd cannot be entered; resolving from $PWD"
+      shipshape_trace_into "$dir" payload "the payload's cwd $cwd $unfollowed; resolving from $PWD"
   fi
   return 0
 }

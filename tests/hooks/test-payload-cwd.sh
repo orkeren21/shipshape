@@ -123,14 +123,17 @@ has_review "$wt_scratch" || fail "and the hook resolves from its own directory i
 assert_no_file "$work/no-such-dir" "the missing directory is not created"
 
 rm -rf "$wt/.shipshape"
+mkdir -p "$wt_scratch"
 run_hook review-capture.sh "$(review_payload "../../..")" "$wt" >/dev/null
 has_review "$wt_scratch" || fail "a relative cwd is ignored rather than resolved against anything"
+assert_contains "$(wt_trace)" "cwd ../../.. is not absolute" "and the trace says it was not followed"
 assert_no_file "$main/.shipshape" "even one that would lead to the main checkout"
 rm -rf "$main/.shipshape"
 
-# If a stop names a worktree that is gone by the time it arrives (whether
-# cleanup can come first is unprobed), the hook stays where it started, and
-# leaves no folder behind there.
+# If a stop names a worktree that is gone by the time it arrives, the hook
+# stays where it started, and leaves no folder behind there. A probe
+# (2.1.309) saw an unchanged agent worktree removed after its stop, so this
+# guards the other order.
 rm -rf "$wt/.shipshape"
 gone="$(printf '{"session_id":"%s","cwd":%s,"hook_event_name":"SubagentStop","agent_id":"zz1","last_assistant_message":"x"}' \
   "$session" "$(json_string "$main/.claude/worktrees/agent-zz1")")"
@@ -183,13 +186,17 @@ main_clean "isolated capture"
 
 # The reason the search runs whenever the marker is missing, rather than only
 # when the stop's checkout has no folder for the session: the agent's own
-# worktree can hold one, made by a wrapper it ran there.
+# worktree can hold one. A probe (2.1.309) saw an isolated agent's commands run
+# there carrying this session's id, so a wrapper it runs writes there.
+rm -rf "$wt/.shipshape"
 run_hook review-capture.sh "$(launch iso6)" "$main" >/dev/null
+assert_file "$wt_scratch/pending-capture/iso6" "the launch is remembered in the session's folder"
 mkdir -p "$agent_wt/.shipshape/$session"
 run_hook review-capture.sh "$(stop_in "$agent_wt" iso6 "$REPORT")" "$main" >/dev/null
-assert_no_file "$wt_scratch/pending-capture/iso6" \
-  "a reviewer whose worktree holds a folder for the session is still captured beside its marker"
-has_review "$agent_wt/.shipshape/$session" && fail "and not into the folder in its worktree"
+has_review "$wt_scratch" \
+  || fail "a reviewer whose worktree holds a folder for the session is still captured beside its marker"
+assert_no_file "$wt_scratch/pending-capture/iso6" "and the marker is consumed"
+has_review "$agent_wt/.shipshape/$session" && fail "not into the folder in its worktree"
 rm -rf "$agent_wt/.shipshape"
 main_clean "an isolated worktree with a folder"
 

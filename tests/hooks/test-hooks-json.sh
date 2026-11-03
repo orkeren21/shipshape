@@ -83,8 +83,9 @@ repo="$work/repo"
 make_repo "$repo"
 export SHIPSHAPE_SCRATCH_ROOT="$repo"
 
-for script in done-gate.sh context-watch.sh review-capture.sh \
-              task-capture.sh task-completion-gate.sh blockedby-gate.sh pr-wrapper-gate.sh; do
+# Every hook in the directory, so a new one cannot be left off the list.
+for hook in "$HOOKS_DIR"/*.sh; do
+  script="$(basename "$hook")"
   run_hook "$script" '{}' "$repo" >/dev/null
   assert_eq "0" "$(hook_status)" "$script exits 0 on an empty payload"
   run_hook "$script" '' "$repo" >/dev/null
