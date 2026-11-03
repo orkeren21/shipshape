@@ -57,23 +57,32 @@ write_report() {
   # background ones launched in the same second) the later name wins, and a
   # "No" landing after the newest-by-launch report still stands.
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  suffix=0
-  target="$scratch/$kind-$stamp-00.md"
-  # A hundred reports in one second means something is looping, and the
+  # Each name is claimed exclusively (noclobber opens with O_EXCL), so two
+  # reviewers stopping in the same second take two names rather than one
+  # overwriting the other — a lost report can be a lost "No". A hundred
+  # reports in one second means something is looping, and the
   # hundred-and-first will not help. Bounded, and the cap is logged.
-  while [ -e "$target" ] && [ "$suffix" -le 98 ]; do
-    suffix=$((suffix + 1))
+  suffix=0
+  target=""
+  while [ "$suffix" -le 99 ]; do
     target="$scratch/$kind-$stamp-$(printf '%02d' "$suffix").md"
+    if ( set -C; printf '%s' "$report" > "$target" ) 2>/dev/null; then
+      break
+    fi
+    if [ ! -e "$target" ]; then
+      # Not a name taken by another report: a write that fails here fails
+      # under every name.
+      shipshape_trace review-capture "could not write $(basename "$target")"
+      return 1
+    fi
+    target=""
+    suffix=$((suffix + 1))
   done
-  if [ -e "$target" ]; then
+  if [ -z "$target" ]; then
     shipshape_trace review-capture "100 reports already written this second; discarding this one"
     return 1
   fi
 
-  if ! { printf '%s' "$report" > "$target"; } 2>/dev/null; then
-    shipshape_trace review-capture "could not write $(basename "$target")"
-    return 1
-  fi
   if [ -n "$dated_like" ] && ! touch -r "$dated_like" "$target" 2>/dev/null; then
     # Undated, it would read as fresh for commits made during the review; a
     # report that cannot carry its launch time is not one the gate may read.

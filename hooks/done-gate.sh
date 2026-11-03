@@ -152,7 +152,7 @@ case "${leg%%|*}" in
     add "review report — no verdict in it. The reviewer template ends with \"Ready to merge?\" answered Yes, No or With fixes; a report without that answer is not a completed review."
     ;;
   verdict-no)
-    add "review report — the reviewer's verdict is no. Fix what it found and re-review; a branch does not become finished by ignoring the answer."
+    add "review report — the reviewer's verdict is no ($detail). Fix what it found, then get a review launched after that report landed; a \"No\" stands until a later-launched review answers it, even when a newer review said yes. A branch does not become finished by ignoring the answer."
     ;;
 esac
 [ "$missing" != "$before_review" ] && shipshape_waiver_unreasoned review && leg_note_unreasoned review

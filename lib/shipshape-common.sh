@@ -458,7 +458,6 @@ EOF
   printf '%s' "$worst"
 }
 
-
 shipshape_leg_review() { # <scratch>
   local scratch="$1" review="" newest=0 empties="" candidate candidate_mtime
   for candidate in "$scratch"/review-*.md; do
@@ -490,19 +489,38 @@ shipshape_leg_review() { # <scratch>
   verdict="$(shipshape_review_verdict "$review")"
 
   # The newest report by launch is the one that saw the most code, but a "No"
-  # that landed after it — a reviewer launched earlier, still reading while a
-  # re-review launched and returned — was never answered by it: the re-review
-  # covered its own diff, not the findings that arrived later. Report names
-  # carry their landing time, so glob order is landing order; a "No" from any
-  # report landing after the chosen one stands. Foreground reports land at
-  # their launch, so for them nothing lands after the newest and this adds no
-  # check.
-  local later="" seen=""
+  # that landed after that report was launched was never answered by it: it
+  # was sent before those findings existed. Any such "No" stands, whichever
+  # report lands first. A hook-written name carries its landing time
+  # (review-<UTC stamp>-NN.md), and the chosen report's launch time is its
+  # modification time, so the two compare as stamps. A "No" landing in the
+  # same second as the launch counts: the tie goes to blocking. Only names the
+  # hook writes take part, so a stray review-notes.md can never block for good.
+  # Where the launch time cannot be formatted, landing after the chosen report
+  # in glob order (which is landing order) is the fallback rule.
+  local launched later="" seen="" name landed
+  launched="$(date -u -r "$review" +%Y%m%dT%H%M%SZ 2>/dev/null)"
+  case "$launched" in
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z) : ;;
+    *) launched="" ;;
+  esac
   for candidate in "$scratch"/review-*.md; do
     [ -f "$candidate" ] && [ -s "$candidate" ] || continue
-    if [ -z "$seen" ]; then
-      [ "$candidate" = "$review" ] && seen=1
+    if [ "$candidate" = "$review" ]; then
+      seen=1
       continue
+    fi
+    name="$(basename "$candidate")"
+    case "$name" in
+      review-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z-[0-9][0-9].md) : ;;
+      *) continue ;;
+    esac
+    if [ -n "$launched" ]; then
+      landed="${name#review-}"
+      landed="${landed%%-*}"
+      [ "$landed" \< "$launched" ] && continue
+    else
+      [ -n "$seen" ] || continue
     fi
     if [ "$(shipshape_review_verdict "$candidate")" = "verdict-no" ]; then
       later="$candidate"

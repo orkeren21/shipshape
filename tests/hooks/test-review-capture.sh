@@ -244,6 +244,45 @@ run_hook review-capture.sh "$(stop_payload_for revA "$NO_REPORT")" "$repo" >/dev
 assert_eq "verdict-no" "$(leg | cut -d'|' -f1)" \
   "a No landing after a later-launched Yes still blocks"
 
+# The concurrent order: A's No lands while B, launched after the commit, is
+# still reading; B's Yes lands last. B was sent before A's findings existed,
+# so it never answered them, and the No stands whichever report lands first.
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(launch_as revA "whole-branch-review: round one")" "$repo" >/dev/null
+commit_more "$repo"
+sleep 1
+run_hook review-capture.sh "$(launch_as revB "whole-branch-review: fix diff")" "$repo" >/dev/null
+sleep 1
+run_hook review-capture.sh "$(stop_payload_for revA "$NO_REPORT")" "$repo" >/dev/null
+sleep 1
+run_hook review-capture.sh "$(stop_payload_for revB "$VERDICT_REPORT")" "$repo" >/dev/null
+assert_eq "verdict-no" "$(leg | cut -d'|' -f1)" \
+  "a No landing while a later-launched review still reads blocks too"
+
+# Only names the hook writes take part: a stray file can never block for good.
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(launch_as revS "whole-branch-review: settled")" "$repo" >/dev/null
+run_hook review-capture.sh "$(stop_payload_for revS "$VERDICT_REPORT")" "$repo" >/dev/null
+printf '%s\n' "$NO_REPORT" > "$scratch/review-notes.md"
+touch -t 202001010000 "$scratch/review-notes.md"
+assert_eq "ok" "$(leg | cut -d'|' -f1)" \
+  "a review-notes.md that says No is not a captured report and blocks nothing"
+rm -f "$scratch/review-notes.md"
+
+# Two reviewers stopping in the same second take two names; neither report
+# overwrites the other, because a lost report can be a lost No.
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(launch_as revX "whole-branch-review: x")" "$repo" >/dev/null
+run_hook review-capture.sh "$(launch_as revY "whole-branch-review: y")" "$repo" >/dev/null
+( cd "$repo" && printf '%s' "$(stop_payload_for revX "$NO_REPORT")" | bash "$HOOKS_DIR/review-capture.sh" ) &
+( cd "$repo" && printf '%s' "$(stop_payload_for revY "$VERDICT_REPORT")" | bash "$HOOKS_DIR/review-capture.sh" ) &
+wait
+assert_eq "2" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | wc -l | tr -d ' ')" \
+  "two reviewers stopping together leave two reports"
+
 # The other order is answered: A's No lands, the session fixes and commits,
 # and a review launched after that No says Yes.
 rm -f "$scratch"/review-*.md

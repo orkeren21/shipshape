@@ -71,6 +71,24 @@ assert_eq "merge_gate_unsatisfied" "$(hook_field "$out" shipshapeCode)" \
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
   "shipshape-ci-watch" "and a pasteable next step"
 
+# --- a late No outranks the stamp --------------------------------------------
+#
+# The stamp is the done gate's reading at its last Stop. A background reviewer
+# launched earlier can land after it with a "No"; on the record's own branch
+# that live No denies the merge. The Yes report was launched last (newest
+# mtime); the No's name stamps a landing after that launch.
+give_record 71
+give_stamp 71
+printf '### Assessment\n\n**Ready to merge?** Yes\n' > "$scratch/review-20200101T000000Z-00.md"
+printf '### Assessment\n\n**Ready to merge?** No\n' > "$scratch/review-99991231T235959Z-00.md"
+touch -t 202001010000 "$scratch/review-99991231T235959Z-00.md"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 71")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a review that landed after the stamp and says No denies the merge"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
+  "review-99991231T235959Z-00.md" "and names the report that said it"
+rm -f "$scratch"/review-*.md "$scratch/pr-armed-71" "$scratch/pr-satisfied-71"
+
 # --- stale: the stamp does not outlive its branch tip ------------------------
 
 give_record 59

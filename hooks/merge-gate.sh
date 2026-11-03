@@ -232,5 +232,22 @@ if [ -n "$branch_head" ] && [ "$stamp_head" != "$branch_head" ]; then
   exit 0
 fi
 
+# The stamp is the done gate's reading at its last Stop, and one leg can turn
+# bad without HEAD moving: a background reviewer that lands after the stamp
+# with a "No". On the record's own branch the live review leg is read again,
+# and a "No" there outranks the stamp. Only a "No" does: a stamp with its
+# evidence since cleaned away is still the done gate's word.
+if [ -n "$record_branch" ] && [ "$record_branch" = "$current_branch" ]; then
+  live_review="$(shipshape_leg_review "$scratch")"
+  case "$live_review" in
+    verdict-no\|*)
+      shipshape_trace merge-gate "denied: PR #$number stamped, but ${live_review#*|} landed since and says no"
+      shipshape_emit_deny "PR #$number was stamped satisfied, but a review that landed since — ${live_review#*|} — says it is not ready to merge. Answer its findings and get a review launched after it landed; the done gate re-stamps when that review says yes.$unreasoned_note" \
+        merge_gate_late_no
+      exit 0
+      ;;
+  esac
+fi
+
 shipshape_trace merge-gate "allowed: PR #$number satisfied at ${stamp_head:-unknown}"
 exit 0
