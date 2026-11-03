@@ -87,10 +87,12 @@ shipshape_scratch_root() {
 # shipshape_other_scratch_dirs <scratch> -> every other folder holding this
 # session's scratch, one per line, across the repository's worktrees.
 #
-# Older hooks resolved from their own directory, which in a desktop-app
-# worktree session is the main checkout, so a session that ran them has part
-# of its evidence there. The gates read only the session's own folder; naming
-# the other one is what keeps a split from passing for missing evidence.
+# Two callers. review-capture looks here for a reviewer's launch marker when
+# the reviewer stopped in a worktree of its own. The doctor lists them: older
+# hooks resolved from their own directory, which in a desktop-app worktree
+# session is the main checkout, so a session that ran them has part of its
+# evidence there. The gates read only the session's own folder; naming the
+# other one is what keeps a split from passing for missing evidence.
 # Looks, never creates. Under SHIPSHAPE_SCRATCH_ROOT the folder does not
 # depend on the checkout, so there is no other one to find.
 shipshape_other_scratch_dirs() {
@@ -250,8 +252,9 @@ shipshape_read_payload() {
     # Traced only into a folder that already exists: creating one in the
     # hook's own directory would start the very split this prevents. In the
     # desktop app that directory is the main checkout, which holds no folder
-    # for the session, so the session's folder in another checkout gets the
-    # line instead.
+    # for the session, so the line goes to the first of the session's folders
+    # in another checkout that git lists. With an isolated agent's worktree
+    # holding one too, that can be the agent's, which goes when it does.
     here="$(shipshape_scratch_path)"
     dir="$here"
     [ -d "$dir" ] || dir="$(shipshape_other_scratch_dirs "$here" | head -1)"

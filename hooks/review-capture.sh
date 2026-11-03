@@ -110,11 +110,16 @@ if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
   if [ ! -f "$pending" ]; then
     # Not under the stop's own checkout, so looked for in this session's
     # folder in every other one. The usual reason is isolation: the launch
-    # wrote the marker from the session's directory, and an isolated agent
-    # stops in its own worktree, or, once that is gone, in the hook's. A
-    # marker older hooks left in the main checkout is found the same way, and
-    # its report lands beside it too, where the doctor names it. The hook
-    # moves to the marker's checkout, so the report and the trace land there.
+    # wrote the marker from the session's directory, and an isolated agent's
+    # stop names its own worktree. If that is already gone when the stop
+    # arrives (unprobed), the hook stays in its own directory and searches
+    # from there. Searched whenever the marker is missing, not only when the
+    # stop's checkout has no folder for the session: a wrapper the agent runs
+    # there makes one, and so might a gate firing for its tool calls (whether
+    # those carry its cwd is unprobed). A marker older hooks left in the main
+    # checkout is found the same way, and its report lands beside it too,
+    # where the doctor names it. The hook moves to the marker's checkout, so
+    # the report and the trace land there.
     while IFS= read -r other; do
       [ -n "$other" ] || continue
       [ -f "$other/pending-capture/$agent" ] || continue

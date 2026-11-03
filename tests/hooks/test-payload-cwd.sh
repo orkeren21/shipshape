@@ -181,6 +181,18 @@ assert_contains "$(wt_trace)" "stopped in $agent_wt, away from its marker" \
   "the trace says where the agent stopped"
 main_clean "isolated capture"
 
+# The reason the search runs whenever the marker is missing, rather than only
+# when the stop's checkout has no folder for the session: the agent's own
+# worktree can hold one, made by a wrapper it ran there.
+run_hook review-capture.sh "$(launch iso6)" "$main" >/dev/null
+mkdir -p "$agent_wt/.shipshape/$session"
+run_hook review-capture.sh "$(stop_in "$agent_wt" iso6 "$REPORT")" "$main" >/dev/null
+assert_no_file "$wt_scratch/pending-capture/iso6" \
+  "a reviewer whose worktree holds a folder for the session is still captured beside its marker"
+has_review "$agent_wt/.shipshape/$session" && fail "and not into the folder in its worktree"
+rm -rf "$agent_wt/.shipshape"
+main_clean "an isolated worktree with a folder"
+
 # Its worktree already gone when it stops: the hook stays in the main
 # checkout, and the search from there still finds the marker.
 rm -rf "$wt/.shipshape"
@@ -191,8 +203,8 @@ assert_no_file "$wt_scratch/pending-capture/iso8" "and its marker is consumed"
 main_clean "a gone reviewer worktree"
 
 # A folder older hooks left in the main checkout, without the marker, is
-# passed over: git lists the main checkout first, so the search reaches it
-# before the worktree.
+# passed over: git lists the main checkout first (git-worktree(1), "list"),
+# so the search reaches it before the worktree.
 rm -rf "$wt/.shipshape"
 mkdir -p "$main/.shipshape/$session"
 printf 'left by older hooks\n' > "$main/.shipshape/$session/trace.log"
