@@ -51,7 +51,7 @@ for dest in systematic-debugging brainstorming direct-implementation \
             subagent-driven-development finishing-with-evidence \
             write-handoff read-handoff writing-skills \
             epic-architecture coordinating-with-the-architect \
-            dispatching-parallel-agents; do
+            dispatching-parallel-agents refining-prompts; do
   assert_contains "$router_body" "shipshape:$dest" "the router routes to $dest"
 done
 

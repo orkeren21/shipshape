@@ -6,19 +6,20 @@ description: Use when starting any conversation - which ShipShape skill a given 
 # ShipShape
 
 Check whether a skill covers the request before acting, and invoke it if so.
-Say which skill you are using and why, then follow it.
+Say which skill you are using, then follow it.
 
 | Where you are | Start with |
 |---|---|
 | A bug, a failing test, behavior you did not expect | `shipshape:systematic-debugging` |
 | Building or changing something | `shipshape:brainstorming` |
-| A plan or task list already in hand | `shipshape:direct-implementation`, or `shipshape:subagent-driven-development` for genuinely parallel tracks |
+| Refining a dictated prompt | `shipshape:refining-prompts` |
+| A plan or task list already in hand | `shipshape:direct-implementation`, or `shipshape:subagent-driven-development` for parallel tracks |
 | Implementation finished | `shipshape:finishing-with-evidence` |
 | Context at the handoff point (70%; Architect 85%) | `shipshape:write-handoff` |
 | Picking up work from an earlier session | `shipshape:read-handoff` |
 | Scoping an epic across several sessions | `shipshape:epic-architecture` |
 | A lane inside an epic | `shipshape:coordinating-with-the-architect` |
-| Independent work to fan out right now | `shipshape:dispatching-parallel-agents` |
+| Independent work to fan out now | `shipshape:dispatching-parallel-agents` |
 | Writing or editing a skill | `shipshape:writing-skills` |
 
 Some things are enforced. Hooks gate on the evidence a finished branch

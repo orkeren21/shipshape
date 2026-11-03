@@ -40,7 +40,7 @@ done
 
 # --- every wrapper and hook in the tables exists ------------------------------
 
-for wrapper in shipshape-pr-open shipshape-ci-watch shipshape-verify shipshape-smoke; do
+for wrapper in shipshape-pr-open shipshape-ci-watch shipshape-verify shipshape-smoke shipshape-seat; do
   assert_contains "$detail_body" "$wrapper" "DETAILS.md documents $wrapper"
 done
 
