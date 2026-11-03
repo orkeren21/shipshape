@@ -42,6 +42,7 @@ type World = {
   files?: Record<string, string>
   dirs?: Record<string, string[]>
   env?: Record<string, string>
+  denyCommands?: string[]
 }
 
 // The engine beneath shipdeck: every $ call it makes, answered from memory.
@@ -49,7 +50,11 @@ function world(on: On, w: World = {}) {
   const seen = { model: [] as unknown[], runs: [] as unknown[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[] }
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, w.env ?? {})
-  on('command.register', (_, e) => ({ value: { command: e.name } }) as never)
+  on('command.register', (_, e) => {
+    if (w.denyCommands?.includes(e.name)) return { deny: 'name taken' } as never
+    seen.writes.push(`command:${e.name}`)
+    return { value: { command: e.name } } as never
+  })
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000, tokens: 370_000, percent: 37 }, rateLimits: [] } }) as never)
   on('session.id', () => ({ value: 'sess-1' }) as never)
   on('fs.stat', (_, e) => {
@@ -463,3 +468,15 @@ test('a prompt whose dispatch aborts while it is shaped does not sit out the 8 s
   await Promise.allSettled([first, second])
 })
 
+
+test('a refused command costs that command alone', async ($, on) => {
+  const { clock, seen } = world(on, { denyCommands: ['refine'] })
+  await start($, clock)
+  expect(seen.runs.length).toBeGreaterThan(0)
+  const before = seen.runs.length
+  await clock.advance(60_000)
+  expect(seen.runs.length).toBeGreaterThan(before)
+  await submit($, DUMP)
+  expect(seen.entered.at(-1)).toContain('## Goal')
+  expect(seen.writes).toContain('command:shipdeck')
+})

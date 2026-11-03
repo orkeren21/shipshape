@@ -241,8 +241,8 @@ export const register: Register = (on, options) => {
     } catch {
       lastDoctor = null
     }
-    // The readings and clocks start first: a command name another plugin
-    // took must cost that command alone.
+    // The readings and clocks start first: a refused command name (a
+    // built-in's, or another plugin's) must cost that command alone.
     void refreshUsage($).catch(() => {})
     void refreshDoctor($, true).catch(() => {})
     $.clock.every(60_000, () => void refreshDoctor($, true).catch(() => {}))
