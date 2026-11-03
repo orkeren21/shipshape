@@ -58,7 +58,8 @@ what it decided to `.shipshape/<session-id>/trace.log`. All scratch is
 session-scoped, so two lanes running against one repo cannot collide. A hook
 resolves git, the scratch folder and the waiver file from the session's
 working directory, the `cwd` on its payload, because that is where the
-wrappers run. Its own directory can be another checkout: the desktop app
+wrappers run (measured for a session that stays in the directory it was
+launched in). Its own directory can be another checkout: the desktop app
 launches a worktree session with `--project-config-root` at the main checkout,
 and its hooks then start there (measured with the app's Claude Code 2.1.309).
 

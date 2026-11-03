@@ -200,9 +200,23 @@ mkdir -p "$lane/.shipshape/doc-session"
 out="$(cd "$lane" && "$doctor" 2>&1)"
 assert_contains "$out" "$main/.shipshape/doc-session" "the main checkout's folder for this session is named"
 assert_contains "$out" "holds: ci-status, pr-armed-57" "with what that folder holds"
-assert_contains "$out" "re-dispatch the whole-branch review" "and what to do about it"
+assert_contains "$out" "Nothing there counts here" "and that none of it counts in this checkout"
+assert_contains "$out" "re-dispatch the whole-branch review" "a review there gets the review advice"
 assert_not_contains "$out" "  $lane/.shipshape/doc-session
 " "the session's own folder is not listed as the other one"
+
+rm -f "$main/.shipshape/doc-session"/review-*.md
+out="$(cd "$lane" && "$doctor" 2>&1)"
+assert_contains "$out" "Nothing there counts here" "a folder holding no review is still named as not counting"
+assert_not_contains "$out" "re-dispatch" "but gets no review advice"
+
+mkdir -p "$main/.shipshape/empty-session" "$lane/.shipshape/empty-session"
+out="$(cd "$lane" && SHIPSHAPE_SESSION_ID=empty-session "$doctor" 2>&1)"
+assert_contains "$out" "holds: (empty)" "an empty folder is named as empty"
+
+out="$(cd "$lane" && SHIPSHAPE_SCRATCH_ROOT="$lane" "$doctor" 2>&1)"
+assert_not_contains "$out" "another checkout" \
+  "under the scratch-root override the folder does not depend on the checkout, so nothing is another one's"
 
 out="$(cd "$lane" && SHIPSHAPE_SESSION_ID=lone-session "$doctor" 2>&1)"
 assert_not_contains "$out" "another checkout" "a session with one folder gets no note"

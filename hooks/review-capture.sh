@@ -26,7 +26,7 @@
 # cwd of its own worktree (probed against 2.1.309 in the desktop app's launch
 # shape: the launch's cwd was the session's worktree, the stop's was
 # .claude/worktrees/agent-<id>). Its marker is then found in the session's
-# folder in another checkout, and the report is written there.
+# folder in another checkout, and the report is written beside it.
 #
 # A background report is dated at its launch, not its stop. The done gate
 # counts a review fresh when its report is newer than HEAD; a background
@@ -108,16 +108,24 @@ if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
   # names its own worktree, and looking must not leave a folder in it.
   pending="$(shipshape_scratch_path)/pending-capture/$agent"
   if [ ! -f "$pending" ]; then
-    # The launch wrote the marker from the session's directory. When the stop
-    # names another checkout, the session's folder is the one holding the
-    # marker; the hook moves to that checkout, so the report and the trace
-    # land beside it.
-    stopped_in="$(shipshape_field cwd)"
+    # Not under the stop's own checkout, so looked for in this session's
+    # folder in every other one. The usual reason is isolation: the launch
+    # wrote the marker from the session's directory, and an isolated agent
+    # stops in its own worktree, or, once that is gone, in the hook's. A
+    # marker older hooks left in the main checkout is found the same way, and
+    # its report lands beside it too, where the doctor names it. The hook
+    # moves to the marker's checkout, so the report and the trace land there.
     while IFS= read -r other; do
+      [ -n "$other" ] || continue
       [ -f "$other/pending-capture/$agent" ] || continue
+      # Untraced: a checkout that cannot be entered hides the marker from the
+      # test above, so this fails only when it vanished in between, taking
+      # its trace with it.
       cd -- "${other%/.shipshape/*}" >/dev/null 2>&1 || break
       pending="$other/pending-capture/$agent"
-      shipshape_trace review-capture "marked agent $agent stopped in another checkout ($stopped_in); capturing beside its marker"
+      stopped_in="$(shipshape_field cwd)"
+      shipshape_trace review-capture \
+        "marked agent $agent stopped in ${stopped_in:-a directory its stop did not name}, away from its marker; capturing beside the marker"
       break
     done <<SHIPSHAPE_OTHERS
 $(shipshape_other_scratch_dirs "$(shipshape_scratch_path)")

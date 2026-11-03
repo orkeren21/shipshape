@@ -91,9 +91,11 @@ shipshape_scratch_root() {
 # worktree session is the main checkout, so a session that ran them has part
 # of its evidence there. The gates read only the session's own folder; naming
 # the other one is what keeps a split from passing for missing evidence.
-# Looks, never creates.
+# Looks, never creates. Under SHIPSHAPE_SCRATCH_ROOT the folder does not
+# depend on the checkout, so there is no other one to find.
 shipshape_other_scratch_dirs() {
   local scratch="$1" sid here line candidate
+  [ -z "${SHIPSHAPE_SCRATCH_ROOT:-}" ] || return 0
   sid="$(shipshape_session_id)"
   [ "$sid" != "unknown" ] || return 0
   here="$(cd "$scratch" 2>/dev/null && pwd -P)"
@@ -144,6 +146,15 @@ shipshape_trace() {
   shift
   local dir
   dir="$(shipshape_scratch_dir 2>/dev/null)" || return 0
+  shipshape_trace_into "$dir" "$hook" "$@"
+}
+
+# shipshape_trace_into <dir> <hook> <message...> — the same line, into a
+# folder that already exists, for a caller that must not create one where it
+# runs.
+shipshape_trace_into() {
+  local dir="$1" hook="$2"
+  shift 2
   [ -d "$dir" ] || return 0
   printf '%s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$hook" "$*" \
     >> "$dir/trace.log" 2>/dev/null
@@ -223,12 +234,13 @@ else:
 # naming a directory that is gone, leaves the hook where it started.
 shipshape_read_payload() {
   SHIPSHAPE_PAYLOAD="$(cat 2>/dev/null)"
-  local sid cwd
+  local sid cwd here dir
   sid="$(shipshape_json_get "$SHIPSHAPE_PAYLOAD" session_id)"
   [ -n "$sid" ] && export SHIPSHAPE_SESSION_ID="$sid"
   cwd="$(shipshape_json_get "$SHIPSHAPE_PAYLOAD" cwd)"
   # Absolute only: a relative one has nothing to be relative to, and would let
-  # CDPATH choose the directory.
+  # CDPATH choose the directory. Absolute means POSIX, which covers the Linux
+  # and macOS this runs on.
   case "$cwd" in
     /*) : ;;
     *) cwd="" ;;
@@ -236,9 +248,15 @@ shipshape_read_payload() {
   # Silenced: a hook's stdout is its answer.
   if [ -n "$cwd" ] && ! cd -- "$cwd" >/dev/null 2>&1; then
     # Traced only into a folder that already exists: creating one in the
-    # hook's own directory would start the very split this prevents.
-    [ -d "$(shipshape_scratch_path)" ] &&
-      shipshape_trace payload "the payload's cwd $cwd cannot be entered; resolving from $PWD"
+    # hook's own directory would start the very split this prevents. In the
+    # desktop app that directory is the main checkout, which holds no folder
+    # for the session, so the session's folder in another checkout gets the
+    # line instead.
+    here="$(shipshape_scratch_path)"
+    dir="$here"
+    [ -d "$dir" ] || dir="$(shipshape_other_scratch_dirs "$here" | head -1)"
+    [ -n "$dir" ] &&
+      shipshape_trace_into "$dir" payload "the payload's cwd $cwd cannot be entered; resolving from $PWD"
   fi
   return 0
 }
