@@ -37,7 +37,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `shipshape-verify` | a task's verify command | `verify/<task-id>` |
 | `shipshape-smoke` | any command | `smoke.log` |
 | `shipshape-seat` | nothing — records a fact | `seat` — whether the session is an Architect, a lane or solo, its epic folder and its handoff. context-watch picks thresholds from it; session-start re-orients a compacted session from it. Also prints the session id a roster file needs. |
-| `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Always exits 0; diagnosis is not enforcement. |
+| `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Names any other checkout's folder for the same session, where older hooks in a desktop-app worktree session left their half of the evidence. Always exits 0; diagnosis is not enforcement. |
 
 ## The hooks
 
@@ -55,7 +55,12 @@ record behind as a side effect. The record cannot exist without the work.
 
 Every hook **fails open**, has a kill switch (`SHIPSHAPE_<HOOK>=0`), and logs
 what it decided to `.shipshape/<session-id>/trace.log`. All scratch is
-session-scoped, so two lanes running against one repo cannot collide.
+session-scoped, so two lanes running against one repo cannot collide. A hook
+resolves git, the scratch folder and the waiver file from the session's
+working directory, the `cwd` on its payload, because that is where the
+wrappers run. Its own directory can be another checkout: the desktop app
+launches a worktree session with `--project-config-root` at the main checkout,
+and its hooks then start there (measured with the app's Claude Code 2.1.309).
 
 **Retired in 0.4.0: the deflection guard.** It was a `Stop` hook that held a
 session when it proposed moving its work to a fresh session below 70% context.

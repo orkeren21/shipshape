@@ -63,7 +63,9 @@ shipshape_safe_id() {
 }
 
 # Where .shipshape/ lives. The git worktree root comes first so a lane working
-# in its own worktree keeps its artifacts beside the code they describe.
+# in its own worktree keeps its artifacts beside the code they describe. It is
+# the worktree of the current directory, which for a hook is the session's —
+# shipshape_read_payload has moved there.
 shipshape_scratch_root() {
   if [ -n "${SHIPSHAPE_SCRATCH_ROOT:-}" ]; then
     printf '%s\n' "$SHIPSHAPE_SCRATCH_ROOT"
@@ -82,11 +84,41 @@ shipshape_scratch_root() {
   pwd
 }
 
+# shipshape_other_scratch_dirs <scratch> -> every other folder holding this
+# session's scratch, one per line, across the repository's worktrees.
+#
+# Older hooks resolved from their own directory, which in a desktop-app
+# worktree session is the main checkout, so a session that ran them has part
+# of its evidence there. The gates read only the session's own folder; naming
+# the other one is what keeps a split from passing for missing evidence.
+# Looks, never creates.
+shipshape_other_scratch_dirs() {
+  local scratch="$1" sid here line candidate
+  sid="$(shipshape_session_id)"
+  [ "$sid" != "unknown" ] || return 0
+  here="$(cd "$scratch" 2>/dev/null && pwd -P)"
+  git worktree list --porcelain 2>/dev/null | while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) candidate="${line#worktree }/.shipshape/$sid" ;;
+      *) continue ;;
+    esac
+    [ -d "$candidate" ] || continue
+    [ "$(cd "$candidate" && pwd -P)" = "$here" ] && continue
+    printf '%s\n' "$candidate"
+  done
+}
+
+# Prints .shipshape/<session-id> without creating it, for callers that only
+# look: a diagnostic, or a hook checking for a marker on every event.
+shipshape_scratch_path() {
+  printf '%s/.shipshape/%s\n' "$(shipshape_scratch_root)" "$(shipshape_session_id)"
+}
+
 # Prints .shipshape/<session-id>, creating it. Everything ShipShape writes
 # goes here: evidence artifacts, the task ledger, the trace log.
 shipshape_scratch_dir() {
   local dir
-  dir="$(shipshape_scratch_root)/.shipshape/$(shipshape_session_id)"
+  dir="$(shipshape_scratch_path)"
   mkdir -p "$dir" 2>/dev/null
   printf '%s\n' "$dir"
 }
@@ -175,13 +207,39 @@ else:
 # ---------------------------------------------------------------------------
 
 # Read the event payload from stdin into SHIPSHAPE_PAYLOAD and adopt the
-# session id it carries, so every artifact the hook touches lands in the same
-# scratch dir the wrappers write to.
+# session id and working directory it carries, so every artifact the hook
+# touches lands in the same scratch dir the wrappers write to.
+#
+# The working directory matters as much as the id. Wrappers run where the
+# session's commands run, and the payload's cwd names that directory (measured
+# for a session that stays where it was launched); a hook's own directory can
+# be somewhere else. The desktop app starts a worktree session with
+# --project-config-root at the main checkout, and every hook then runs there
+# (probed against Claude Code 2.1.309). Resolved from the hook's directory, git
+# answers for the wrong checkout — the scratch root, the current branch, HEAD
+# for recency, the waiver file — and one session's evidence splits across two
+# folders, each gate reading half of it. So the hook moves to the payload's cwd
+# before anything resolves. A payload without one, with a relative one, or
+# naming a directory that is gone, leaves the hook where it started.
 shipshape_read_payload() {
   SHIPSHAPE_PAYLOAD="$(cat 2>/dev/null)"
-  local sid
+  local sid cwd
   sid="$(shipshape_json_get "$SHIPSHAPE_PAYLOAD" session_id)"
   [ -n "$sid" ] && export SHIPSHAPE_SESSION_ID="$sid"
+  cwd="$(shipshape_json_get "$SHIPSHAPE_PAYLOAD" cwd)"
+  # Absolute only: a relative one has nothing to be relative to, and would let
+  # CDPATH choose the directory.
+  case "$cwd" in
+    /*) : ;;
+    *) cwd="" ;;
+  esac
+  # Silenced: a hook's stdout is its answer.
+  if [ -n "$cwd" ] && ! cd -- "$cwd" >/dev/null 2>&1; then
+    # Traced only into a folder that already exists: creating one in the
+    # hook's own directory would start the very split this prevents.
+    [ -d "$(shipshape_scratch_path)" ] &&
+      shipshape_trace payload "the payload's cwd $cwd cannot be entered; resolving from $PWD"
+  fi
   return 0
 }
 
