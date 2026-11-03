@@ -233,16 +233,19 @@ if [ -n "$branch_head" ] && [ "$stamp_head" != "$branch_head" ]; then
 fi
 
 # The stamp is the done gate's reading at its last Stop, and one leg can turn
-# bad without HEAD moving: a background reviewer that lands after the stamp
-# with a "No". On the record's own branch the live review leg is read again,
-# and a "No" there outranks the stamp. Only a "No" does: a stamp with its
-# evidence since cleaned away is still the done gate's word.
-if [ -n "$record_branch" ] && [ "$record_branch" = "$current_branch" ]; then
+# bad without HEAD moving: a background reviewer launched before the newest
+# review, landing later with a "No". On the record's own branch the live review
+# leg is read again, and a "No" there outranks the stamp. Only a "No" does — a
+# stamp whose evidence was since cleaned away is still the done gate's word —
+# and a reasoned review waiver is honoured here exactly as the done gate and
+# shipshape_legs_settled honour it, or the two gates would disagree forever.
+if [ -n "$record_branch" ] && [ "$record_branch" = "$current_branch" ] \
+  && ! shipshape_waived review; then
   live_review="$(shipshape_leg_review "$scratch")"
   case "$live_review" in
     verdict-no\|*)
-      shipshape_trace merge-gate "denied: PR #$number stamped, but ${live_review#*|} landed since and says no"
-      shipshape_emit_deny "PR #$number was stamped satisfied, but a review that landed since — ${live_review#*|} — says it is not ready to merge. Answer its findings and get a review launched after it landed; the done gate re-stamps when that review says yes.$unreasoned_note" \
+      shipshape_trace merge-gate "denied: PR #$number stamped, but ${live_review#*|} says no"
+      shipshape_emit_deny "PR #$number is stamped satisfied, but a review report — ${live_review#*|} — says it is not ready to merge, and it landed after the newest review was launched, so no review has answered it. Fix what it found and get a review launched after it; when that review says yes, this merge goes through.$unreasoned_note" \
         merge_gate_late_no
       exit 0
       ;;

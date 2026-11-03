@@ -37,8 +37,9 @@ the reviewer reads leaves its report stale when it lands: the review covers
 the code it was given, and the commits after it need a review of their own.
 That review is a new dispatch, not a continuation of the old reviewer: a
 continued agent's later report may not be captured. A "No" that lands after
-the newest review was launched still blocks — whichever lands first — so
-answer it, and have a review launched after it say yes, before finishing.
+the newest background review was launched still blocks — whichever lands
+first — so answer it, and have a review launched after it say yes, before
+finishing.
 
 **Start the dispatch description with `whole-branch-review:`.** That marker is
 what the `review-capture` hook watches for; on a marked return, the hook writes

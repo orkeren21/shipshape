@@ -492,8 +492,11 @@ shipshape_leg_review() { # <scratch>
   # that landed after that report was launched was never answered by it: it
   # was sent before those findings existed. Any such "No" stands, whichever
   # report lands first. A hook-written name carries its landing time
-  # (review-<UTC stamp>-NN.md), and the chosen report's launch time is its
-  # modification time, so the two compare as stamps. A "No" landing in the
+  # (review-<UTC stamp>-NN.md). A background report's modification time is
+  # its launch, so the two compare as stamps. A foreground report is dated
+  # when it returns, so for it the rule reaches only a "No" that landed after
+  # it returned — dating foreground dispatches at launch is a recorded
+  # follow-up. The desktop app launches background reviewers only. A "No" landing in the
   # same second as the launch counts: the tie goes to blocking. Only names the
   # hook writes take part, so a stray review-notes.md can never block for good.
   # Where the launch time cannot be formatted, landing after the chosen report

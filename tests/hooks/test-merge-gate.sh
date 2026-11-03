@@ -87,6 +87,17 @@ assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "a review that landed after the stamp and says No denies the merge"
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
   "review-99991231T235959Z-00.md" "and names the report that said it"
+assert_eq "merge_gate_late_no" "$(hook_field "$out" shipshapeCode)" \
+  "with its own stable code"
+
+# A reasoned review waiver is honoured here as every other reader honours it.
+# Without that, the done gate stamps a waived branch and this gate denies it,
+# turn after turn.
+printf 'skip_review: true  # reason: docs-only change, reviewed by the operator\n' > "$repo/.shipshape.yaml"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 71")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a waived review leg is not re-read, so a No on disk does not deny the merge"
+rm -f "$repo/.shipshape.yaml"
 rm -f "$scratch"/review-*.md "$scratch/pr-armed-71" "$scratch/pr-satisfied-71"
 
 # --- stale: the stamp does not outlive its branch tip ------------------------

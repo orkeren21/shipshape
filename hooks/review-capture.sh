@@ -55,7 +55,7 @@ write_report() {
   # landing order. The gate reads two things from that: among reports with
   # equal modification times (foreground reports landing in the same second, or
   # background ones launched in the same second) the later name wins, and a
-  # "No" landing after the newest-by-launch report still stands.
+  # "No" whose landing stamp is at or after the newest report's launch stands.
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   # Each name is claimed exclusively (noclobber opens with O_EXCL), so two
   # reviewers stopping in the same second take two names rather than one
