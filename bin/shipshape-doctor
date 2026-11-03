@@ -49,9 +49,10 @@ if [ -n "$other_dirs" ]; then
   done <<SHIPSHAPE_OTHERS
 $other_dirs
 SHIPSHAPE_OTHERS
-  printf '  The usual cause is older ShipShape hooks, which ran from the main checkout\n'
-  printf '  in a desktop-app worktree session. Nothing there counts here: a leg that\n'
-  printf '  reads missing below is produced again, in this checkout.\n'
+  printf '  The usual causes: older ShipShape hooks, which ran from the main checkout\n'
+  printf '  in a desktop-app worktree session, or a subagent working in a worktree of\n'
+  printf '  its own. Nothing there counts here: a leg that reads missing below is\n'
+  printf '  produced again, in this checkout.\n'
   [ -n "$other_review" ] &&
     printf '  For the review, re-dispatch the whole-branch review rather than copying\n  its report.\n'
   printf '\n'

@@ -133,6 +133,22 @@ run_hook task-capture.sh "$(created_payload 8 "$(fenced_description \
 out="$(run_hook task-completion-gate.sh "$(completed_payload 8)" "$repo")"
 assert_eq "" "$(hook_field "$out" decision)" \
   "a fence with no verify command has nothing to check, so nothing is blocked"
+assert_file "$scratch/tasks/completed/t8" "and it is recorded as closed"
+
+# It is still held to its ordering. Closed ahead of what it leans on, it would
+# count as done for every task that names it.
+run_hook task-capture.sh "$(created_payload 10 "$(fenced_description \
+  '{"id":"t10","files":["README.md"],"blockedBy":["t11"],"strictTDD":false}')")" "$repo" >/dev/null
+out="$(run_hook task-completion-gate.sh "$(completed_payload 10)" "$repo")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "a task with no verify command cannot close ahead of its dependencies"
+assert_contains "$(hook_field "$out" reason)" "t11" "the block names the dependency that is not done"
+assert_no_file "$scratch/tasks/completed/t10" "and the task is not recorded as closed"
+
+run_hook task-capture.sh "$(created_payload 12 "$(fenced_description \
+  '{"id":"t12","files":["README.md"],"blockedBy":["t8"],"strictTDD":false}')")" "$repo" >/dev/null
+out="$(run_hook task-completion-gate.sh "$(completed_payload 12)" "$repo")"
+assert_eq "" "$(hook_field "$out" decision)" "once its dependencies have closed, it closes"
 
 # --- untracked tasks and failing open ----------------------------------------
 
