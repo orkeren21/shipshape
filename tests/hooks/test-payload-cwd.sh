@@ -81,6 +81,16 @@ assert_contains "$reason" "ci-status" "still holding the claim on the leg nothin
 assert_not_contains "$reason" "smoke.log" "the waiver is read from the session's checkout"
 rm -f "$wt/.shipshape.yaml"
 
+# The merge gate reads the stamp the done gate leaves once every leg is in.
+printf 'result=green\nchecks_exit=0\nmerge_state=CLEAN\n' > "$wt_scratch/ci-status"
+printf 'head=%s\n\n=== $ true\n=== exit 0\n' "$(git -C "$wt" rev-parse HEAD)" > "$wt_scratch/smoke.log"
+run_hook done-gate.sh "$(stop_payload "$session" "$work/t.jsonl" "$CLAIM" "$wt")" "$main" >/dev/null
+assert_file "$wt_scratch/pr-satisfied-7" "with the evidence in, the done gate stamps the worktree's record"
+merge="$(printf '{"session_id":"%s","cwd":%s,"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"gh pr merge 7 --squash"}}' \
+  "$session" "$(json_string "$wt")")"
+assert_eq "" "$(hook_field "$(run_hook merge-gate.sh "$merge" "$main")" hookSpecificOutput.permissionDecision)" \
+  "and the merge gate, run from the main checkout, finds it and lets the merge through"
+
 # --- failing open --------------------------------------------------------------
 
 rm -rf "$wt/.shipshape"
@@ -90,11 +100,26 @@ run_hook review-capture.sh "$no_cwd" "$wt" >/dev/null
   || fail "a payload without cwd resolves from the hook's own directory"
 
 rm -rf "$wt/.shipshape"
-run_hook review-capture.sh "$(review_payload "$work/no-such-dir")" "$wt" >/dev/null
+out="$(run_hook review-capture.sh "$(review_payload "$work/no-such-dir")" "$wt")"
 assert_eq "0" "$(hook_status)" "a cwd that is not a directory does not take the hook down"
+assert_eq "" "$out" "nor puts anything on stdout, which is the hook's answer"
 [ -n "$(find "$wt_scratch" -maxdepth 1 -name 'review-*.md' 2>/dev/null | head -1)" ] \
   || fail "and the hook resolves from its own directory instead"
 assert_no_file "$work/no-such-dir" "the missing directory is not created"
+
+rm -rf "$wt/.shipshape"
+run_hook review-capture.sh "$(review_payload "../../..")" "$wt" >/dev/null
+[ -n "$(find "$wt_scratch" -maxdepth 1 -name 'review-*.md' 2>/dev/null | head -1)" ] \
+  || fail "a relative cwd is ignored rather than resolved against anything"
+assert_no_file "$main/.shipshape" "even one that would lead somewhere"
+rm -rf "$main/.shipshape"
+
+# A stop naming a worktree that is already gone (cleaned up) leaves no folder
+# behind in the directory the hook started in.
+gone="$(printf '{"session_id":"%s","cwd":%s,"hook_event_name":"SubagentStop","agent_id":"zz1","last_assistant_message":"x"}' \
+  "$session" "$(json_string "$main/.claude/worktrees/agent-zz1")")"
+run_hook review-capture.sh "$gone" "$main" >/dev/null
+assert_no_file "$main/.shipshape" "an unenterable cwd does not start a scratch folder where the hook runs"
 
 # --- a subagent's own worktree ---------------------------------------------------
 #
@@ -106,10 +131,42 @@ assert_no_file "$work/no-such-dir" "the missing directory is not created"
 
 git -C "$main" worktree add -q --detach "$main/.claude/worktrees/agent-a1b2c3"
 agent_wt="$main/.claude/worktrees/agent-a1b2c3"
-stop_sub="$(printf '{"session_id":"%s","cwd":%s,"hook_event_name":"SubagentStop","agent_id":"a1b2c3","last_assistant_message":"implemented"}' \
-  "$session" "$(json_string "$agent_wt")")"
-run_hook review-capture.sh "$stop_sub" "$main" >/dev/null
+stop_sub() { # stop_sub <agent id> <last message>
+  printf '{"session_id":"%s","cwd":%s,"hook_event_name":"SubagentStop","agent_id":"%s","last_assistant_message":%s}' \
+    "$session" "$(json_string "$agent_wt")" "$1" "$(json_string "$2")"
+}
+run_hook review-capture.sh "$(stop_sub a1b2c3 "implemented")" "$main" >/dev/null
 assert_eq "0" "$(hook_status)" "an isolated subagent stopping is not an error"
 assert_no_file "$agent_wt/.shipshape" "an unmarked subagent's worktree is left as it was"
+
+# A marked reviewer dispatched with isolation is still captured: its marker
+# sits in the session's folder, so the report is written beside it.
+rm -rf "$wt/.shipshape"
+launch="$(printf '{"session_id":"%s","cwd":%s,"hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"whole-branch-review: lane","isolation":"worktree"},"tool_response":{"status":"async_launched","agentId":"iso9","isAsync":true}}' \
+  "$session" "$(json_string "$wt")")"
+run_hook review-capture.sh "$launch" "$main" >/dev/null
+assert_file "$wt_scratch/pending-capture/iso9" "the launch is remembered in the session's folder"
+run_hook review-capture.sh "$(stop_sub iso9 "$REPORT")" "$main" >/dev/null
+[ -n "$(find "$wt_scratch" -maxdepth 1 -name 'review-*.md' 2>/dev/null | head -1)" ] \
+  || fail "an isolated reviewer's report lands beside its marker"
+assert_no_file "$wt_scratch/pending-capture/iso9" "and the marker is consumed"
+assert_no_file "$agent_wt/.shipshape" "the reviewer's own worktree is left as it was"
+assert_contains "$(cat "$wt_scratch/trace.log" 2>/dev/null)" "stopped in another checkout" \
+  "the trace says where the agent stopped"
+
+# --- every hook ------------------------------------------------------------------
+#
+# A net under the cases above: whatever a hook does with this payload, it does
+# it in the session's checkout, never in the directory it was started in.
+
+any="$(printf '{"session_id":"%s","cwd":%s,"hook_event_name":"Stop","source":"compact","stop_hook_active":false}' \
+  "$session" "$(json_string "$wt")")"
+for hook in "$HOOKS_DIR"/*.sh; do
+  run_hook "$(basename "$hook")" "$any" "$main" >/dev/null
+  assert_eq "0" "$(hook_status)" "$(basename "$hook") exits cleanly from outside the session's checkout"
+done
+assert_no_file "$main/.shipshape" "no hook writes into the directory it was started in"
+assert_contains "$(cat "$wt_scratch/trace.log" 2>/dev/null)" "compaction" \
+  "and they act in the session's checkout (session-start traced its compaction there)"
 
 finish

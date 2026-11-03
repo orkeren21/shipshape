@@ -23,9 +23,10 @@
 # session_id. Both resolve from the payload's cwd (shipshape_read_payload), and
 # for an ordinary subagent both name the session's own directory, so they meet
 # in the same scratch dir. A subagent dispatched with isolation stops with the
-# cwd of its own worktree (probed against 2.1.309), where no marker is ever
-# written; its report is not captured and the review leg reads missing, which
-# is why requesting-code-review says to dispatch the reviewer without it.
+# cwd of its own worktree (probed against 2.1.309 in the desktop app's launch
+# shape: the launch's cwd was the session's worktree, the stop's was
+# .claude/worktrees/agent-<id>). Its marker is then found in the session's
+# folder in another checkout, and the report is written there.
 #
 # A background report is dated at its launch, not its stop. The done gate
 # counts a review fresh when its report is newer than HEAD; a background
@@ -105,7 +106,23 @@ if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
   # Every subagent's stop arrives here, most of them unmarked, so the marker is
   # looked for without creating the scratch dir: an isolated subagent's stop
   # names its own worktree, and looking must not leave a folder in it.
-  pending="$(shipshape_scratch_root)/.shipshape/$(shipshape_session_id)/pending-capture/$agent"
+  pending="$(shipshape_scratch_path)/pending-capture/$agent"
+  if [ ! -f "$pending" ]; then
+    # The launch wrote the marker from the session's directory. When the stop
+    # names another checkout, the session's folder is the one holding the
+    # marker; the hook moves to that checkout, so the report and the trace
+    # land beside it.
+    stopped_in="$(shipshape_field cwd)"
+    while IFS= read -r other; do
+      [ -f "$other/pending-capture/$agent" ] || continue
+      cd -- "${other%/.shipshape/*}" >/dev/null 2>&1 || break
+      pending="$other/pending-capture/$agent"
+      shipshape_trace review-capture "marked agent $agent stopped in another checkout ($stopped_in); capturing beside its marker"
+      break
+    done <<SHIPSHAPE_OTHERS
+$(shipshape_other_scratch_dirs "$(shipshape_scratch_path)")
+SHIPSHAPE_OTHERS
+  fi
   [ -f "$pending" ] || exit 0
   kind="$(cat "$pending" 2>/dev/null)"
   case "$kind" in

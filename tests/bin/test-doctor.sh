@@ -199,7 +199,8 @@ mkdir -p "$lane/.shipshape/doc-session"
 
 out="$(cd "$lane" && "$doctor" 2>&1)"
 assert_contains "$out" "$main/.shipshape/doc-session" "the main checkout's folder for this session is named"
-assert_contains "$out" "Re-dispatch the whole-branch review" "with what to do about it"
+assert_contains "$out" "holds: ci-status, pr-armed-57" "with what that folder holds"
+assert_contains "$out" "re-dispatch the whole-branch review" "and what to do about it"
 assert_not_contains "$out" "  $lane/.shipshape/doc-session
 " "the session's own folder is not listed as the other one"
 

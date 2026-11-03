@@ -59,7 +59,8 @@ session-scoped, so two lanes running against one repo cannot collide. A hook
 resolves git, the scratch folder and the waiver file from the session's
 working directory, the `cwd` on its payload, because that is where the
 wrappers run. Its own directory can be another checkout: the desktop app
-starts a worktree session's hooks in the main checkout.
+launches a worktree session with `--project-config-root` at the main checkout,
+and its hooks then start there (measured with the app's Claude Code 2.1.309).
 
 **Retired in 0.4.0: the deflection guard.** It was a `Stop` hook that held a
 session when it proposed moving its work to a fresh session below 70% context.

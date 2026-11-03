@@ -108,11 +108,17 @@ shipshape_other_scratch_dirs() {
   done
 }
 
+# Prints .shipshape/<session-id> without creating it, for callers that only
+# look: a diagnostic, or a hook checking for a marker on every event.
+shipshape_scratch_path() {
+  printf '%s/.shipshape/%s\n' "$(shipshape_scratch_root)" "$(shipshape_session_id)"
+}
+
 # Prints .shipshape/<session-id>, creating it. Everything ShipShape writes
 # goes here: evidence artifacts, the task ledger, the trace log.
 shipshape_scratch_dir() {
   local dir
-  dir="$(shipshape_scratch_root)/.shipshape/$(shipshape_session_id)"
+  dir="$(shipshape_scratch_path)"
   mkdir -p "$dir" 2>/dev/null
   printf '%s\n' "$dir"
 }
@@ -205,25 +211,34 @@ else:
 # touches lands in the same scratch dir the wrappers write to.
 #
 # The working directory matters as much as the id. Wrappers run where the
-# session's commands run, which is the payload's cwd; a hook's own directory
-# can be somewhere else. The desktop app starts a worktree session with
+# session's commands run, and the payload's cwd names that directory (measured
+# for a session that stays where it was launched); a hook's own directory can
+# be somewhere else. The desktop app starts a worktree session with
 # --project-config-root at the main checkout, and every hook then runs there
 # (probed against Claude Code 2.1.309). Resolved from the hook's directory, git
 # answers for the wrong checkout — the scratch root, the current branch, HEAD
 # for recency, the waiver file — and one session's evidence splits across two
 # folders, each gate reading half of it. So the hook moves to the payload's cwd
-# before anything resolves. A payload without one, or naming a directory that
-# is gone, leaves the hook where it started.
+# before anything resolves. A payload without one, with a relative one, or
+# naming a directory that is gone, leaves the hook where it started.
 shipshape_read_payload() {
   SHIPSHAPE_PAYLOAD="$(cat 2>/dev/null)"
   local sid cwd
   sid="$(shipshape_json_get "$SHIPSHAPE_PAYLOAD" session_id)"
   [ -n "$sid" ] && export SHIPSHAPE_SESSION_ID="$sid"
   cwd="$(shipshape_json_get "$SHIPSHAPE_PAYLOAD" cwd)"
-  # Silenced both ways: a hook's stdout is its answer, and cd prints the
-  # directory when CDPATH resolves it.
+  # Absolute only: a relative one has nothing to be relative to, and would let
+  # CDPATH choose the directory.
+  case "$cwd" in
+    /*) : ;;
+    *) cwd="" ;;
+  esac
+  # Silenced: a hook's stdout is its answer.
   if [ -n "$cwd" ] && ! cd -- "$cwd" >/dev/null 2>&1; then
-    shipshape_trace payload "the payload's cwd $cwd cannot be entered; resolving from $PWD"
+    # Traced only into a folder that already exists: creating one in the
+    # hook's own directory would start the very split this prevents.
+    [ -d "$(shipshape_scratch_path)" ] &&
+      shipshape_trace payload "the payload's cwd $cwd cannot be entered; resolving from $PWD"
   fi
   return 0
 }
