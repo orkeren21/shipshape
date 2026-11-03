@@ -37,6 +37,7 @@ check_registration "session-start.sh"        SessionStart
 check_registration "done-gate.sh"            Stop
 check_registration "context-watch.sh"        Stop
 check_registration "review-capture.sh"       PostToolUse
+check_registration "review-capture.sh"       SubagentStop
 check_registration "task-capture.sh"         TaskCreated
 check_registration "task-completion-gate.sh" TaskCompleted
 check_registration "blockedby-gate.sh"       PreToolUse

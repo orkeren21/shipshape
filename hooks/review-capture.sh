@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# PostToolUse on Agent/Task — capture the whole-branch review report.
+# PostToolUse on Agent/Task, and SubagentStop — capture the whole-branch review
+# report.
 #
 # Of the three evidence types the done gate reads, two cannot be faked by
 # construction: ci-status is an exit code from gh, and smoke.log is the output
@@ -10,6 +11,16 @@
 #
 # Recognised by a marker in the dispatch — "whole-branch-review:" — rather than
 # by guessing from content. Unmarked returns are left alone.
+#
+# Two delivery shapes. A foreground dispatch returns its report to PostToolUse.
+# A background one — the only kind the desktop app's Agent tool launches —
+# returns status async_launched and an agentId, and the report arrives later on
+# SubagentStop as last_assistant_message, with no dispatch description beside
+# it. So the marker is remembered at launch, under the agent's id, and matched
+# when that agent stops. Shapes probed against Claude Code 2.1.310 in a
+# headless run: the launch's tool_response.agentId equals SubagentStop's
+# agent_id, and both events carry the parent session's session_id, so they
+# share one scratch dir.
 #
 # Never blocks. Capturing evidence should not be able to disturb a session.
 
@@ -24,6 +35,59 @@ CONFORMANCE_MARKER="${SHIPSHAPE_CONFORMANCE_MARKER:-design-conformance:}"
 
 shipshape_read_payload
 shipshape_enabled REVIEW_CAPTURE || exit 0
+
+# write_report <kind> <text> — one file per report, under the kind's prefix.
+write_report() {
+  local kind="$1" report="$2" scratch stamp suffix target
+  scratch="$(shipshape_scratch_dir)"
+
+  # One file per round: a re-review of the fix diff is a second report, not an
+  # overwrite of the first, and the retro wants both.
+  # Always sequence-suffixed, so the filenames sort in the order they were
+  # written. Two reports in the same second are exactly the case that matters —
+  # a re-review of the fix diff — and the gate picks the newest by modification
+  # time, which cannot distinguish them. Lexical order breaks the tie correctly
+  # only if it agrees with creation order.
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  suffix=0
+  target="$scratch/$kind-$stamp-00.md"
+  # A hundred reports in one second means something is looping, and the
+  # hundred-and-first will not help. Bounded, and the cap is logged.
+  while [ -e "$target" ] && [ "$suffix" -le 98 ]; do
+    suffix=$((suffix + 1))
+    target="$scratch/$kind-$stamp-$(printf '%02d' "$suffix").md"
+  done
+  if [ -e "$target" ]; then
+    shipshape_trace review-capture "100 reports already written this second; discarding this one"
+    return 0
+  fi
+
+  printf '%s' "$report" > "$target"
+  shipshape_trace review-capture "wrote $(basename "$target") ($(printf '%s' "$report" | wc -c | tr -d ' ') bytes)"
+}
+
+# --- a background dispatch finishing -----------------------------------------
+
+if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
+  agent="$(shipshape_safe_id "$(shipshape_field agent_id)" "")"
+  [ -n "$agent" ] || exit 0
+  pending="$(shipshape_scratch_dir)/pending-capture/$agent"
+  [ -f "$pending" ] || exit 0
+  kind="$(cat "$pending" 2>/dev/null)"
+  case "$kind" in
+    review|conformance) : ;;
+    *) rm -f "$pending"; exit 0 ;;
+  esac
+  report="$(shipshape_field last_assistant_message)"
+  if [ -z "$report" ]; then
+    # Left pending: a resumed agent stops again, and that stop may carry text.
+    shipshape_trace review-capture "marked agent $agent stopped with no text; still waiting for its report"
+    exit 0
+  fi
+  write_report "$kind" "$report"
+  rm -f "$pending"
+  exit 0
+fi
 
 tool="$(shipshape_field tool_name)"
 case "$tool" in
@@ -51,13 +115,22 @@ if [ -z "$kind" ]; then
 fi
 [ -n "$kind" ] || exit 0
 
-# A backgrounded dispatch has not produced a report yet, and no later event
-# carries one — so its report can never be captured. Say that plainly in the
-# trace rather than logging it as a reviewer that returned nothing, because the
-# fix is different: dispatch the reviewer synchronously.
+# A backgrounded dispatch has not produced a report yet. Remember which agent
+# carries the marker; its SubagentStop brings the report. A launch with no
+# agent id leaves nothing to match on, and the trace says so plainly rather
+# than logging a reviewer that returned nothing.
 if shipshape_agent_is_async; then
+  agent="$(shipshape_safe_id "$(shipshape_field tool_response.agentId)" "")"
+  if [ -z "$agent" ]; then
+    shipshape_trace review-capture \
+      "marked dispatch was launched in the background with no agent id; no report can be matched to it"
+    exit 0
+  fi
+  pending_dir="$(shipshape_scratch_dir)/pending-capture"
+  mkdir -p "$pending_dir" 2>/dev/null
+  printf '%s\n' "$kind" > "$pending_dir/$agent"
   shipshape_trace review-capture \
-    "marked dispatch was launched in the background; no report to capture — dispatch the reviewer synchronously"
+    "marked dispatch launched in the background as agent $agent; its report is captured when it stops"
   exit 0
 fi
 
@@ -67,28 +140,5 @@ if [ -z "$report" ]; then
   exit 0
 fi
 
-scratch="$(shipshape_scratch_dir)"
-# One file per round: a re-review of the fix diff is a second report, not an
-# overwrite of the first, and the retro wants both.
-# Always sequence-suffixed, so the filenames sort in the order they were
-# written. Two reports in the same second are exactly the case that matters —
-# a re-review of the fix diff — and the gate picks the newest by modification
-# time, which cannot distinguish them. Lexical order breaks the tie correctly
-# only if it agrees with creation order.
-stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-suffix=0
-target="$scratch/$kind-$stamp-00.md"
-# A hundred reports in one second means something is looping, and the
-# hundred-and-first will not help. Bounded, and the cap is logged.
-while [ -e "$target" ] && [ "$suffix" -le 98 ]; do
-  suffix=$((suffix + 1))
-  target="$scratch/$kind-$stamp-$(printf '%02d' "$suffix").md"
-done
-if [ -e "$target" ]; then
-  shipshape_trace review-capture "100 reports already written this second; discarding this one"
-  exit 0
-fi
-
-printf '%s' "$report" > "$target"
-shipshape_trace review-capture "wrote $(basename "$target") ($(printf '%s' "$report" | wc -c | tr -d ' ') bytes)"
+write_report "$kind" "$report"
 exit 0

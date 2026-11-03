@@ -85,8 +85,9 @@ starts the lanes you approve. A session at its context handoff point
 proposes its successor as a card you start with one click, in the same
 worktree and on the same branch. Anywhere that cannot start sessions, the same
 skills hand you the priming or the handoff path to paste, as before. The
-task-list gates read Claude Code's own task tools, which the desktop app
-replaces with its plan tool, so on desktop they stay quiet.
+three task-list hooks act only where Claude Code's own task tools exist (the
+desktop app replaces them with its plan tool), and they have not been seen
+enforcing in the field; a replacement that reads the plan file is planned.
 
 ```bash
 tests/run-tests.sh   # hermetic; same command CI runs on Linux and macOS
