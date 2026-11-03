@@ -21,8 +21,20 @@ starters="$(grep -rl 'start_session' "$skills" 2>/dev/null | sort)"
 [ -n "$starters" ] || fail "no skill names start_session — the session-native round is missing"
 for f in $starters; do
   rel="${f#"$SHIPSHAPE_REPO_ROOT"/}"
-  grep -qF "$fallback" "$f" \
-    || fail "$rel names start_session but carries no '$fallback' branch"
+  # Beside it means in the same section: a fallback three headings away is one
+  # a reader following the instruction never reaches. Sections split on "## ".
+  orphans="$(awk -v phrase="$fallback" '
+    function settle() {
+      if (names && !has) printf "%s\n", (heading == "" ? "(before the first heading)" : heading)
+      names = 0; has = 0
+    }
+    /^## / { settle(); heading = $0; next }
+    /start_session/ { names = 1 }
+    index($0, phrase) { has = 1 }
+    END { settle() }
+  ' "$f")"
+  [ -z "$orphans" ] || fail "$rel names start_session without a '$fallback' branch in the same section:
+$(printf '%s' "$orphans" | sed 's/^/          /')"
 done
 
 # The skills that hand work to a new session are among them.

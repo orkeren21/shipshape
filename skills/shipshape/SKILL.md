@@ -6,7 +6,7 @@ description: Use when starting any conversation - which ShipShape skill a given 
 # ShipShape
 
 Check whether a skill covers the request before acting, and invoke it if so.
-Say which skill you are using, then follow it.
+Say which skill you are using and why, then follow it.
 
 | Where you are | Start with |
 |---|---|
@@ -15,7 +15,7 @@ Say which skill you are using, then follow it.
 | Refining a dictated prompt | `shipshape:refining-prompts` |
 | A plan or task list already in hand | `shipshape:direct-implementation`, or `shipshape:subagent-driven-development` for parallel tracks |
 | Implementation finished | `shipshape:finishing-with-evidence` |
-| Context at the handoff point (70%; Architect 85%) | `shipshape:write-handoff` |
+| Context handoff point (70%; Architect 85%) | `shipshape:write-handoff` |
 | Picking up work from an earlier session | `shipshape:read-handoff` |
 | Scoping an epic across several sessions | `shipshape:epic-architecture` |
 | A lane inside an epic | `shipshape:coordinating-with-the-architect` |

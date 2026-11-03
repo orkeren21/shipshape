@@ -17,8 +17,9 @@ Write it in sections, each only as long as the material, and drop a section
 the dump gave nothing for:
 
 - **Goal** — the outcome, in a sentence or two, in the operator's terms.
-- **Why** — the reason, when the dump gave one. A session that knows why
-  handles the cases the prompt did not anticipate.
+- **Context** — why it matters and what exists now, as far as the dump says:
+  who is asking, what happened last time, what is already in place. A session
+  that knows why handles the cases the prompt did not anticipate.
 - **Requirements** — what is true when it is done, one per line, each with
   its reason when the dump gave one.
 - **Constraints** — the boundaries: what stays untouched, what has to keep

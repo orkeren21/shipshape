@@ -81,9 +81,10 @@ wrapper tables, what enforcement can and cannot stop, the pilot findings, and
 the mutation-tested alarm suite — is in [DETAILS.md](DETAILS.md).
 
 In the Claude Code desktop app, sessions can start sessions. An Architect
-starts the lanes you approve. A session at its context handoff point
-proposes its successor as a card you start with one click, in the same
-worktree and on the same branch. Anywhere that cannot start sessions, the same
+starts the lanes you approve. A solo session or an Architect at its context
+handoff point proposes its successor as a card you start with one click, in
+the same worktree and on the same branch; a lane does the same once its
+Architect rules that it should hand over. Anywhere that cannot start sessions, the same
 skills hand you the priming or the handoff path to paste, as before. The
 three task-list hooks act only where Claude Code's own task tools exist (the
 desktop app replaces them with its plan tool), and they have not been seen
