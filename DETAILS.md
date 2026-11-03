@@ -59,11 +59,25 @@ session-scoped, so two lanes running against one repo cannot collide.
 
 **Retired in 0.4.0: the deflection guard.** It was a `Stop` hook that held a
 session when it proposed moving its work to a fresh session below 70% context.
-It was the only hook that read prose, and three months of field traces showed
-it was right about 1 time in 233. Almost every block landed on an Architect
+It was the only hook that read prose. Three months of field traces logged
+134 blocks, most between 15% and 40% context, and a pattern classification of
+the 233 distinct blocked messages in session transcripts found one case of
+the failure it was built for. Almost every block landed on an Architect
 telling the operator to open a lane's session, which is the Architect's job.
-Once sessions can start sessions, that vocabulary is routine. The context nudge
-now does the remaining work without blocking anything.
+Once sessions can start sessions, that vocabulary is routine. The context
+nudge now does the remaining work without blocking anything.
+
+**Handoff points, and what changed in 0.4.0.** context-watch nudges at the
+seat's handoff points: `SHIPSHAPE_CONTEXT_THRESHOLDS` (default `70 85`) for
+lanes and solo sessions, `SHIPSHAPE_CONTEXT_THRESHOLDS_ARCHITECT` (default
+`85 92`) for an Architect, with the percentage taken against
+`SHIPSHAPE_CONTEXT_WINDOW` (default 1,000,000 tokens — set it for a smaller
+window, or the percentage undercounts). Through 0.3.0 the handoff was
+insurance and the session carried on. From 0.4.0 the first handoff point is
+the switch point for a solo session or an Architect: finish the step in
+flight, commit, refresh the handoff, propose the successor (or hand over its
+path), and wait for the operator. A lane carries on until its Architect
+rules.
 
 ## Kill switches are for hooks, not wrappers
 

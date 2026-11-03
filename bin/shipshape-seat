@@ -114,6 +114,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     --handoff)
       [ "$#" -ge 2 ] || usage
+      [ -n "$2" ] || usage
       one_line "$2"
       case "$2" in
         /*) handoff="$2" ;;
@@ -136,14 +137,21 @@ if [ -n "$handoff_only" ]; then
   [ -n "$role" ] || role="solo"
 fi
 
+# A seat that was not written is reported as not written: the hooks would read
+# the old seat, or none, and a session told otherwise trusts the wrong one.
 tmp="$file.tmp.$$"
-{
+if ! {
   printf 'role=%s\n' "$role"
-  [ -n "$lane" ] && printf 'lane=%s\n' "$lane"
-  [ -n "$epic" ] && printf 'epic=%s\n' "$epic"
-  [ -n "$handoff" ] && printf 'handoff=%s\n' "$handoff"
+  if [ -n "$lane" ]; then printf 'lane=%s\n' "$lane"; fi
+  if [ -n "$epic" ]; then printf 'epic=%s\n' "$epic"; fi
+  if [ -n "$handoff" ]; then printf 'handoff=%s\n' "$handoff"; fi
   printf 'written=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-} > "$tmp" && mv -f "$tmp" "$file"
+} > "$tmp" 2>/dev/null || ! mv -f "$tmp" "$file" 2>/dev/null; then
+  rm -f "$tmp" 2>/dev/null
+  shipshape_trace seat "could not write the seat file at $file"
+  echo "shipshape-seat: could not write $file" >&2
+  exit 1
+fi
 
 shipshape_trace seat "took seat: $(label "$role" "$lane")${handoff:+, handoff $handoff}"
 printf 'seat: %s\n' "$(label "$role" "$lane")"

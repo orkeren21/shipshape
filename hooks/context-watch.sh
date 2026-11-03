@@ -49,7 +49,7 @@ case "$role" in
   architect)
     THRESHOLDS="${SHIPSHAPE_CONTEXT_THRESHOLDS_ARCHITECT:-85 92}"
     seat_label="architect"
-    next_step="finish the step in flight, then propose your successor Architect from it"
+    next_step="finish the step in flight, commit it, refresh the handoff, then propose your successor Architect from it"
     ;;
   lane)
     THRESHOLDS="${SHIPSHAPE_CONTEXT_THRESHOLDS:-70 85}"
@@ -60,17 +60,20 @@ case "$role" in
     THRESHOLDS="${SHIPSHAPE_CONTEXT_THRESHOLDS:-70 85}"
     seat_label=""
     [ "$role" = "solo" ] && seat_label="solo"
-    next_step="finish the step in flight, then propose your successor session from it"
+    next_step="finish the step in flight, commit it, refresh the handoff, then propose your successor session from it"
     ;;
 esac
 
-# Whether any nudge has landed yet decides the wording: the first asks for the
-# handoff, later ones for a refresh. A session arriving above every threshold
-# at once has written nothing, so it gets the first wording.
+# Whether a handoff exists yet decides the wording: the first nudge asks for
+# one, later ones for a refresh. A nudge already given, or a handoff the seat
+# records (a compacted session climbing back), both mean one exists. A
+# session arriving above every threshold at once has written nothing, so it
+# gets the first wording.
 first="yes"
 for marker in "$scratch"/context-nudged-*; do
   [ -e "$marker" ] && first="" && break
 done
+[ -n "$(shipshape_seat_field "$scratch" handoff)" ] && first=""
 
 # The highest threshold this session has crossed and not yet been nudged about.
 # Mark every threshold already passed, not just the highest. A session whose
@@ -92,8 +95,11 @@ done
 shipshape_trace context-watch "nudged at ${pct}% (crossing ${crossed}%${seat_label:+, $seat_label})"
 
 # Advisory, as the design has it: the turn ends normally. additionalContext
-# reaches the model before its next turn; systemMessage puts the number in
-# front of the operator, which is why the model need not repeat it.
+# reaches the model before its next turn — measured, not assumed: local
+# transcripts carrying the 0.3.0 nudge record a hook_additional_context
+# attachment with hookEvent Stop beside the hook_system_message one.
+# systemMessage puts the number in front of the operator, which is why the
+# model need not repeat it.
 #
 # It is deliberately not a block. Refusing to end a turn to deliver advice
 # would interrupt whatever the session was actually answering.

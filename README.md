@@ -85,7 +85,10 @@ starts the lanes you approve. A solo session or an Architect at its context
 handoff point proposes its successor as a card you start with one click, in
 the same worktree and on the same branch; a lane does the same once its
 Architect rules that it should hand over. Anywhere that cannot start sessions, the same
-skills hand you the priming or the handoff path to paste, as before. The
+skills hand you the priming or the handoff path to paste. Either way, a
+solo session now hands over at its handoff point rather than carrying on
+past it: it finishes the step in flight, commits, refreshes the handoff and
+waits for you. The
 three task-list hooks act only where Claude Code's own task tools exist (the
 desktop app replaces them with its plan tool), and they have not been seen
 enforcing in the field; a replacement that reads the plan file is planned.

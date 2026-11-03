@@ -83,6 +83,22 @@ assert_eq "64" "$?" "an unknown option is a usage error"
 assert_eq "64" "$?" "a value carrying a newline is refused rather than forging a line"
 assert_eq "solo" "$(field role)" "so the record cannot be rewritten through a value"
 
+"$seat" --handoff "" >/dev/null 2>&1
+assert_eq "64" "$?" "an empty handoff path is a usage error, not the current directory"
+
+# A seat that could not be written is reported as a failure. A session told
+# it took a seat it did not take reads the wrong thresholds without knowing.
+before="$(cat "$file")"
+chmod a-w "$scratch"
+out="$("$seat" architect 2>&1)"
+status=$?
+chmod u+w "$scratch"
+if [ "$(id -u)" != "0" ]; then
+  assert_ne "0" "$status" "a failed write exits non-zero"
+  assert_contains "$out" "could not write" "and says so"
+  assert_eq "$before" "$(cat "$file")" "and the previous seat stands"
+fi
+
 # --- reading it back ---------------------------------------------------------
 
 out="$("$seat" 2>&1)"

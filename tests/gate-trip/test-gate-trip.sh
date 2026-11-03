@@ -307,7 +307,8 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "PASSES: a freshly stamped PR merges"
 
 # ===========================================================================
-# Gate 8 — context. Skip: run past the handoff threshold without writing one.
+# Nudge 8 — context, advisory. It catches nothing; it fires at the handoff
+# point so the session writes a handoff there rather than later.
 # ===========================================================================
 
 pct_stub="$work/pct"
@@ -317,7 +318,7 @@ export SHIPSHAPE_CONTEXT_PCT_CMD="$pct_stub"
 
 out="$(PCT_VALUE=74 run_hook context-watch.sh "$(stop_payload lane-g1 "$work/t.jsonl" "still working")" "$repo")"
 nudge="$(hook_field "$out" hookSpecificOutput.additionalContext)"
-assert_ne "" "$nudge" "TRIPPED: past 70% the handoff nudge fires"
+assert_ne "" "$nudge" "FIRES: past 70% the handoff nudge fires"
 assert_contains "$nudge" "write-handoff" "and names the skill to invoke"
 assert_eq "" "$(hook_field "$out" decision)" "advisory: it does not stop the turn to deliver advice"
 

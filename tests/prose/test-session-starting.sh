@@ -60,6 +60,11 @@ handoff="$(cat "$skills/write-handoff/SKILL.md")"
 assert_contains "$handoff" "own_initiative" "a successor is proposed, never started directly"
 assert_contains "$handoff" "use_worktree: false" "a successor lands in the predecessor's worktree"
 assert_contains "$handoff" "shipshape:read-handoff" "and its brief starts it on the handoff"
+assert_contains "$handoff" "background" "a fresh start carries the background the tool requires"
+assert_contains "$handoff" "refuses this start" \
+  "a refused start — a session that entered its worktree with EnterWorktree — takes the paste path"
+assert_contains "$handoff" "refresh the handoff" "the handoff is refreshed after the last commit, before the successor reads it"
+assert_contains "$epic" "background" "a lane start carries the background the tool requires"
 
 # --- the seat is taken wherever one is held -----------------------------------
 

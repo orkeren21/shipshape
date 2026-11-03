@@ -14,6 +14,10 @@
 #
 # If the skill is missing the hook injects nothing rather than an error: a
 # broken bootstrap should cost the session its introduction, not its start.
+#
+# SHIPSHAPE_SESSION_START=0 switches off all of it, the compaction reset
+# included: a session with the bootstrap off keeps its nudge markers through
+# a compaction, and so gets no second nudge.
 
 set -uo pipefail
 
@@ -50,7 +54,7 @@ if [ "$(shipshape_field source)" = "compact" ]; then
     esac
     [ -n "$handoff" ] && files="${files:+$files, }$handoff"
     if [ -n "$files" ]; then
-      reorient="This session was just compacted, and it holds a ShipShape seat: ${seat_label}. Before acting, re-read ${files} — they carry the decisions and state a summary can drop."
+      reorient="This session was just compacted, and it holds a ShipShape seat: ${seat_label}. Before acting, re-read these, which carry the decisions and state a summary can drop: ${files}."
       shipshape_trace session-start "compaction: re-oriented the ${seat_label} seat"
     fi
   fi

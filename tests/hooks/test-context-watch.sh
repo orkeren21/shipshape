@@ -63,8 +63,8 @@ assert_contains "$reason" "70%" "and so does the session"
 assert_contains "$reason" "shipshape:write-handoff" "it names the skill to run"
 assert_contains "$reason" "propose your successor" \
   "a session with no seat is solo, so it proposes its own successor"
-assert_contains "$reason" "finish the step in flight" \
-  "the work in hand is finished before the handover, not dropped mid-edit"
+assert_contains "$reason" "finish the step in flight, commit it, refresh the handoff, then propose" \
+  "the work in hand is finished and committed, and the handoff refreshed to match, before the successor is proposed"
 
 # The operator already reads the number in systemMessage. A session told it
 # can stay quiet about it has no reason to narrate its context back.
@@ -145,6 +145,26 @@ reset
 seat role=lane lane=F2
 out="$(SHIPSHAPE_CONTEXT_THRESHOLDS="60" watch 61)"
 assert_ne "" "$(nudged "$out")" "the solo and lane thresholds can be overridden"
+
+# The solo and lane override leaves an Architect alone: it has its own.
+reset
+seat role=architect
+out="$(SHIPSHAPE_CONTEXT_THRESHOLDS="60" watch 61)"
+assert_eq "" "$(nudged "$out")" "the lane override does not move an Architect's handoff point"
+
+# A solo seat names itself to the operator.
+reset
+seat role=solo
+out="$(watch 70)"
+assert_contains "$(hook_field "$out" systemMessage)" "(solo)" "a solo seat is named in the operator's line"
+
+# A compacted session climbing back already has a handoff on record, so its
+# first nudge after the reset asks for a refresh, not a new document.
+reset
+seat role=solo "handoff=$work/h.md"
+out="$(watch 70)"
+assert_contains "$(nudged "$out")" "Refresh the handoff" \
+  "a seat with a recorded handoff gets the refresh wording"
 
 # An unreadable seat is no seat: the solo thresholds, which err early.
 reset

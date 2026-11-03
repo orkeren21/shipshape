@@ -57,7 +57,8 @@ When the operator says go — "dispatch F1 and F2", in their own words — the
 Architect starts each named lane itself, if its tools include a
 session-starting tool (in the desktop app, `start_session`; it may be listed
 as deferred and need loading by name). Each lane starts `user_asked`, with a
-`fresh` context, its own worktree, its priming as the brief, and the title
+`fresh` context, its own worktree, its priming as the brief, a `background`
+naming the epic folder and the lane's place in it, and the title
 `<epic> · <feature ID>`. A `fork` would hand the lane this whole
 conversation, which is exactly the context a lane exists to leave behind.
 Where the app offers sidebar groups, one named after the epic keeps the
