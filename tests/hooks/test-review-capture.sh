@@ -34,8 +34,8 @@ payload() { # payload <tool_name> <description> <returned text>
     "$session" "$1" "$(json_string "$2")" "$(json_string "$3")"
 }
 
-# A backgrounded dispatch: launched, no result yet, and no later event will
-# carry one.
+# A backgrounded dispatch: launched, no result yet. Its report arrives on the
+# agent's SubagentStop.
 async_payload() { # async_payload <description>
   printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":%s},"tool_response":{"status":"async_launched","agentId":"abc123","isAsync":true}}' \
     "$session" "$(json_string "$1")"
@@ -183,11 +183,50 @@ assert_file "$scratch/pending-capture/abc123" "and the agent stays pending for a
 # A hostile agent id cannot walk out of the pending directory.
 hostile="$(printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"whole-branch-review: x"},"tool_response":{"status":"async_launched","agentId":"../../escape","isAsync":true}}' "$session")"
 run_hook review-capture.sh "$hostile" "$repo" >/dev/null
-assert_no_file "$scratch/escape" "a hostile agent id stays inside pending-capture"
+assert_no_file "$repo/.shipshape/escape" "a hostile agent id stays inside pending-capture"
 assert_file "$scratch/pending-capture/escape" "reduced to a safe name there"
 
 rm -rf "$scratch/pending-capture"
 rm -f "$scratch"/review-*.md "$scratch"/conformance-*.md
+
+# --- a background review is as old as its launch ---------------------------
+#
+# The done gate counts a review fresh when its report is newer than HEAD. A
+# foreground reviewer blocked the session, so nothing could be committed while
+# it read. A background one reads while the session keeps working, and its
+# report lands when it stops — after any commit made in between. Dated at the
+# stop, it would pass as fresh for code it never saw. So the report carries
+# the launch time, and a commit made during the review makes it stale.
+
+VERDICT_REPORT="$REPORT
+
+**Ready to merge?** Yes"
+leg() { (cd "$repo" && source "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" && shipshape_leg_review "$scratch"); }
+
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(async_payload "whole-branch-review: mid-flight")" "$repo" >/dev/null
+commit_more "$repo"
+run_hook review-capture.sh "$(stop_payload_for abc123 "$VERDICT_REPORT")" "$repo" >/dev/null
+assert_contains "$(leg)" "stale" \
+  "a commit made while a background reviewer ran makes its report stale when it lands"
+
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
+run_hook review-capture.sh "$(async_payload "whole-branch-review: undisturbed")" "$repo" >/dev/null
+run_hook review-capture.sh "$(stop_payload_for abc123 "$VERDICT_REPORT")" "$repo" >/dev/null
+assert_eq "ok" "$(leg | cut -d'|' -f1)" \
+  "with no commit during the review, the same report counts as fresh"
+
+# A remote launch has no local stop to bring its report, so nothing waits on
+# one, and the trace says why.
+remote="$(printf '{"session_id":"%s","hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"description":"whole-branch-review: remote"},"tool_response":{"status":"remote_launched","agentId":"far1","isAsync":true}}' "$session")"
+run_hook review-capture.sh "$remote" "$repo" >/dev/null
+assert_no_file "$scratch/pending-capture/far1" "a remote launch leaves nothing pending"
+assert_contains "$(cat "$scratch/trace.log")" "launched remotely" "and the trace says no local stop will come"
+
+rm -f "$scratch"/review-*.md
+rm -rf "$scratch/pending-capture"
 
 # --- a plain-string result ---------------------------------------------------
 

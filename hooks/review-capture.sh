@@ -13,14 +13,20 @@
 # by guessing from content. Unmarked returns are left alone.
 #
 # Two delivery shapes. A foreground dispatch returns its report to PostToolUse.
-# A background one — the only kind the desktop app's Agent tool launches —
-# returns status async_launched and an agentId, and the report arrives later on
-# SubagentStop as last_assistant_message, with no dispatch description beside
-# it. So the marker is remembered at launch, under the agent's id, and matched
-# when that agent stops. Shapes probed against Claude Code 2.1.310 in a
-# headless run: the launch's tool_response.agentId equals SubagentStop's
-# agent_id, and both events carry the parent session's session_id, so they
-# share one scratch dir.
+# A background one — the only kind the desktop app's Agent tool launched in the
+# field from late October 2026 (session traces) — returns status async_launched
+# and an agentId, and the report arrives later on SubagentStop as
+# last_assistant_message. So the marker is remembered at launch, under the
+# agent's id, and matched when that agent stops. Shapes probed against Claude
+# Code 2.1.310 in a headless run: the launch's tool_response.agentId equals
+# SubagentStop's agent_id, and both events carry the parent session's
+# session_id — so, run from the session's working directory, both resolve the
+# same scratch dir.
+#
+# A background report is dated at its launch, not its stop. The done gate
+# counts a review fresh when its report is newer than HEAD; a background
+# reviewer reads while the session keeps committing, and dated at the stop
+# its report would pass as fresh for commits it never saw.
 #
 # Never blocks. Capturing evidence should not be able to disturb a session.
 
@@ -36,9 +42,11 @@ CONFORMANCE_MARKER="${SHIPSHAPE_CONFORMANCE_MARKER:-design-conformance:}"
 shipshape_read_payload
 shipshape_enabled REVIEW_CAPTURE || exit 0
 
-# write_report <kind> <text> — one file per report, under the kind's prefix.
+# write_report <kind> <text> [dated-like] — one file per report, under the
+# kind's prefix, its time taken from dated-like when given. Fails when nothing
+# was written, so a caller can keep what it would otherwise discard.
 write_report() {
-  local kind="$1" report="$2" scratch stamp suffix target
+  local kind="$1" report="$2" dated_like="${3:-}" scratch stamp suffix target
   scratch="$(shipshape_scratch_dir)"
 
   # One file per round: a re-review of the fix diff is a second report, not an
@@ -62,7 +70,17 @@ write_report() {
     return 0
   fi
 
-  printf '%s' "$report" > "$target"
+  if ! printf '%s' "$report" > "$target" 2>/dev/null; then
+    shipshape_trace review-capture "could not write $(basename "$target")"
+    return 1
+  fi
+  if [ -n "$dated_like" ] && ! touch -r "$dated_like" "$target" 2>/dev/null; then
+    # Undated, it would read as fresh for commits made during the review; a
+    # report that cannot carry its launch time is not one the gate may read.
+    rm -f "$target"
+    shipshape_trace review-capture "could not date $(basename "$target") to its launch; discarded"
+    return 1
+  fi
   shipshape_trace review-capture "wrote $(basename "$target") ($(printf '%s' "$report" | wc -c | tr -d ' ') bytes)"
 }
 
@@ -84,8 +102,8 @@ if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
     shipshape_trace review-capture "marked agent $agent stopped with no text; still waiting for its report"
     exit 0
   fi
-  write_report "$kind" "$report"
-  rm -f "$pending"
+  # The pending file was written at launch, so its time is the launch time.
+  write_report "$kind" "$report" "$pending" && rm -f "$pending"
   exit 0
 fi
 
@@ -120,6 +138,11 @@ fi
 # agent id leaves nothing to match on, and the trace says so plainly rather
 # than logging a reviewer that returned nothing.
 if shipshape_agent_is_async; then
+  if [ "$(shipshape_field tool_response.status)" = "remote_launched" ]; then
+    shipshape_trace review-capture \
+      "marked dispatch was launched remotely; no local stop will bring its report"
+    exit 0
+  fi
   agent="$(shipshape_safe_id "$(shipshape_field tool_response.agentId)" "")"
   if [ -z "$agent" ]; then
     shipshape_trace review-capture \
@@ -128,7 +151,11 @@ if shipshape_agent_is_async; then
   fi
   pending_dir="$(shipshape_scratch_dir)/pending-capture"
   mkdir -p "$pending_dir" 2>/dev/null
-  printf '%s\n' "$kind" > "$pending_dir/$agent"
+  if ! printf '%s\n' "$kind" > "$pending_dir/$agent" 2>/dev/null; then
+    shipshape_trace review-capture \
+      "marked dispatch launched in the background as agent $agent, but it could not be recorded; its report will not be captured"
+    exit 0
+  fi
   shipshape_trace review-capture \
     "marked dispatch launched in the background as agent $agent; its report is captured when it stops"
   exit 0

@@ -31,7 +31,9 @@ Dispatch a `general-purpose` subagent using the template at
 the desktop app runs every dispatch in the background. A foreground report is
 captured when the dispatch returns; a background one when its agent stops,
 and the finished report arrives as a notification. Wait for that before
-finishing.
+finishing. A background report is dated at its launch, so a commit made while
+the reviewer reads leaves its report stale when it lands: the review covers
+the code it was given, and the commits after it need a review of their own.
 
 **Start the dispatch description with `whole-branch-review:`.** That marker is
 what the `review-capture` hook watches for; on a marked return, the hook writes
@@ -72,8 +74,9 @@ document catches that.
 
 The highest-defect-density code in the field data was the fix written in
 answer to a finding — momentum, in code the author just learned was subtle.
-The gate already enforces the consequence: a review predating HEAD is stale,
-so every fix diff gets its scoped re-review before the branch is finished.
+The gate already enforces the consequence: a review predating HEAD is stale
+(a background review dates from its launch), so every fix diff gets its
+scoped re-review before the branch is finished.
 That is the mechanism working, not friction to route around.
 
 **Never tell the reviewer to be conservative, to filter, or to report only what
