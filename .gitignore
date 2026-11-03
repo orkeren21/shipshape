@@ -11,3 +11,6 @@ tmp/
 docs/superpowers/
 
 .DS_Store
+
+# The engine lays its API types beside a mod it hot-loads; they are its, not the mod's.
+mods/*/.claude-plugin/types/

@@ -5,6 +5,12 @@
 # `python3` are already on the hosted runners, `gh` is stubbed by the tests
 # themselves, and the git fixtures configure their own identity.
 #
+# The one exception is the companion mod, shipdeck (mods/shipdeck): its hooks
+# module is TypeScript run by Claude Code itself, so its job installs Claude
+# Code and runs the engine's own `claude plugin validate` and
+# `claude plugin test`. That job stays apart from the suite, so the core never
+# needs Node to be tested.
+#
 # Both operating systems run, and that is not redundancy. BSD and GNU
 # implementations of `find`, `stat` and `date` take different flags, and the
 # failure mode when they diverge is a check that silently stops checking
@@ -48,3 +54,29 @@ jobs:
 
       - name: Run the suite
         run: tests/run-tests.sh
+
+  # The mod's tests run against the engine they target. The version is pinned:
+  # the mod API is early access and moves between releases, so a new Claude
+  # Code is adopted on purpose, by bumping this line, not by surprise. One OS
+  # is enough here: nothing in the mod's tests touches BSD or GNU tools.
+  mod:
+    name: shipdeck mod
+    runs-on: ubuntu-latest
+    env:
+      DISABLE_AUTOUPDATER: "1"
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.310
+
+      - name: Validate the mod
+        run: claude plugin validate mods/shipdeck
+
+      - name: Test the mod
+        run: claude plugin test mods/shipdeck

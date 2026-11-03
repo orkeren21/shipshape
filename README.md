@@ -2,7 +2,7 @@
 
 [![tests](https://github.com/orkeren21/shipshape/actions/workflows/tests.yml/badge.svg?branch=main&event=push)](https://github.com/orkeren21/shipshape/actions/workflows/tests.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![version 0.4.4](https://img.shields.io/badge/version-0.4.4-blue.svg)](.claude-plugin/plugin.json)
+[![version 0.5.0](https://img.shields.io/badge/version-0.5.0-blue.svg)](.claude-plugin/plugin.json)
 
 ShipShape is an opinionated take on [obra/superpowers](https://github.com/obra/superpowers),
 rebuilt for frontier models — Opus 5, Fable 5, and long 1M-token sessions. It keeps
@@ -98,6 +98,38 @@ tests/run-tests.sh   # hermetic; same command CI runs on Linux and macOS
 ```
 
 Bug reports and pull requests: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## shipdeck, the companion mod
+
+An optional second plugin in the same marketplace, for Claude Code 2.1.309 or
+later. It never gates: it shows what the gates already know, read from the
+same artifacts through `shipshape-doctor --json`.
+
+- **A band above the prompt.** It shows the session's seat and a context
+  gauge that turns amber and red at the seat's own handoff points. It also
+  shows the three evidence legs (review, CI, smoke), including a reviewer
+  still running. There are two styles, `github` (the default) and `linear`;
+  `/shipdeck style linear` switches between them.
+- **A prompt refiner.** A long dictated prompt goes to Sonnet 5.5, and the
+  session receives a structured version instead: goal, context,
+  requirements, constraints and done-when, then the open questions and
+  suggestions it must raise before starting. Your transcript row shows what
+  the session received, and the original stays in the session's scratch
+  folder (until a core 0.5.0 reading gives it one, nothing is refined). Start a prompt with `raw:` to send it as typed, or run
+  `/refine off` to stop refining for the session.
+- **An Architect pane.** It lists the epic's roster, the lanes that
+  reported done, and the latest rulings.
+- **Two notices:** a lane reporting done, and a successor card waiting.
+
+```
+/plugin install shipdeck@shipshape
+```
+
+In the desktop app, where `/plugin` does not run, click **+** beside the
+prompt box, then **Plugins**, and add shipdeck from the shipshape
+marketplace. The mod API is early access and changes between releases. When
+it breaks, what breaks is the display, never a gate. Settings, kill switches
+and what it reads are in [mods/shipdeck/README.md](mods/shipdeck/README.md).
 
 ## Credits
 

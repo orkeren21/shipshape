@@ -37,7 +37,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `shipshape-verify` | a task's verify command | `verify/<task-id>` |
 | `shipshape-smoke` | any command | `smoke.log` |
 | `shipshape-seat` | nothing — records a fact | `seat` — whether the session is an Architect, a lane or solo, its epic folder and its handoff. context-watch picks thresholds from it; session-start re-orients a compacted session from it. Also prints the session id a roster file needs. |
-| `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Names any other checkout's folder for the same session: where older hooks in a desktop-app worktree session left their half of the evidence, or what a subagent working in its own worktree left there. Always exits 0; diagnosis is not enforcement. |
+| `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Names any other checkout's folder for the same session: where older hooks in a desktop-app worktree session left their half of the evidence, or what a subagent working in its own worktree left there. Always exits 0; diagnosis is not enforcement. `--json` prints the same evaluation as one object (format 1): each leg's state in the evaluator's own word, the seat, the scratch path, reviewers still running, and the armed PRs. shipdeck draws its band from it. |
 
 ## The hooks
 
@@ -84,6 +84,78 @@ the switch point for a solo session or an Architect: finish the step in
 flight, commit, refresh the handoff, propose the successor (or hand over its
 path), and wait for the operator. A lane carries on until its Architect
 rules.
+
+## shipdeck, the companion mod
+
+`mods/shipdeck/` is a second plugin in the same marketplace: a Claude Code
+mod, one hooks module in TypeScript that the engine itself runs. It is kept
+apart from the core for two reasons. The core `hooks.json` must never carry
+a `modules` key, which an older Claude Code would choke on. And the mod API
+is early access and changes between releases, so a change there can break
+the display but never a gate. The mod reads and displays, and nothing in it
+refuses anything.
+
+| Hook | Event | What it does |
+|---|---|---|
+| band | `ui.render` `AbovePrompt` | The band above the prompt: seat, context gauge, evidence legs, notices. Desktop draws one SVG per row (`github` or `linear` style), with text pinned to measured widths; the terminal draws the same row as text. |
+| row | `ui.render` `UserMessage` | The desktop draws a prompt as typed, so a refined prompt's row is redrawn with what the session received. |
+| refiner | `prompt.submit` | Rewrites a dictated dump with Sonnet 5.5, using `refiner/instructions.md`: the `refining-prompts` skill's body verbatim (a packaging test pins it), plus a delivery section. |
+| refresh | `session.start`, `tool.call`, `turn.complete`, a 60 s clock | Re-reads `$.session.usage()` and runs `shipshape-doctor --json`, at most every 5 s after `Bash`, `Agent` or `Task`. |
+| epic pane | `ui.render` `Pane` | For an Architect seat: the roster, the lanes done, the last five rulings. |
+| epic refresh | a 30 s clock | Re-reads the epic folder while the seat is `architect`; a lane whose status turns `done` raises a notice. |
+| successor watch | `tool.call` | This session's own `start_session` call, proposed `own_initiative` with a brief naming `read-handoff`, raises the successor-card notice. Observed only. |
+| `/refine` | `command.run` | `on`, `off` (for this session) or the status; `on` cannot override the `refine` option or `SHIPSHAPE_REFINE=0`. |
+| `/shipdeck` | `command.run` | Opens the epic pane for an Architect, otherwise says what the band says; `style github` or `style linear` switches the style through the config row. |
+
+**Evidence comes from bash, once.** The band never reads an artifact
+itself. It runs the core's `shipshape-doctor --json`, passing
+`SHIPSHAPE_SESSION_ID` from `$.session.id()`, which is the same id the hooks
+name the scratch folder by. So the display and the gates read the same files
+through the same evaluators. The mod finds the core by checking three places
+in order: the checkout it sits in, `claude plugin list --json`, then the
+installed-plugins record. With no core found, or one older than 0.5.0, the
+legs read `evidence unavailable`, never green.
+
+**When the refiner runs.** It skips a slash command, a hidden prompt, a
+prompt from anyone other than the operator (another session's message, a
+background task's notice, a `claude -p` pipeline), and a prompt under 120
+words. It also skips a structured prompt (headings, bullets, a code fence)
+and a paste of short lines. What is left is refined when at least two
+signals of dictation fire:
+- filler words;
+- run-on sentences;
+- self-corrections;
+- one long paragraph.
+
+The desktop puts `<system-reminder>` blocks around the operator's words;
+the refiner sets them aside and puts them back verbatim. Sonnet may answer
+`KEEP`. That answer, a failed call, or a reply without a `Goal` section all
+send the prompt as typed. So does having nowhere to keep the original:
+with no core 0.5.0, or before the doctor's first reading, there is no scratch
+path, and a dictation is never replaced by a refinement nothing recorded. Open questions and suggestions travel inside the
+refined prompt, as its last two sections, whose headings tell the session to
+raise them before starting. `raw:` skips one prompt; `/refine off`, the
+`refine` option and `SHIPSHAPE_REFINE=0` turn the refiner off.
+
+Operator prompts keep their typed order within a bound: each is refined (or
+not) at once, then waits for every operator prompt ahead of it to enter, for
+at most 8 seconds after its own shaping ends. A hook's own budget is 10 seconds, and waiting on another prompt
+counts against it (only `$` calls and `next` do not), so a refinement slower
+than that lets a follow-up through first.
+
+**What the desktop app draws** was probed in a live session before the
+design was settled:
+- It draws a mod's band, pane, toasts and command menu entries, and a
+  redrawn transcript row.
+- It never sends `$.ui.notify`, so notices go to the band and a toast
+  instead.
+- It does not show a `$.session.append` notice row.
+- It draws `$.ui.status` as plain grey text in the bottom bar, which is why
+  the indicator is a band.
+
+`SHIPSHAPE_SHIPDECK=0` turns the whole mod off. Its tests run under
+`claude plugin test` against a pinned Claude Code in CI's `mod` job, on the
+terminal and desktop surfaces.
 
 ## Kill switches are for hooks, not wrappers
 
@@ -167,6 +239,11 @@ BSD and GNU tool flags differ and the failure mode when they do is a check that
 silently stops checking. That is not hypothetical: this repo's first CI run
 found a staleness reader that had been inert on Linux while every macOS run
 stayed green.
+
+shipdeck's tests are not shell: `claude plugin test mods/shipdeck` runs them
+against the engine itself, in CI's separate `mod` job, so the core suite never
+needs Node. The packaging test that pins the mod's manifests and its copy of
+the `refining-prompts` skill is ordinary shell and runs with the suite.
 
 The `gate-trip` group is the one worth knowing about: it walks a whole branch
 through the real wrappers and real hooks, and at each gate deliberately
