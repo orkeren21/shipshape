@@ -34,6 +34,16 @@ printf 'ShipShape doctor — session %s, branch %s (HEAD %s)\n\n' \
   "$(shipshape_session_id)" "${current_branch:-none}" \
   "$(printf '%s' "${current_head:-no-git}" | cut -c1-8)"
 
+# A split session's other folder explains a leg that reads missing below.
+other_dirs="$(shipshape_other_scratch_dirs "$scratch")"
+if [ -n "$other_dirs" ]; then
+  printf 'note — this session also has scratch in another checkout:\n'
+  printf '%s\n' "$other_dirs" | sed 's/^/  /'
+  printf '  The gates read only %s. Older hooks wrote there in a\n' "$scratch"
+  printf '  desktop-app worktree session. Re-dispatch the whole-branch review so its\n'
+  printf '  report lands here; a copied report is not one the hook captured.\n\n'
+fi
+
 # ---- the evidence legs, as the done gate reads them -------------------------
 
 leg_line() { printf '  %-8s %s\n' "$1" "$2"; }

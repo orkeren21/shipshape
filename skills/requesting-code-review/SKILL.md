@@ -44,7 +44,8 @@ finishing.
 **Start the dispatch description with `whole-branch-review:`.** That marker is
 what the `review-capture` hook watches for; on a marked return, the hook writes
 the reviewer's report to the session scratch, and that artifact is what the done
-gate reads.
+gate reads. Dispatch it without `isolation`: a reviewer given a worktree of its
+own stops in that worktree, and its report is not captured.
 
 The hook writing it, rather than you, is what makes the artifact worth
 anything: it exists because a reviewer returned text, which is a different

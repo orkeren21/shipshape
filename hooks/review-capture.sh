@@ -20,8 +20,12 @@
 # agent's id, and matched when that agent stops. Shapes probed against Claude
 # Code 2.1.310 in a headless run: the launch's tool_response.agentId equals
 # SubagentStop's agent_id, and both events carry the parent session's
-# session_id — so, run from the session's working directory, both resolve the
-# same scratch dir.
+# session_id. Both resolve from the payload's cwd (shipshape_read_payload), and
+# for an ordinary subagent both name the session's own directory, so they meet
+# in the same scratch dir. A subagent dispatched with isolation stops with the
+# cwd of its own worktree (probed against 2.1.309), where no marker is ever
+# written; its report is not captured and the review leg reads missing, which
+# is why requesting-code-review says to dispatch the reviewer without it.
 #
 # A background report is dated at its launch, not its stop. The done gate
 # counts a review fresh when its report is newer than HEAD; a background
@@ -98,7 +102,10 @@ write_report() {
 if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
   agent="$(shipshape_safe_id "$(shipshape_field agent_id)" "")"
   [ -n "$agent" ] || exit 0
-  pending="$(shipshape_scratch_dir)/pending-capture/$agent"
+  # Every subagent's stop arrives here, most of them unmarked, so the marker is
+  # looked for without creating the scratch dir: an isolated subagent's stop
+  # names its own worktree, and looking must not leave a folder in it.
+  pending="$(shipshape_scratch_root)/.shipshape/$(shipshape_session_id)/pending-capture/$agent"
   [ -f "$pending" ] || exit 0
   kind="$(cat "$pending" 2>/dev/null)"
   case "$kind" in
