@@ -167,7 +167,8 @@ async function refinePrompt($: EngineInterface, split: Split, signal: AbortSigna
     return null
   }
   const scratch = lastDoctor.scratch
-  await update($, refining, n => n + 1)
+  // A refused write must not cost the refinement, here or at the decrement.
+  await update($, refining, n => n + 1).catch(() => {})
   try {
     let answer
     try {
@@ -240,12 +241,14 @@ export const register: Register = (on, options) => {
     } catch {
       lastDoctor = null
     }
-    await $.command.register({ name: 'refine', description: 'shipdeck: turn prompt refining on or off for this session', argumentHint: 'on | off' })
-    await $.command.register({ name: 'shipdeck', description: 'shipdeck: open the epic pane, or switch the band style', argumentHint: 'style github | style linear' })
+    // The readings and clocks start first: a command name another plugin
+    // took must cost that command alone.
     void refreshUsage($).catch(() => {})
     void refreshDoctor($, true).catch(() => {})
     $.clock.every(60_000, () => void refreshDoctor($, true).catch(() => {}))
     $.clock.every(30_000, () => void refreshEpic($).catch(() => {}))
+    await $.command.register({ name: 'refine', description: 'shipdeck: turn prompt refining on or off for this session', argumentHint: 'on | off' }).catch(() => {})
+    await $.command.register({ name: 'shipdeck', description: 'shipdeck: open the epic pane, or switch the band style', argumentHint: 'style github | style linear' }).catch(() => {})
     return next(e)
   })
 

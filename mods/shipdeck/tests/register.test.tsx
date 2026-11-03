@@ -398,7 +398,7 @@ test('a session.start mid-refinement clears the spinner', async ($, on) => {
   expect(await isRefining($)).toBe(false)
 })
 
-test('a second dump is refined while the first is, and enters right after it', async ($, on) => {
+test('a second dump is refined while the first is, not after it', async ($, on) => {
   const { clock, seen } = world(on, { modelDelays: [5_000, 3_000] })
   await start($, clock)
   const first = submit($, DUMP)
@@ -408,3 +408,58 @@ test('a second dump is refined while the first is, and enters right after it', a
   expect(seen.entered.filter(t => t.includes('## Goal'))).toHaveLength(2)
   await Promise.all([first, second])
 })
+
+test('a refused decrement keeps a finished refinement', async ($, on) => {
+  on('state.set', (_, e, next) => {
+    const w = e as { key?: string; value?: { value?: unknown }; previous?: { value?: unknown } }
+    if (w.key === 'refining' && w.value?.value === 0 && w.previous?.value === 1) return { deny: 'state host down' } as never
+    return next(e)
+  })
+  const { clock, seen } = world(on)
+  await start($, clock)
+  await submit($, DUMP)
+  expect(seen.entered.at(-1)).toContain('## Goal')
+})
+
+test('a refused count still refines, and a refused reset still runs the doctor and the clocks', async ($, on) => {
+  on('state.set', (_, e, next) => {
+    if ((e as { key?: string }).key === 'refining') return { deny: 'state host down' } as never
+    return next(e)
+  })
+  const { clock, seen } = world(on)
+  await start($, clock)
+  expect(seen.runs.length).toBeGreaterThan(0)
+  const before = seen.runs.length
+  await clock.advance(60_000)
+  expect(seen.runs.length).toBeGreaterThan(before)
+  await submit($, DUMP)
+  expect(seen.entered.at(-1)).toContain('## Goal')
+})
+
+// A plugin above settles first, which aborts shipdeck's dispatch while its
+// prompt is still being shaped.
+const quitter = {
+  name: 'quitter',
+  tier: 'prepend' as const,
+  register(on: On) {
+    on('prompt.submit', async ($, e, next) => {
+      if (!e.text.includes('ABORTME')) return next(e)
+      void next(e).catch(() => {})
+      await $.clock.sleep(500)
+      return { text: e.text } as never
+    })
+  },
+}
+
+test('a prompt whose dispatch aborts while it is shaped does not sit out the 8 s wait', { plugins: [quitter] }, async ($, on) => {
+  const { clock, seen } = world(on, { modelDelays: [20_000, 3_000] })
+  await start($, clock)
+  const first = submit($, DUMP)
+  await clock.advance(1_000)
+  const second = submit($, `${DUMP} ABORTME`)
+  await clock.advance(4_000)
+  expect(seen.entered).toHaveLength(1)
+  await clock.advance(30_000)
+  await Promise.allSettled([first, second])
+})
+
