@@ -547,6 +547,17 @@ shipshape_legs_settled() { # <scratch>
 # Context pressure
 # ---------------------------------------------------------------------------
 
+# shipshape_seat_field <scratch> <key> -> the value shipshape-seat recorded.
+#
+# The seat file is key=value lines; the first '=' splits, so a path holding one
+# survives. Prints nothing for a missing file or key, and callers read nothing
+# as "no seat" — the solo defaults, which nudge early rather than late.
+shipshape_seat_field() {
+  local file="$1/seat" key="$2"
+  [ -f "$file" ] || return 0
+  sed -n "s/^${key}=//p" "$file" 2>/dev/null | head -1
+}
+
 # One number, one place it comes from. context-watch nudges from this, and any
 # later consumer asks the same helper, so two readers can never disagree about
 # how full the session is.

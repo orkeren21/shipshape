@@ -126,10 +126,15 @@ assert_contains "$nudge" "write-handoff" "the context nudge names write-handoff"
 assert_file "$skills/write-handoff/SKILL.md" "write-handoff exists to be invoked"
 assert_file "$skills/read-handoff/SKILL.md" "read-handoff exists for the successor"
 
-# The nudge is worded as an action rather than an alarm — surfacing context
-# pressure is itself what makes a model start winding down.
-assert_contains "$nudge" "continue working" "the nudge tells the session to keep going"
-assert_contains "$nudge" "do not stop" "and says so explicitly"
+# The nudge is worded as actions rather than an alarm — surfacing context
+# pressure is itself what makes a model start winding down — and without the
+# prohibitions a session echoes back ("I'm not suggesting a new session").
+assert_contains "$nudge" "carry on with what was already underway" "the nudge tells the session to keep going"
+assert_not_contains "$nudge" "do not stop" "in positive words, not a prohibition it would echo"
+
+# Its thresholds come from the seat shipshape-seat records, read through the
+# one shared reader session-start uses too.
+assert_contains "$nudge" "shipshape_seat_field" "the nudge reads the seat shipshape-seat records"
 
 # --- the escapes ledger is the tracked exception -----------------------------
 
