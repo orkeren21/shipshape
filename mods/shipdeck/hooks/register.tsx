@@ -256,7 +256,9 @@ export const register: Register = (on, options) => {
     const ran = await next(e)
     if (isOff) return ran
     try {
-      // A subagent's usage is its own context, not the session's.
+      // Only the session's own calls move its context, so only they refresh
+      // the gauge, as at turn end. (A subagent's hook reads the session's
+      // figure too, probed on 2.1.309; the call would change nothing.)
       if (!(e as { agentId?: string }).agentId) void refreshUsage($).catch(() => {})
       const tool = String(e.tool)
       if (tool === 'Bash' || tool === 'Agent' || tool === 'Task') void refreshDoctor($, false).catch(() => {})

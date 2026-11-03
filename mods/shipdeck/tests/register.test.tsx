@@ -43,6 +43,7 @@ type World = {
   dirs?: Record<string, string[]>
   env?: Record<string, string>
   denyCommands?: string[]
+  rootThrows?: boolean
 }
 
 // The engine beneath shipdeck: every $ call it makes, answered from memory.
@@ -57,7 +58,10 @@ function world(on: On, w: World = {}) {
   })
   on('session.usage', () => { seen.usage += 1; return { value: { startedAt: 0, context: { window: 1_000_000, tokens: 370_000, percent: 37 }, rateLimits: [] } } as never })
   on('session.id', () => ({ value: 'sess-1' }) as never)
-  on('session.root', () => ({ value: '/repo' }) as never)
+  on('session.root', () => {
+    if (w.rootThrows) throw new Error('no root')
+    return { value: '/session-root' } as never
+  })
   on('fs.stat', (_, e) => {
     const isDoctor = e.path.endsWith('/bin/shipshape-doctor')
     if (!isDoctor && !e.resolve) throw new Error(`ENOENT ${e.path}`)
@@ -493,6 +497,21 @@ test("a subagent's Bash reads the doctor in the session's root and leaves the ga
   await $.tool.call({ tool: 'Bash', agentId: 'agent-1', command: 'ls' } as never)
   await clock.settle()
   expect(seen.runs.length).toBe(runs + 1)
-  for (const run of seen.runs as { init?: { cwd?: string } }[]) expect(run.init?.cwd).toBe('/repo')
+  for (const run of seen.runs as { init?: { cwd?: string } }[]) expect(run.init?.cwd).toBe('/session-root')
   expect(seen.usage).toBe(usage)
+  // The session's own Bash does move the gauge.
+  await $.tool.call({ tool: 'Bash', command: 'ls' } as never)
+  await clock.settle()
+  expect(seen.usage).toBe(usage + 1)
+})
+
+test('a root the engine will not give still lets the doctor read', async ($, on) => {
+  const { clock, seen } = world(on, { rootThrows: true })
+  await start($, clock)
+  expect(seen.runs.length).toBeGreaterThan(0)
+  expect((seen.runs[0] as { init?: { cwd?: string } }).init?.cwd).toBeUndefined()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ type: 'Text', text: /evidence unavailable/ })).toBeUndefined()
+  expect(await band.find({ type: 'Text', text: /lane F2/ })).toBeDefined()
+  await band.unmount()
 })

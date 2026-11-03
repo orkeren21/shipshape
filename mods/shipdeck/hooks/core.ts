@@ -76,16 +76,21 @@ export async function findCore($: EngineInterface): Promise<{ root: string } | {
 // process error): the last good reading still stands. Output that is not a
 // format 1 reading is a core the mod cannot read, and clears it.
 //
-// The doctor finds its scratch from git in the folder it runs in. A reading
-// a subagent's tool call asks for would default to that subagent's folder (a
-// worktree of its own, for an isolated one), so every reading runs in the
-// session's project root, which only /cd or a worktree move changes.
+// The doctor finds its scratch from git in the folder it runs in. In an
+// isolated agent's hook, a run with no cwd lands in that agent's own
+// worktree, while $.session.root() is still the session's: the worktree, in
+// the main loop too. Probed on 2.1.309 in a desktop-launched worktree
+// session (--project-config-root at the main checkout), with a throwaway
+// mod recording both on every Bash call. So every reading runs in the
+// session's root, which /cd, a host's directory change or a worktree move
+// changes, and a shell cd does not. Without a root, the run takes the
+// frame's own folder rather than fail.
 export async function runDoctor($: EngineInterface, root: string): Promise<{ doctor: DoctorJson } | { note: string; isTransient: boolean }> {
   try {
     const sid = await $.session.id()
-    const dir = await $.session.root()
+    const dir = await $.session.root().catch(() => undefined)
     const ran = await $.process.run(['bash', `${root}/bin/shipshape-doctor`, '--json'], {
-      cwd: dir,
+      ...(dir ? { cwd: dir } : {}),
       env: { SHIPSHAPE_SESSION_ID: sid },
       timeoutMs: 10_000,
     })
