@@ -124,5 +124,5 @@ export function rowKey(typed: string): string {
 export function rowText(refined: string, fromWords: number, saved: string | null): string {
   const to = countWords(refined)
   const where = saved ? `; original in ${saved}` : ''
-  return `${HEADER}\n\n${refined}\n\n(refined by shipdeck from your dictation, ${fromWords} → ${to} words${where})`
+  return `${HEADER}\n\n${refined}\n\n(${fromWords} → ${to} words, from your dictation${where})`
 }

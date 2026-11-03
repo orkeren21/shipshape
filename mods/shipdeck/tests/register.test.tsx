@@ -37,6 +37,8 @@ type World = {
   doctor?: DoctorJson | string
   reply?: unknown
   replies?: unknown[]
+  modelDelays?: number[]
+  writeThrows?: boolean
   files?: Record<string, string>
   dirs?: Record<string, string[]>
   env?: Record<string, string>
@@ -67,15 +69,21 @@ function world(on: On, w: World = {}) {
     if (!names) throw new Error(`ENOENT ${e.path}`)
     return { value: names.map(name => ({ name, kind: 'file', size: 1, mtimeMs: 0, isLink: false })) } as never
   })
-  on('fs.write', (_, e) => { seen.writes.push(e.path); return { value: undefined } as never })
+  on('fs.write', (_, e) => {
+    if (w.writeThrows) throw new Error('EACCES')
+    seen.writes.push(e.path)
+    return { value: undefined } as never
+  })
   on('process.run', (_, e) => {
     seen.runs.push(e)
     const out = typeof w.doctor === 'string' ? w.doctor : JSON.stringify(w.doctor ?? doctorJson())
     return { value: { exitCode: 0, stdout: out, stderr: '' } } as never
   })
   let reply = 0
-  on('model.complete', (_, e) => {
+  on('model.complete', async (_, e) => {
+    const delay = w.modelDelays?.[seen.model.length] ?? 0
     seen.model.push(e)
+    if (delay) await clock.sleep(delay)
     const next = w.replies ? w.replies[reply++] : w.reply
     return { value: next ?? { isAnswered: true, text: REFINED, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } } as never
   })
@@ -153,7 +161,8 @@ test('a dictated dump reaches the session refined, reminders kept, and its row s
     const row = await $.ui.mount({ plugin: 'shipdeck', surface, component: 'UserMessage', requestId: `m-${surface}`, props: { text: DUMP, origin: { kind: 'composer' }, isExpanded: true } as never })
     const drawn = await row.find({ type: 'Text' })
     expect(drawn?.text).toContain('## Goal')
-    expect(drawn?.text).toContain('refined by shipdeck from your dictation')
+    expect(drawn?.text).toContain('Refined by shipdeck')
+    expect(drawn?.text).toContain('from your dictation')
     await row.unmount()
   }
   // A row that was not refined is drawn as the engine has it.
@@ -198,7 +207,7 @@ test('commands, hidden prompts, other sessions\' messages and short prompts are 
   await submit($, DUMP, 'sdk')
   await submit($, 'fix the flaky test please')
   await $.prompt.submit({ text: DUMP, origin: { kind: 'composer' }, wait: false, isMeta: true } as never)
-  await $.prompt.submit({ text: '', origin: { kind: 'composer' }, wait: false, command: { name: 'compact', args: DUMP } } as never)
+  await $.prompt.submit({ text: DUMP, origin: { kind: 'composer' }, wait: false, command: { name: 'compact', args: '' } } as never)
   expect(seen.model).toHaveLength(0)
   expect(seen.entered.slice(-6, -2)).toEqual([DUMP, DUMP, DUMP, 'fix the flaky test please'])
 })
@@ -303,3 +312,65 @@ test('an Architect gets the epic pane, and a lane finishing raises a notice', as
   await clock.advance(30_000)
   expect(seen.toasts.some(t => t.includes('f1 done'))).toBe(true)
 })
+
+// Ordering. A prompt waits for the one before it to enter, up to 8 s; the
+// refinement itself runs while it waits, since model time is free.
+const SHORT = 'and also fix the flaky test'
+const isRefined = (t: string) => t.includes('## Goal')
+
+async function isRefining($: Engine): Promise<boolean> {
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const hit = await band.find({ type: 'Text', text: /refining your prompt/ })
+  await band.unmount()
+  return hit !== undefined
+}
+
+test('a follow-up typed during a short refinement enters after it, and the spinner clears', async ($, on) => {
+  const { clock, seen } = world(on, { modelDelays: [3_000] })
+  await start($, clock, 'terminal')
+  const first = submit($, DUMP)
+  await clock.advance(1_000)
+  const second = submit($, SHORT)
+  await clock.settle()
+  expect(await isRefining($)).toBe(true)
+  await clock.advance(5_000)
+  await Promise.all([first, second])
+  expect(seen.entered.slice(-2).map(t => (isRefined(t) ? 'refined' : t))).toEqual(['refined', SHORT])
+  expect(await isRefining($)).toBe(false)
+})
+
+test('past 8 s the follow-up goes first, as documented', async ($, on) => {
+  const { clock, seen } = world(on, { modelDelays: [20_000] })
+  await start($, clock)
+  const first = submit($, DUMP)
+  await clock.advance(1_000)
+  const second = submit($, SHORT)
+  await clock.advance(25_000)
+  await Promise.all([first, second])
+  expect(seen.entered.slice(-2).map(t => (isRefined(t) ? 'refined' : t))).toEqual([SHORT, 'refined'])
+})
+
+test('a third prompt waits for the second, not just the first', async ($, on) => {
+  const { clock, seen } = world(on, { modelDelays: [5_000, 6_000] })
+  await start($, clock)
+  const first = submit($, DUMP)
+  await clock.advance(1_000)
+  const second = submit($, `${DUMP} and one more thing`)
+  await clock.advance(5_000)
+  const third = submit($, SHORT)
+  await clock.advance(20_000)
+  await Promise.all([first, second, third])
+  const tail = seen.entered.slice(-3)
+  expect(tail.map(isRefined)).toEqual([true, true, false])
+  expect(tail[1]).toContain('## Goal')
+  expect(tail[2]).toBe(SHORT)
+})
+
+test('a failed save sends the dictation as typed, with a toast', async ($, on) => {
+  const { clock, seen } = world(on, { writeThrows: true })
+  await start($, clock)
+  await submit($, DUMP)
+  expect(seen.entered.at(-1)).toBe(DUMP)
+  expect(seen.toasts.some(t => t.includes('could not be saved'))).toBe(true)
+})
+

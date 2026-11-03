@@ -74,6 +74,8 @@ Those headings are the rule the session follows: it asks the questions and
 offers the suggestions before it starts, which is the operator's chance to
 answer that the skill's last step gives them.
 
-Write in the language the operator dictated in. Keep their words where the
+Write in the language the operator dictated in, but keep the section
+headings exactly as written above, in English: the session and shipdeck
+read them by name. Keep their words where the
 words carry meaning, and add nothing they did not say outside the
 suggestions.

@@ -125,17 +125,17 @@ The desktop puts `<system-reminder>` blocks around the operator's words;
 the refiner sets them aside and puts them back verbatim. Sonnet may answer
 `KEEP`. That answer, a failed call, or a reply without a `Goal` section all
 send the prompt as typed. So does having nowhere to keep the original:
-with no core 0.5.0 there is no scratch path, and a dictation is never replaced
-by a refinement nothing recorded. Open questions and suggestions travel inside the
+with no core 0.5.0, or before the doctor's first reading, there is no scratch
+path, and a dictation is never replaced by a refinement nothing recorded. Open questions and suggestions travel inside the
 refined prompt, as its last two sections, whose headings tell the session to
 raise them before starting. `raw:` skips one prompt; `/refine off`, the
 `refine` option and `SHIPSHAPE_REFINE=0` turn the refiner off.
 
-A prompt typed while another is being refined waits for it, so it does not
-overtake the dump it follows, but only for 8 seconds. A hook's own budget is
-10 seconds, and waiting on another prompt's refinement counts against it
-(only `$` calls and `next` do not), so a refinement slower than that lets the
-follow-up through first.
+Operator prompts enter in the order typed: each is refined (or not) at once,
+then waits for the operator prompt before it to enter, but only for 8
+seconds. A hook's own budget is 10 seconds, and waiting on another prompt
+counts against it (only `$` calls and `next` do not), so a refinement slower
+than that lets a follow-up through first.
 
 **What the desktop app draws** was probed in a live session before the
 design was settled:

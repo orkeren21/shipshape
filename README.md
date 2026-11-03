@@ -115,7 +115,7 @@ same artifacts through `shipshape-doctor --json`.
   requirements, constraints and done-when, then the open questions and
   suggestions it must raise before starting. Your transcript row shows what
   the session received, and the original stays in the session's scratch
-  folder (with no core 0.5.0 to give it one, nothing is refined). Start a prompt with `raw:` to send it as typed, or run
+  folder (until a core 0.5.0 reading gives it one, nothing is refined). Start a prompt with `raw:` to send it as typed, or run
   `/refine off` to stop refining for the session.
 - **An Architect pane.** It lists the epic's roster, the lanes that
   reported done, and the latest rulings.

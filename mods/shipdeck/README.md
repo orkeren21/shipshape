@@ -51,7 +51,7 @@ refined prompt. Its open questions and suggestions come last, under headings
 that tell the session to raise them with you before it starts. Your
 transcript row shows what the session received. The original is saved under
 `.shipshape/<session>/shipdeck/` and is never shown to the session. If it
-cannot be saved (no core 0.5.0, so no scratch folder, or the write fails),
+cannot be saved (no core 0.5.0, no doctor reading yet, or the write fails),
 the prompt goes as typed: a dictation is never replaced by a refinement
 nothing recorded.
 
@@ -63,9 +63,9 @@ nothing recorded.
 - `/refine off` and `/refine on` switch it for the session; `/refine` alone
   says where it stands. `/refine on` cannot override the `refine` option or
   `SHIPSHAPE_REFINE=0`.
-- A prompt you type while one is being refined waits for it, for up to 8
-  seconds (a hook's budget is 10), so it normally enters after the dump it
-  follows.
+- A prompt you type while one is being refined waits for it to enter, for up
+  to 8 seconds (a hook's budget is 10); a refinement slower than that lets
+  your follow-up in first.
 
 Refining sends the dictated text to Sonnet through the session's own model
 client, the same way the session sends everything else.
