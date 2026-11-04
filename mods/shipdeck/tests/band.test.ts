@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { bandModel, ctxTone, describe as say, legs, parseDoctor, seatLabel } from '../hooks/band.ts'
 import { drawBand, measure } from '../hooks/draw.ts'
+import type { BandModel, Leg, LegState } from '../hooks/model.ts'
 import type { DoctorJson } from '../types'
 
 const NOW = Date.parse('2026-11-03T12:00:00Z')
@@ -139,7 +140,10 @@ describe('drawing', () => {
       expect(wide.source).toContain('>context<')
       expect(narrow.source).not.toContain('>context<')
       const long = bandModel({ isUnavailable: false, doctor: doctor({ seat: { role: 'lane', lane: 'auth-ui-refactor-two', epic: null, handoff: null } }), percent: 37, notices: [], refining: false, now: NOW })
-      const cut = drawBand(long, style, 200)
+      const full = drawBand(long, style, 2000)
+      const noWord = drawBand(long, style, full.width - 20)
+      expect(noWord.source).toContain('lane auth-ui-refactor-two')
+      const cut = drawBand(long, style, noWord.width - 20)
       expect(cut.source).toContain('lane auth-u…')
     })
 
@@ -191,5 +195,121 @@ describe('drawing', () => {
   test('the width table is in the right range for 12px system text', () => {
     expect(measure('review', 12)).toBeGreaterThan(30)
     expect(measure('review', 12)).toBeLessThan(45)
+  })
+})
+
+describe('a narrow band', () => {
+  const STYLES = ['github', 'linear'] as const
+  const STATES: LegState[] = ['ok', 'running', 'stale', 'fail', 'missing', 'waived']
+  const FLOOR = 240
+  const LONG_SEAT = 'lane payments-reconciliation-rework'
+  const NOTICES = ['F1 done', 'successor card waiting']
+
+  const legsOf = (review: LegState, ci: LegState, smoke: LegState): Leg[] => [
+    { name: 'review', state: review, ...(review === 'running' ? { age: '18m' } : {}) },
+    { name: 'CI', state: ci },
+    { name: 'smoke', state: smoke },
+  ]
+  const model = (over: Partial<BandModel> = {}): BandModel => ({ seat: 'lane F2', role: 'lane', ctx: 37, legs: legsOf('ok', 'ok', 'ok'), notices: [], refining: false, ...over })
+  // The words of a drawing, left to right.
+  const words = (source: string): string[] => [...source.matchAll(/<text [^>]*>([^<]*)<\/text>/g)].map(r => r[1] as string)
+  const LABEL = /^(review|R|CI|C|smoke|S)( · \S+)?$/
+  for (const style of STYLES) {
+    for (const width of [784, 464, 304, FLOOR]) {
+      test(`${style}: every state fits in ${width}px, every leg stays and a failure stays a failure`, () => {
+        const wrong: string[] = []
+        for (const review of STATES) for (const ci of STATES) for (const smoke of STATES) {
+          for (const seat of [null, LONG_SEAT]) for (const ctx of [null, 100]) for (const refining of [false, true]) for (const notices of [[], NOTICES]) {
+            const legs = legsOf(review, ci, smoke)
+            const d = drawBand(model({ seat, ctx, refining, notices, legs }), style, width)
+            const failed = legs.filter(l => l.state === 'fail').length
+            const label = `${review}/${ci}/${smoke} seat=${!!seat} ctx=${ctx} refining=${refining} notices=${notices.length}`
+            if (d.width > width) wrong.push(`${label}: ${d.width}px`)
+            if (words(d.source).filter(w => LABEL.test(w)).length !== 3) wrong.push(`${label}: a leg went`)
+            if ((d.source.match(/<polygon/g) ?? []).length !== failed) wrong.push(`${label}: a failure went`)
+          }
+        }
+        expect(wrong.slice(0, 5)).toEqual([])
+      })
+    }
+
+    test(`${style}: evidence unavailable says so at the floor`, () => {
+      const d = drawBand(model({ seat: LONG_SEAT, legs: null, refining: true, notices: NOTICES }), style, FLOOR)
+      expect(d.width).toBeLessThan(FLOOR + 1)
+      expect(words(d.source).some(w => w.endsWith('unavailable'))).toBe(true)
+    })
+
+    test(`${style}: a fourth leg fits at the floor too`, () => {
+      for (const state of STATES) {
+        const four = [...legsOf(state, state, state), { name: 'smoke', state } as Leg]
+        const d = drawBand(model({ seat: LONG_SEAT, legs: four, refining: true, notices: NOTICES }), style, FLOOR)
+        expect(d.width).toBeLessThan(FLOOR + 1)
+      }
+    })
+
+    test(`${style}: the order never changes, whatever goes`, () => {
+      const m = model({ seat: 'lane F2', refining: true, legs: legsOf('running', 'fail', 'waived'), notices: NOTICES })
+      const rank = (w: string) => (w.startsWith('refining') ? 0 : w.startsWith('lane') ? 1 : w.endsWith('%') ? 2 : w === 'context' ? 3 : LABEL.test(w) ? 4 : 5)
+      for (let width = 900; width >= FLOOR; width -= 8) {
+        const ranks = words(drawBand(m, style, width).source).map(rank)
+        expect(ranks).toEqual([...ranks].sort((a, b) => a - b))
+      }
+    })
+
+    test(`${style}: refining keeps its spinner when its words go`, () => {
+      const m = model({ refining: true })
+      const noWord = drawBand({ ...m, seat: null, refining: false }, style, 2000)
+      const d = drawBand({ ...m, seat: null }, style, noWord.width + 30)
+      expect(d.source).not.toContain('refining your prompt')
+      expect(d.source).toContain('class="spin"')
+    })
+
+    test(`${style}: notices become a count, and the words stay in the alt text`, () => {
+      const m = model({ notices: NOTICES })
+      const d = drawBand(m, style, drawBand({ ...m, notices: [] }, style, 2000).width + 20)
+      expect(d.source).not.toContain('F1 done')
+      expect(words(d.source)).toContain('2')
+      expect(d.alt).toContain('F1 done')
+      expect(d.alt).toContain('successor card waiting')
+    })
+
+    test(`${style}: passing legs go to initials first, and a failed leg keeps its word longest`, () => {
+      const m = model({ legs: legsOf('ok', 'fail', 'running') })
+      const seen: string[] = []
+      for (let width = 900; width >= FLOOR; width -= 4) {
+        const shape = words(drawBand(m, style, width).source).filter(w => LABEL.test(w)).join(' ')
+        if (seen.at(-1) !== shape) seen.push(shape)
+      }
+      expect(seen).toEqual(['review CI smoke', 'R CI smoke', 'R CI S'])
+    })
+
+    test(`${style}: a failed leg outlasts the seat`, () => {
+      const d = drawBand(model({ legs: legsOf('fail', 'fail', 'fail') }), style, FLOOR)
+      expect(words(d.source).filter(w => LABEL.test(w))).toEqual(['review', 'CI', 'smoke'])
+      expect(d.source).not.toContain('lane F2')
+    })
+
+    test(`${style}: a healthy band keeps its seat at the floor`, () => {
+      const d = drawBand(model(), style, FLOOR)
+      expect(d.source).toContain('lane F2')
+      expect(words(d.source).filter(w => LABEL.test(w))).toEqual(['R', 'C', 'S'])
+    })
+  }
+
+  test('github: the bar becomes the ring, which keeps the tone and the handoff zone', () => {
+    const m = model({ ctx: 72 })
+    const wide = drawBand(m, 'github', 2000)
+    expect(wide.source).toMatch(/<rect[^>]*class="f-track"/)
+    const d = drawBand(m, 'github', FLOOR)
+    expect(d.source).not.toMatch(/<rect[^>]*class="f-track"/)
+    expect(d.source).toMatch(/<circle[^>]*r="5\.75"[^>]*class="s-track"/)
+    expect(d.source).toMatch(/class="s-muted tick"/)
+    expect(d.source).toMatch(/class="f-warn"/)
+  })
+
+  test('the drawing is as wide as what is drawn, with no gap trailing it', () => {
+    const d = drawBand(model(), 'github', 2000)
+    const last = [...d.source.matchAll(/<text x="([\d.]+)"[^>]*textLength="([\d.]+)"/g)].at(-1)
+    expect(d.width).toBe(Math.ceil(Number(last?.[1]) + Number(last?.[2])))
   })
 })

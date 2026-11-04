@@ -196,8 +196,23 @@ mocks:
   between Linear chips.
 - 14px after the seat (GitHub), 12px when it is a chip.
 
-On a narrow band, the row first drops the word `context`, then cuts the seat
-to 12 characters with an ellipsis. Order never changes.
+On a narrow band the row gives things up one at a time, each on top of the
+last, until it fits. The narrowest band is 240px, and everything fits there:
+
+1. The word `context` goes.
+2. The seat is cut to 12 characters with an ellipsis.
+3. Refining keeps its spinner and loses its words.
+4. Notices become a count.
+5. GitHub's bar becomes Linear's ring, which keeps the tone and the handoff
+   zone. A percentage on its own would lose both.
+6. Legs that passed go to their initial (`R`, `C`, `S`).
+7. Legs that did not pass, but did not fail, do the same.
+8. The spacing tightens: GitHub's gaps and Linear's chips.
+9. The seat goes.
+10. A failed leg goes to its initial, and last of all a reviewer's age goes.
+
+Order never changes, every leg stays drawn at every width, and a failed leg
+keeps its corners to the end. What the row drops stays in the alt text.
 
 ## Elevation & Depth
 
@@ -254,17 +269,20 @@ A running reviewer older than 15 minutes shows its age beside the label
 
 GitHub: a green-tint pill with a 1px green edge. Linear: a green-tint chip
 with a dot. It reads `F1 done` or `successor card waiting`. At most two show,
-and they stay until the operator's next prompt.
+and they stay until the operator's next prompt. On a narrow band one mark
+holds their count instead.
 
 ### Refining
 
 While a prompt is with the refiner, a brass spinner and
-`refining your prompt…` lead the row.
+`refining your prompt…` lead the row. On a narrow band the spinner leads it
+alone.
 
 ### Unavailable
 
 When the core is missing, or gives no format 1 reading, a mist circle with
-a `?` and `evidence unavailable` take the legs' place. Before the doctor's
+a `?` and `evidence unavailable` take the legs' place (`unavailable`, on a
+narrow band). Before the doctor's
 first answer, and outside a git repo, no legs are drawn at all: nothing is
 not the same as unavailable.
 

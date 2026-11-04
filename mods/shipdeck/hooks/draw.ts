@@ -58,6 +58,8 @@ const CSS = `<style>${rules(LIGHT)}@media (prefers-color-scheme: dark){${rules(D
 class Row {
   parts: string[] = []
   x = 0
+  // Where the last mark stops: the row's width, with no gap trailing it.
+  end = 0
   constructor(readonly H: number) {}
   get cy() { return this.H / 2 }
   gap(n: number) { this.x += n; return this }
@@ -67,11 +69,13 @@ class Row {
     const y = this.cy + size * 0.36
     this.parts.push(`<text x="${this.x.toFixed(2)}" y="${y.toFixed(2)}" font-family="${FONT}" font-size="${size}" font-weight="${weight}" letter-spacing="${tracking}" textLength="${w.toFixed(2)}" lengthAdjust="spacing" class="f-${cls}" style="font-variant-numeric:tabular-nums">${xml(s)}</text>`)
     this.x += w
+    this.end = this.x
     return this
   }
   icon(w: number, draw: (x: number, cy: number) => string) {
     this.parts.push(draw(this.x, this.cy))
     this.x += w
+    this.end = this.x
     return this
   }
   box(build: (r: Row) => void, o: { padX?: number; h?: number; rx?: number; fill?: string; stroke?: string } = {}) {
@@ -81,13 +85,14 @@ class Row {
     this.x += padX
     build(this)
     this.x += padX
+    this.end = this.x
     const w = this.x - start
     const inset = stroke ? 0.5 : 0
     this.parts.splice(at, 0, `<rect x="${start + inset}" y="${this.cy - h / 2 + inset}" width="${w - 2 * inset}" height="${h - 2 * inset}" rx="${rx}" class="f-${fill}${stroke ? ` s-${stroke}` : ''}"${stroke ? ' stroke-width="1"' : ''}/>`)
     return this
   }
   svg(): { source: string; width: number; height: number } {
-    const W = Math.ceil(this.x)
+    const W = Math.ceil(this.end)
     return { source: `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${this.H}" viewBox="0 0 ${W} ${this.H}">${CSS}${this.parts.join('')}</svg>`, width: W, height: this.H }
   }
 }
@@ -131,6 +136,8 @@ function pie(cx: number, cy: number, r: number, frac: number, cls: string): stri
   const ey = cy + r * Math.sin(a)
   return `<path d="M${cx} ${cy}L${cx} ${cy - r}A${r} ${r} 0 ${frac > 0.5 ? 1 : 0} 1 ${ex.toFixed(2)} ${ey.toFixed(2)}Z" class="f-${cls}"/>`
 }
+const ring = (x: number, cy: number, pct: number, tone: Tone, first: number) =>
+  circle(x + 6.5, cy, 5.75, 'track', 1.5) + ringZone(x + 6.5, cy, 5.75, first / 100) + pie(x + 6.5, cy, 3.9, pct / 100, tone)
 function spinner(cx: number, cy: number, r: number, cls: string, sw: number): string {
   const c = 2 * Math.PI * r
   return circle(cx, cy, r, 'track', sw) +
@@ -161,69 +168,127 @@ function linearIcon(state: LegState, x: number, cy: number): string {
   return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" class="s-faint" stroke-width="1.5" stroke-dasharray="2.1 1.9"/>`
 }
 
-const legLabel = (l: Leg) => (l.age ? `${l.name} · ${l.age}` : l.name)
 const labelCls = (l: Leg) => (l.state === 'missing' || l.state === 'waived' ? 'muted' : 'text')
 
 // --- the two styles ---------------------------------------------------------------------
-type Fit = { showContextWord: boolean; seatMax: number }
+type Fit = {
+  showContextWord: boolean
+  // 0: no seat.
+  seatMax: number
+  showRefiningWord: boolean
+  showNoticeWords: boolean
+  isGaugeSmall: boolean
+  // Which legs still have their word, down to none.
+  labels: 'all' | 'not-passed' | 'failed' | 'none'
+  showAge: boolean
+  isTight: boolean
+}
+
+const WIDEST: Fit = { showContextWord: true, seatMax: 40, showRefiningWord: true, showNoticeWords: true, isGaugeSmall: false, labels: 'all', showAge: true, isTight: false }
+
+// What a narrow band gives up, in this order, each step on top of the last.
+// A word goes before the mark beside it, and a passing leg's word before one
+// that needs reading. The seat outlasts all of that, and only a failed leg's
+// word outlasts the seat. Every leg stays drawn at every width, and the alt
+// text keeps what the row dropped.
+const GIVEN_UP: Partial<Fit>[] = [
+  { showContextWord: false },
+  { seatMax: 12 },
+  { showRefiningWord: false },
+  { showNoticeWords: false },
+  { isGaugeSmall: true },
+  { labels: 'not-passed' },
+  { labels: 'failed' },
+  { isTight: true },
+  { seatMax: 0 },
+  { labels: 'none' },
+  { showAge: false },
+]
 
 function cut(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s
 }
 
+function keepsWord(l: Leg, fit: Fit): boolean {
+  if (fit.labels === 'all') return true
+  if (fit.labels === 'not-passed') return l.state !== 'ok'
+  return fit.labels === 'failed' && l.state === 'fail'
+}
+
+function legLabel(l: Leg, fit: Fit): string {
+  const name = keepsWord(l, fit) ? l.name : l.name.charAt(0).toUpperCase()
+  return l.age && fit.showAge ? `${name} · ${l.age}` : name
+}
+
+const unavailable = (fit: Fit) => (fit.labels === 'all' ? 'evidence unavailable' : 'unavailable')
+
+// The notices themselves, or how many there are. /shipdeck and the alt text
+// still say them.
+const noticeMarks = (m: BandModel, fit: Fit) =>
+  fit.showNoticeWords || m.notices.length === 0 ? m.notices : [`${m.notices.length}`]
+
 function github(m: BandModel, fit: Fit): Row {
   const R = new Row(26)
-  if (m.refining) R.icon(19, (x, cy) => spinner(x + 7, cy, 5.2, 'warn', 1.8)).text('refining your prompt…', { cls: 'muted' }).gap(16)
-  if (m.seat) R.text(cut(m.seat, fit.seatMax), { size: 12.5, weight: 600 }).gap(14)
+  const legGap = fit.isTight ? 6 : 14
+  const groupGap = fit.isTight ? 8 : 16
+  if (m.refining) {
+    R.icon(19, (x, cy) => spinner(x + 7, cy, 5.2, 'warn', 1.8))
+    if (fit.showRefiningWord) R.text('refining your prompt…', { cls: 'muted' }).gap(16)
+    else R.gap(fit.isTight ? 0 : 6)
+  }
+  if (m.seat && fit.seatMax) R.text(cut(m.seat, fit.seatMax), { size: 12.5, weight: 600 }).gap(fit.isTight ? 8 : 14)
   if (m.ctx !== null) {
     const pct = m.ctx
     const tone: Tone = ctxTone(pct, m.role)
     const [first] = handoffPoints(m.role)
     const bw = 56
-    R.icon(bw, (x, cy) => `<rect x="${x}" y="${cy - 3}" width="${bw}" height="6" rx="3" class="f-track"/><rect x="${x}" y="${cy - 3}" width="${Math.max(6, (bw * pct) / 100).toFixed(1)}" height="6" rx="3" class="f-${tone}"/>${barTick(x + (bw * first) / 100, cy)}`).gap(7)
+    if (fit.isGaugeSmall) R.icon(18, (x, cy) => ring(x, cy, pct, tone, first))
+    else R.icon(bw, (x, cy) => `<rect x="${x}" y="${cy - 3}" width="${bw}" height="6" rx="3" class="f-track"/><rect x="${x}" y="${cy - 3}" width="${Math.max(6, (bw * pct) / 100).toFixed(1)}" height="6" rx="3" class="f-${tone}"/>${barTick(x + (bw * first) / 100, cy)}`).gap(7)
     R.text(`${pct}%`, { weight: 500 })
     if (fit.showContextWord) R.gap(4).text('context', { cls: 'muted' })
-    R.gap(16)
+    R.gap(groupGap)
   }
-  if (m.legs) for (const l of m.legs) R.icon(19, (x, cy) => githubIcon(l.state, x, cy)).text(legLabel(l), { cls: labelCls(l) }).gap(14)
-  else R.icon(19, (x, cy) => unknown(x + 7, cy)).text('evidence unavailable', { cls: 'muted' }).gap(14)
-  for (const n of m.notices) R.gap(2).box(r => { r.text(n, { size: 11.5, weight: 500, cls: 'okText' }) }, { padX: 8, h: 20, rx: 10, fill: 'okTint', stroke: 'ok' }).gap(6)
+  if (m.legs) for (const l of m.legs) R.icon(19, (x, cy) => githubIcon(l.state, x, cy)).text(legLabel(l, fit), { cls: labelCls(l) }).gap(legGap)
+  else R.icon(19, (x, cy) => unknown(x + 7, cy)).text(unavailable(fit), { cls: 'muted' }).gap(legGap)
+  for (const n of noticeMarks(m, fit)) R.gap(fit.isTight ? 0 : 2).box(r => { r.text(n, { size: 11.5, weight: 500, cls: 'okText' }) }, { padX: 8, h: 20, rx: 10, fill: 'okTint', stroke: 'ok' }).gap(6)
   return R
 }
 
 function linear(m: BandModel, fit: Fit): Row {
   const R = new Row(26)
-  if (m.refining) R.box(r => { r.icon(18, (x, cy) => spinner(x + 6.5, cy, 5.5, 'warn', 1.6)).text('refining your prompt…', { cls: 'muted' }) }, { stroke: 'line' }).gap(6)
-  if (m.seat) R.box(r => { r.icon(14, (x, cy) => `<rect x="${x + 2}" y="${cy - 4}" width="8" height="8" rx="2.5" class="f-accent"/>`).text(cut(m.seat as string, fit.seatMax), { weight: 500 }) }, { stroke: 'line' }).gap(6)
+  const padX = fit.isTight ? 3 : 7
+  const chipGap = fit.isTight ? 3 : 6
+  const slot = fit.isTight ? 15 : 18
+  if (m.refining) R.box(r => {
+    r.icon(fit.showRefiningWord ? 18 : 13, (x, cy) => spinner(x + 6.5, cy, 5.5, 'warn', 1.6))
+    if (fit.showRefiningWord) r.text('refining your prompt…', { cls: 'muted' })
+  }, { padX, stroke: 'line' }).gap(chipGap)
+  if (m.seat && fit.seatMax) R.box(r => { r.icon(14, (x, cy) => `<rect x="${x + 2}" y="${cy - 4}" width="8" height="8" rx="2.5" class="f-accent"/>`).text(cut(m.seat as string, fit.seatMax), { weight: 500 }) }, { padX, stroke: 'line' }).gap(chipGap)
   if (m.ctx !== null) {
     const pct = m.ctx
     const tone: Tone = ctxTone(pct, m.role)
     const [first] = handoffPoints(m.role)
     R.box(r => {
-      r.icon(18, (x, cy) => circle(x + 6.5, cy, 5.75, 'track', 1.5) + ringZone(x + 6.5, cy, 5.75, first / 100) + pie(x + 6.5, cy, 3.9, pct / 100, tone)).text(`${pct}%`, { weight: 500 })
+      r.icon(slot, (x, cy) => ring(x, cy, pct, tone, first)).text(`${pct}%`, { weight: 500 })
       if (fit.showContextWord) r.gap(4).text('context', { cls: 'muted' })
-    }, { stroke: 'line' }).gap(6)
+    }, { padX, stroke: 'line' }).gap(chipGap)
   }
-  if (m.legs) for (const l of m.legs) R.box(r => { r.icon(18, (x, cy) => linearIcon(l.state, x, cy)).text(legLabel(l), { weight: 500, cls: labelCls(l) }) }, { stroke: 'line' }).gap(6)
-  else R.box(r => { r.icon(18, (x, cy) => unknown(x + 6.5, cy)).text('evidence unavailable', { weight: 500, cls: 'muted' }) }, { stroke: 'line' }).gap(6)
-  for (const n of m.notices) R.gap(4).box(r => { r.icon(14, (x, cy) => circle(x + 4, cy, 3, 'ok')).text(n, { weight: 500, cls: 'okText' }) }, { fill: 'okTint' }).gap(6)
+  if (m.legs) for (const l of m.legs) R.box(r => { r.icon(slot, (x, cy) => linearIcon(l.state, x, cy)).text(legLabel(l, fit), { weight: 500, cls: labelCls(l) }) }, { padX, stroke: 'line' }).gap(chipGap)
+  else R.box(r => { r.icon(slot, (x, cy) => unknown(x + 6.5, cy)).text(unavailable(fit), { weight: 500, cls: 'muted' }) }, { padX, stroke: 'line' }).gap(chipGap)
+  for (const n of noticeMarks(m, fit)) R.gap(fit.isTight ? 0 : 4).box(r => { r.icon(14, (x, cy) => circle(x + 4, cy, 3, 'ok')).text(n, { weight: 500, cls: 'okText' }) }, { padX, fill: 'okTint' }).gap(chipGap)
   return R
 }
 
 export type Drawing = { source: string; width: number; height: number; alt: string }
 
-// The row at the widest fit that is no wider than `maxWidth`: first the word
-// "context" goes, then the seat is cut. Order never changes.
+// The row at the widest fit that is no wider than `maxWidth`.
 export function drawBand(m: BandModel, style: Style, maxWidth: number): Drawing {
   const draw = style === 'linear' ? linear : github
-  const fits: Fit[] = [
-    { showContextWord: true, seatMax: 40 },
-    { showContextWord: false, seatMax: 40 },
-    { showContextWord: false, seatMax: 12 },
-  ]
-  let row = draw(m, fits[0] as Fit)
-  for (const fit of fits.slice(1)) {
-    if (row.x <= maxWidth) break
+  let fit = WIDEST
+  let row = draw(m, fit)
+  for (const step of GIVEN_UP) {
+    if (row.end <= maxWidth) break
+    fit = { ...fit, ...step }
     row = draw(m, fit)
   }
   return { ...row.svg(), alt: describe(m) }
