@@ -100,7 +100,7 @@ export type Reply = { kind: 'keep' } | { kind: 'refined'; text: string } | { kin
 
 export function checkReply(text: string): Reply {
   let t = text.trim()
-  if (t === 'KEEP') return { kind: 'keep' }
+  if (/^KEEP\.?$/.test(t)) return { kind: 'keep' }
   const fenced = /^```[a-z]*\n([\s\S]*?)\n```$/.exec(t)
   if (fenced) t = (fenced[1] ?? '').trim()
   // The reply opens with its Goal: a preamble ("Sure, here it is:") would

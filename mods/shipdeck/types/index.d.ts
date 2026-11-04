@@ -44,8 +44,9 @@ declare module 'claude-code' {
       refineOff: boolean
       rows: Shaped<RefinedRow[]>
       epic: Shaped<EpicView | null>
-      seen: Shaped<Record<string, boolean> | null>
+      seen: Shaped<{ epic: string; done: Record<string, boolean> } | null>
       warned: boolean
+      paneOpened: boolean
     }
   }
 }

@@ -11,16 +11,22 @@ import type { Elements, EngineInterface, PromptSubmitInput, PromptSubmitResult, 
 
 import type { DoctorJson } from '../types'
 import { bandModel, describe } from './band.ts'
-import { findCore, readEpic, runDoctor, saveOriginal } from './core.ts'
+import { appendTrace, findCore, readEpic, runDoctor, saveOriginal, upTo } from './core.ts'
 import { drawBand } from './draw.ts'
 import { doneMap, newlyDone } from './epic.ts'
 import type { Style } from './model.ts'
 import { paneTree } from './pane.tsx'
 import { assemble, checkReply, countWords, MAX_TOKENS, request, rowKey, rowText, score, skipPrefix, splitReminders } from './refine.ts'
-import type { Split } from './refine.ts'
+import type { Score, Split } from './refine.ts'
 import { terminalBand } from './terminal.tsx'
 
 const PANE = 'shipdeck-epic'
+// Long enough for the slowest honest reading: the core lookup's 15 s, then
+// the doctor's 10 s.
+const READ_BOUND_MS = 30_000
+// How long a session's first prompt waits for the doctor's first reading,
+// about 0.7 s on the desktop (measured: claude plugin list, then the doctor).
+const FIRST_READING_MS = 5_000
 
 // Change a shape tag when its value's fields change: it declines what an
 // earlier version stored, which outlives a reload.
@@ -36,23 +42,27 @@ const rows = atom({ plugin: 'shipdeck', key: 'rows' } as const, [], { shape: 'ro
 const epic = atom({ plugin: 'shipdeck', key: 'epic' } as const, null, { shape: 'epic-1' })
 // The roster's done map and the one-toast flag outlive a reload, so a lane
 // that finished during one still raises its notice, and the warning stays one.
-const seen = atom({ plugin: 'shipdeck', key: 'seen' } as const, null, { shape: 'seen-1' })
+// The map names its epic: another epic's first read only seeds.
+const seen = atom({ plugin: 'shipdeck', key: 'seen' } as const, null, { shape: 'seen-2' })
 const warned = atom({ plugin: 'shipdeck', key: 'warned' } as const, false)
+// So does the pane's one unasked opening: a pane closed by hand stays closed.
+const paneOpened = atom({ plugin: 'shipdeck', key: 'paneOpened' } as const, false)
 
 // Module state, rebuilt by session.start after a reload.
 let isOff = false
 let isRefineEnvOff = false
+let sessionDir = ''
 let coreRoot: string | null = null
 let coreNote: string | null = null
 let lastDoctor: DoctorJson | null = null
 let lastDoctorAt = 0
 let isReadingDoctor = false
 let isDoctorDirty = false
+let firstReading: Promise<void> = Promise.resolve()
 let transientFailures = 0
 let coreNoteAt = 0
 let hasToldNoScratch = false
 let isReadingEpic = false
-let paneOpened = false
 // Operator prompts enter in the order typed: each waits for the one before.
 // The wait is bounded at 8 s because a hook's own budget is 10 s and a wait
 // on another dispatch counts against it (only `$` calls and `next` do not).
@@ -60,6 +70,35 @@ let paneOpened = false
 let chain: Promise<void> = Promise.resolve()
 let queued = 0
 let instructions: string | null = null
+// Refiner decisions wait here until a reading names the scratch folder.
+let unwritten: string[] = []
+
+// The folder the gates read is the main loop's. It is read where it can be
+// seen, the session's own hooks and the clock; a subagent's frame answers
+// with that agent's folder. A call that gives nothing keeps the last one.
+async function trackFolder($: EngineInterface): Promise<void> {
+  const dir = await upTo($, $.session.cwd().catch(() => null), 2_000)
+  if (dir) sessionDir = dir
+}
+
+async function writeTrace($: EngineInterface): Promise<void> {
+  if (!lastDoctor || unwritten.length === 0) return
+  const lines = unwritten
+  unwritten = []
+  await appendTrace($, lastDoctor.scratch, lines)
+}
+
+// What the refiner decided, for tuning its heuristic in the field: counts and
+// reasons, never the operator's words.
+async function traceRefiner($: EngineInterface, decision: string): Promise<void> {
+  try {
+    const at = new Date(await $.clock.now()).toISOString().replace(/\.\d+Z$/, 'Z')
+    unwritten = [...unwritten, `${at} shipdeck refiner: ${decision}`].slice(-20)
+    await writeTrace($)
+  } catch {
+    // a trace must never cost what it records
+  }
+}
 
 async function refreshUsage($: EngineInterface): Promise<void> {
   const usage = await $.session.usage()
@@ -75,8 +114,8 @@ async function refreshEpic($: EngineInterface): Promise<void> {
     const view = await readEpic($, dir)
     if (!view) return
     const before = await read($, seen)
-    await update($, seen, () => doneMap(view.rows))
-    for (const lane of newlyDone(before, view.rows)) await addNotice($, `${lane} done`)
+    await update($, seen, () => ({ epic: dir, done: doneMap(view.rows) }))
+    for (const lane of newlyDone(before?.epic === dir ? before.done : null, view.rows)) await addNotice($, `${lane} done`)
     await update($, epic, () => view)
   } finally {
     isReadingEpic = false
@@ -94,23 +133,31 @@ async function refreshDoctor($: EngineInterface, isForced: boolean): Promise<voi
   }
   if (!isForced && now - lastDoctorAt < 5_000) return
   isReadingDoctor = true
+  let isFinished = false
   try {
-    await readDoctor($)
+    isFinished = (await upTo($, readDoctor($).then(() => true), READ_BOUND_MS)) === true
   } finally {
     isReadingDoctor = false
   }
   lastDoctorAt = await $.clock.now()
+  if (!isFinished) await readingFailed($, { note: 'shipshape-doctor did not answer', isTransient: true })
   if (isDoctorDirty) {
     isDoctorDirty = false
     await refreshDoctor($, true)
   }
 }
 
+// A main-loop frame can have moved the folder, so that is read first.
+async function readFromMainLoop($: EngineInterface, isForced: boolean): Promise<void> {
+  await trackFolder($)
+  await refreshDoctor($, isForced)
+}
+
 async function readDoctor($: EngineInterface): Promise<void> {
   // A core not found is looked for again every 10 minutes: the lookup may
   // have timed out, or the core been installed since.
   if (!coreRoot && (!coreNote || (await $.clock.now()) - coreNoteAt > 600_000)) {
-    const found = await findCore($)
+    const found = await findCore($, sessionDir)
     if ('root' in found) {
       coreRoot = found.root
       coreNote = null
@@ -119,28 +166,33 @@ async function readDoctor($: EngineInterface): Promise<void> {
       coreNoteAt = await $.clock.now()
     }
   }
-  const got = coreRoot ? await runDoctor($, coreRoot) : { note: coreNote ?? 'ShipShape core not found', isTransient: false }
+  const got = coreRoot ? await runDoctor($, coreRoot, sessionDir) : { note: coreNote ?? 'ShipShape core not found', isTransient: false }
   if ('doctor' in got) {
     transientFailures = 0
     lastDoctor = got.doctor
+    void writeTrace($).catch(() => {})
     await update($, doctor, prev => (JSON.stringify(prev) === JSON.stringify(got.doctor) ? prev : got.doctor))
     await update($, note, () => null)
-    if (got.doctor.seat?.role === 'architect' && !paneOpened) {
-      paneOpened = true
+    if (got.doctor.seat?.role === 'architect' && !(await read($, paneOpened))) {
+      await update($, paneOpened, () => true)
       void $.ui.open({ id: PANE, title: 'Epic' })
     }
     await refreshEpic($)
   } else {
-    // One failed run keeps the last good reading; a second in a row, or a
-    // core that cannot give one at all, clears it.
-    if (got.isTransient && lastDoctor && ++transientFailures < 2) return
-    lastDoctor = null
-    await update($, doctor, () => null)
-    await update($, note, () => got.note)
-    if (!(await read($, warned))) {
-      await update($, warned, () => true)
-      $.ui.toast(`shipdeck: ${got.note}; the band shows context only`, { timeoutMs: 8_000 })
-    }
+    await readingFailed($, got)
+  }
+}
+
+// One failed run keeps the last good reading; a second in a row, or a core
+// that cannot give one at all, clears it.
+async function readingFailed($: EngineInterface, got: { note: string; isTransient: boolean }): Promise<void> {
+  if (got.isTransient && lastDoctor && ++transientFailures < 2) return
+  lastDoctor = null
+  await update($, doctor, () => null)
+  await update($, note, () => got.note)
+  if (!(await read($, warned))) {
+    await update($, warned, () => true)
+    $.ui.toast(`shipdeck: ${got.note}; the band shows context only`, { timeoutMs: 8_000 })
   }
 }
 
@@ -156,31 +208,47 @@ async function addNotice($: EngineInterface, text: string): Promise<void> {
 
 // The text the session should receive, or null for the prompt as typed.
 // It never calls next: the hook enters the prompt once, in order.
-async function refinePrompt($: EngineInterface, split: Split, signal: AbortSignal): Promise<string | null> {
-  // The original must be kept before anything replaces it: with no scratch
-  // folder to keep it in (no core 0.5.0, or no reading yet), nothing is refined.
-  if (!lastDoctor) {
-    if (!hasToldNoScratch) {
-      hasToldNoScratch = true
-      $.ui.toast('shipdeck: refining waits for a ShipShape core reading (0.5.0 or later) to keep your original; your prompt went as typed')
-    }
-    return null
-  }
-  const scratch = lastDoctor.scratch
+async function refinePrompt($: EngineInterface, split: Split, scored: Score, isQueued: boolean, signal: AbortSignal): Promise<string | null> {
+  const tally = `${scored.words} words: ${scored.signals.join(', ')}`
   // A refused write must not cost the refinement, here or at the decrement.
   await update($, refining, n => n + 1).catch(() => {})
   try {
+    // A session's first prompt can beat the doctor's first reading. A prompt
+    // already queued skips this wait: it and the ordering wait share one
+    // hook's budget.
+    if (!lastDoctor && !isQueued) {
+      const from = await $.clock.now()
+      await upTo($, firstReading, FIRST_READING_MS)
+      const waited = (await $.clock.now()) - from
+      if (waited > 0) void traceRefiner($, `waited ${waited} ms for the first reading`)
+    }
+    // The original must be kept before anything replaces it: with no scratch
+    // folder to keep it in (no core 0.5.0, or no reading yet), nothing is refined.
+    if (!lastDoctor) {
+      void traceRefiner($, `no reading (${tally})`)
+      if ((await read($, note)) === null) {
+        $.ui.toast('shipdeck: the first reading has not landed, so there is nowhere to keep your original yet; your prompt went as typed')
+      } else if (!hasToldNoScratch) {
+        hasToldNoScratch = true
+        $.ui.toast('shipdeck: refining waits for a ShipShape core reading (0.5.0 or later) to keep your original; your prompt went as typed')
+      }
+      return null
+    }
+    const scratch = lastDoctor.scratch
     let answer
     try {
       if (instructions === null) instructions = await $.fs.read(`${$.plugin.root}/refiner/instructions.md`)
       answer = await $.model.complete(request(instructions, split.body), { signal })
     } catch {
+      void traceRefiner($, `could not run (${tally})`)
       $.ui.toast('shipdeck: the refiner could not run; your prompt went as typed')
       return null
     }
     if (!answer.isAnswered) {
       // Esc while refining is the operator's own doing, not news; a timeout is.
-      if (answer.reason !== 'aborted' || !signal.aborted) {
+      const isInterrupted = answer.reason === 'aborted' && signal.aborted
+      void traceRefiner($, `${isInterrupted ? 'interrupted' : `no answer: ${answer.reason}`} (${tally})`)
+      if (!isInterrupted) {
         const why = answer.reason === 'aborted' ? 'it timed out' : `it is unavailable (${answer.reason})`
         $.ui.toast(`shipdeck: the refiner did not answer (${why}); your prompt went as typed`)
       }
@@ -189,13 +257,18 @@ async function refinePrompt($: EngineInterface, split: Split, signal: AbortSigna
     // A reply cut at its token cap has lost its last sections, which are the
     // open questions and suggestions.
     const reply = answer.usage.output_tokens >= MAX_TOKENS ? { kind: 'bad' as const, reason: 'the refined prompt was cut short' } : checkReply(answer.text)
-    if (reply.kind === 'keep') return null
+    if (reply.kind === 'keep') {
+      void traceRefiner($, `kept (${tally})`)
+      return null
+    }
     if (reply.kind === 'bad') {
+      void traceRefiner($, `bad reply: ${reply.reason} (${tally})`)
       $.ui.toast(`shipdeck: ${reply.reason}; your prompt went as typed`)
       return null
     }
     const saved = await saveOriginal($, scratch, split.body, reply.text)
     if (!saved) {
+      void traceRefiner($, `original not saved (${tally})`)
       $.ui.toast('shipdeck: the original could not be saved, so your prompt went as typed')
       return null
     }
@@ -203,6 +276,7 @@ async function refinePrompt($: EngineInterface, split: Split, signal: AbortSigna
     const from = countWords(split.body)
     const key = rowKey(split.body)
     await update($, rows, list => [...list.filter(r => r.key !== key), { key, text: rowText(reply.text, from, shown) }].slice(-50))
+    void traceRefiner($, `refined (${tally}; to ${countWords(reply.text)} words)`)
     $.ui.toast(`shipdeck: prompt refined (${from} → ${countWords(reply.text)} words). Start a prompt with raw: to send it as typed.`)
     return assemble(split, reply.text)
   } finally {
@@ -213,15 +287,25 @@ async function refinePrompt($: EngineInterface, split: Split, signal: AbortSigna
 
 // What an operator prompt becomes: as typed (null), less a raw: prefix, or
 // refined.
-async function shapePrompt($: EngineInterface, text: string, isRefineOption: boolean, signal: AbortSignal): Promise<string | null> {
+async function shapePrompt($: EngineInterface, text: string, isRefineOption: boolean, isQueued: boolean, signal: AbortSignal): Promise<string | null> {
   const split = splitReminders(text)
-  if (!split) return null
+  if (!split) {
+    void traceRefiner($, 'skip a reminder inside the prompt')
+    return null
+  }
   // raw: is the operator's word whether or not refining is on.
   const skip = skipPrefix(split.body)
-  if (skip.isSkipped) return `${split.lead}${skip.body}${split.trail}`
+  if (skip.isSkipped) {
+    void traceRefiner($, `skip raw (${countWords(skip.body)} words)`)
+    return `${split.lead}${skip.body}${split.trail}`
+  }
   if (isRefineEnvOff || !isRefineOption || (await read($, refineOff))) return null
-  if (!score(split.body).isDump) return null
-  return refinePrompt($, split, signal)
+  const scored = score(split.body)
+  if (!scored.isDump) {
+    void traceRefiner($, `skip ${scored.skip ?? 'signals'} (${scored.words} words${scored.signals.length > 0 ? `: ${scored.signals.join(', ')}` : ''})`)
+    return null
+  }
+  return refinePrompt($, split, scored, isQueued, signal)
 }
 
 export const register: Register = (on, options) => {
@@ -232,6 +316,7 @@ export const register: Register = (on, options) => {
     isOff = (await $.env.get('SHIPSHAPE_SHIPDECK')) === '0'
     if (isOff) return next(e)
     isRefineEnvOff = (await $.env.get('SHIPSHAPE_REFINE')) === '0'
+    sessionDir = e.cwd
     // Fail open: a state call that throws must not leave the commands and
     // clocks unregistered.
     try {
@@ -244,8 +329,8 @@ export const register: Register = (on, options) => {
     // The readings and clocks start first: a refused command name (a
     // built-in's, or another plugin's) must cost that command alone.
     void refreshUsage($).catch(() => {})
-    void refreshDoctor($, true).catch(() => {})
-    $.clock.every(60_000, () => void refreshDoctor($, true).catch(() => {}))
+    firstReading = refreshDoctor($, true).catch(() => {})
+    $.clock.every(60_000, () => void readFromMainLoop($, true).catch(() => {}))
     $.clock.every(30_000, () => void refreshEpic($).catch(() => {}))
     await $.command.register({ name: 'refine', description: 'shipdeck: turn prompt refining on or off for this session', argumentHint: 'on | off' }).catch(() => {})
     await $.command.register({ name: 'shipdeck', description: 'shipdeck: open the epic pane, or switch the band style', argumentHint: 'style github | style linear' }).catch(() => {})
@@ -259,9 +344,12 @@ export const register: Register = (on, options) => {
       // Only the session's own calls move its context, so only they refresh
       // the gauge, as at turn end. (A subagent's hook reads the session's
       // figure too, probed on 2.1.309; the call would change nothing.)
-      if (!(e as { agentId?: string }).agentId) void refreshUsage($).catch(() => {})
+      const isSubagent = !!(e as { agentId?: string }).agentId
+      if (!isSubagent) void refreshUsage($).catch(() => {})
       const tool = String(e.tool)
-      if (tool === 'Bash' || tool === 'Agent' || tool === 'Task') void refreshDoctor($, false).catch(() => {})
+      const isEvidence = tool === 'Bash' || tool === 'Agent' || tool === 'Task'
+      if (!isSubagent) void (isEvidence ? readFromMainLoop($, false) : trackFolder($)).catch(() => {})
+      else if (isEvidence) void refreshDoctor($, false).catch(() => {})
       // The successor card write-handoff prescribes: proposed, briefed with read-handoff.
       if (tool.endsWith('__start_session') && ran.deny === undefined && ran.isError !== true) {
         const call = e as unknown as { initiation?: string; prompt?: string; background?: string }
@@ -279,9 +367,12 @@ export const register: Register = (on, options) => {
     if (!isOff) {
       // The session's own turn forces a reading; a subagent's end (a reviewer
       // finishing, say) asks for one, throttled.
-      const isSubagent = !!(e as { agentId?: string }).agentId
-      if (!isSubagent) void refreshUsage($).catch(() => {})
-      void refreshDoctor($, !isSubagent).catch(() => {})
+      if ((e as { agentId?: string }).agentId) {
+        void refreshDoctor($, false).catch(() => {})
+      } else {
+        void refreshUsage($).catch(() => {})
+        void readFromMainLoop($, true).catch(() => {})
+      }
     }
     return next(e)
   })
@@ -302,7 +393,7 @@ export const register: Register = (on, options) => {
       // dump is refined while the first is, and only entering waits.
       let text: string | null = null
       try {
-        text = await shapePrompt($, e.text, isRefineOption, next.signal)
+        text = await shapePrompt($, e.text, isRefineOption, mustWait, next.signal)
       } catch {
         text = null
       }
@@ -404,7 +495,7 @@ export const register: Register = (on, options) => {
     }
     const d = await read($, doctor)
     if (d?.seat?.role === 'architect') {
-      paneOpened = true
+      await update($, paneOpened, () => true)
       const opened = await $.ui.open({ id: PANE, title: 'Epic' })
       return { text: opened.isPlaced ? 'shipdeck: the epic pane is open.' : `shipdeck: the epic pane waits for room (${opened.reason}).` }
     }
