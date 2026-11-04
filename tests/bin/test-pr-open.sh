@@ -131,6 +131,8 @@ mkdir -p "$scratch"
 out="$("$pr_open" --title "cleared" 2>&1)"
 assert_contains "$out" "prose only" "a cleared plan is named as the PR opens"
 assert_not_contains "$out" "If it has a plan" "rather than asked about"
+printf 'path=/a/stub.md\n' > "$scratch/plan"
+assert_contains "$("$pr_open" --title "stub" 2>&1)" "prose only" "and it is named with another plan bound too"
 
 # --- gh missing --------------------------------------------------------------
 

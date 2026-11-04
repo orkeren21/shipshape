@@ -21,10 +21,10 @@
 # a diff overlap, because a skipped task touches nothing and would pass. --clear
 # drops the plan, and leaves a record the doctor and the done gate print, for the
 # same reason. Neither is refused: narrowing a plan is the session's call to make,
-# in the open. The record stands on the branch the plan was bound on, until that
-# same plan is bound again. Binding another plan prints the one it replaced and
-# keeps no state: the leg reads the plan live, so a session could reach the same
-# place by editing it, and DETAILS says so.
+# in the open. The latest clearing stands on the branch the plan was bound on,
+# until that same plan is bound again. Binding another plan prints the one it
+# replaced and keeps no state: the leg reads the plan live, so a session could
+# reach the same place by editing it, and DETAILS says so.
 #
 # Binding again keeps the time when the plan is the same one. A record counts
 # only from that time on: two plans in one session often share ids and commands,
@@ -188,14 +188,19 @@ if [ -n "$clear" ]; then
   fi
   # The record goes first: a plan dropped with nothing saying so is the failure
   # this exists for, and a clearing that did not happen is not one to report.
+  # A branch that was never named, or has since gone, cannot be stood on, so a
+  # record filed there would never be read.
   bound_branch="$(shipshape_plan_field "$scratch" branch)"
+  if [ -z "$bound_branch" ] || ! git show-ref --verify --quiet "refs/heads/$bound_branch"; then
+    bound_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  fi
   if ! record_cleared "$bound_path" "$bound_branch" "$reason" || ! rm -f "$file" 2>/dev/null; then
     rm -f "$(shipshape_plan_cleared_file "$scratch" "$bound_branch")" 2>/dev/null
     shipshape_trace_into "$scratch" plan "could not drop the binding at $file"
     refuse "could not write $file"
   fi
   shipshape_trace plan "cleared $bound_path: $reason"
-  printf 'cleared: %s\n' "$bound_path"
+  printf 'cleared: %s, recorded on %s\n' "$bound_path" "${bound_branch:-no branch}"
   exit 0
 fi
 

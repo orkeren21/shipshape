@@ -985,7 +985,7 @@ shipshape_plan_cleared_file() { # <scratch> [branch] (default: the current one)
   printf '%s/plan-cleared-%s\n' "$1" "$(printf '%s' "$branch" | cksum | cut -d' ' -f1)"
 }
 
-shipshape_plan_cleared() { # <scratch> -> "<plan> — <reason>", when this branch cleared one
+shipshape_plan_cleared() { # <scratch> -> "<plan> — <reason>", when one was cleared on this branch
   local file
   file="$(shipshape_plan_cleared_file "$1")"
   [ -f "$file" ] || return 0

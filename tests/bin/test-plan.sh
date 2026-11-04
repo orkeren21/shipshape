@@ -232,12 +232,31 @@ mv "$plan.moved" "$plan"
 
 "$plan_bin" "$plan" >/dev/null 2>&1
 git checkout -q -b from-elsewhere
-"$plan_bin" --clear --reason "dropped from another branch" >/dev/null 2>&1
+out="$("$plan_bin" --clear --reason "dropped from another branch" 2>&1)"
 assert_eq "0" "$?" "clearing from another branch succeeds"
+assert_contains "$out" "recorded on $branch" "and says where the record went, since it is not here"
 assert_not_contains "$("$plan_bin" 2>&1)" "dropped from another branch" "and says nothing here, where no plan was"
 git checkout -q "$branch"
 assert_contains "$("$plan_bin" 2>&1)" "dropped from another branch" "it is reported on the branch that lost the plan"
 rm -f "$cleared_file"
+
+# A branch that cannot be stood on would hold a record nobody reads, so that
+# clearing lands where the call came from.
+"$plan_bin" "$plan" >/dev/null 2>&1
+sed "s/^branch=.*/branch=/" "$file" > "$file.new" && mv "$file.new" "$file"
+"$plan_bin" --clear --reason "bound with no branch" >/dev/null 2>&1
+assert_contains "$(shipshape_plan_cleared "$scratch")" "bound with no branch" "a binding with no branch name clears where the call came from"
+rm -f "$cleared_file"
+
+git checkout -q -b doomed
+"$plan_bin" "$plan" >/dev/null 2>&1
+git branch -q -m doomed renamed
+"$plan_bin" --clear --reason "bound before a rename" >/dev/null 2>&1
+assert_contains "$(shipshape_plan_cleared "$scratch")" "bound before a rename" "so does one bound on a branch that has since been renamed"
+rm -f "$(shipshape_plan_cleared_file "$scratch")"
+git checkout -q "$branch"
+git branch -q -D renamed
+"$plan_bin" "$plan" >/dev/null 2>&1
 
 # --- binding another plan ------------------------------------------------------------
 #

@@ -78,12 +78,10 @@ shipshape_trace pr-open "armed done gate for $url ($record)"
 
 # The last moment a forgotten binding can be noticed: from here the plan leg
 # reads none, and none settles. On stderr, because stdout is gh's.
-if [ -z "$(shipshape_plan_field "$scratch" path)" ]; then
-  plan_cleared="$(shipshape_plan_cleared "$scratch")"
-  if [ -n "$plan_cleared" ]; then
-    echo "shipshape-pr-open: this branch's plan was cleared: $plan_cleared" >&2
-  else
-    echo "shipshape-pr-open: no plan is bound, so nothing holds this branch to one. If it has a plan: shipshape-plan <path>" >&2
-  fi
+plan_cleared="$(shipshape_plan_cleared "$scratch")"
+if [ -n "$plan_cleared" ]; then
+  echo "shipshape-pr-open: a plan was cleared on this branch: $plan_cleared" >&2
+elif [ -z "$(shipshape_plan_field "$scratch" path)" ]; then
+  echo "shipshape-pr-open: no plan is bound, so nothing holds this branch to one. If it has a plan: shipshape-plan <path>" >&2
 fi
 exit 0
