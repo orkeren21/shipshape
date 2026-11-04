@@ -258,7 +258,8 @@ A running reviewer older than 15 minutes shows its age beside the label
 - **Linear:** a 13px `track` ring with a slate zone from the seat's first
   threshold round to the top, like a tachometer's redline, and a pie in the
   state hue inside it, in a chip, then `37% context`. A tick across a ring
-  this small reads as a clock hand.
+  this small reads as a clock hand. `ring-before-after.png` shows it beside
+  the solid ring it replaced.
 
 ### Seat
 
