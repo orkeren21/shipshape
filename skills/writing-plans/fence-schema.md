@@ -21,7 +21,7 @@ about — nothing breaks, but nothing is checked either.
 | `files` | array of strings | the plan leg | The paths this task creates or changes, relative to the repo root. The leg compares their modification times against the verify record: edit one after verifying, and the record no longer describes the code. |
 | `interfaces` | string | people | What this task consumes from earlier tasks and produces for later ones. Not machine-read; it is how a later task knows what it can rely on. |
 | `acceptanceCriteria` | array of strings | people | What "done" means, in checkable terms. The self-review at the end of the task answers these one by one. |
-| `verifyCommand` | string | the plan leg | The command that proves this task works. Run it through `shipshape-verify <id> <command>`; the leg holds the pull request until a passing record exists. Omit it only for tasks with genuinely nothing to run: such a task counts as closed. |
+| `verifyCommand` | string | the plan leg | The command that proves this task works, on one line: a line break changes what a shell runs, so the bind refuses it. Run it through `shipshape-verify <id> <command>`; the leg holds the pull request until a passing record exists. Omit it only for tasks with genuinely nothing to run: such a task counts as closed. |
 | `blockedBy` | array of `id`s | `shipshape-plan`, at the bind | The tasks this one leans on, for the reader. Nothing gates on the order; the bind warns on an entry that is not a task in the plan. |
 | `satisfies` | array of strings | the finishing sweep | Design decision ids this task implements (`D-003`). At branch end the sweep diffs every decision id against the union of these; a decision with no task and no "already true, verified by X" line fails the sweep. |
 | `strictTDD` | boolean | the implementer | `true` means red-green-refactor. `false` means tests exist and pass. See `shipshape:test-driven-development`. |
@@ -33,7 +33,9 @@ in the same plan. The bind refuses two ids that sanitise to the same name, a
 fence it cannot parse, and a fence with no id.
 
 The leg reads the plan as it stands, so a task added after the binding counts
-and a task removed stops counting. A record counts only from the binding on:
+and a task removed stops counting. Under `--tasks` the scope is the list it
+names, so a task added later is left out until the plan is bound again with it.
+A record counts only from the binding on:
 two plans in one session often share ids and commands, and one plan's `t1` must
 not pass another's.
 

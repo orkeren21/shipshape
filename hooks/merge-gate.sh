@@ -186,7 +186,7 @@ fi
 
 if [ ! -f "$record" ]; then
   shipshape_trace merge-gate "denied: PR #$number has no obligation record in this session"
-  shipshape_emit_deny "PR #$number has no evidence record in this session, and an unevidenced merge is the incident this gate exists to stop. Earn the evidence here — dispatch the whole-branch reviewer, run shipshape-ci-watch $number, exercise the changed flows through shipshape-smoke — or hand the merge to the operator. \"Every pull request, no exception\" includes the ones somebody else opened.$unreasoned_note" \
+  shipshape_emit_deny "PR #$number has no evidence record in this session, and an unevidenced merge is the incident this gate exists to stop. Earn the evidence here — dispatch the whole-branch reviewer, run shipshape-ci-watch $number, exercise the changed flows through shipshape-smoke, verify any bound plan's tasks — or hand the merge to the operator. \"Every pull request, no exception\" includes the ones somebody else opened.$unreasoned_note" \
     merge_gate_foreign "shipshape-ci-watch $number"
   exit 0
 fi
@@ -228,7 +228,7 @@ if [ -n "$branch_head" ] && [ "$stamp_head" != "$branch_head" ]; then
     exit 0
   fi
   shipshape_trace merge-gate "denied: PR #$number stamp is stale ($stamp_head vs $branch_head)"
-  shipshape_emit_deny "PR #$number's evidence is stale: it was earned at $(printf '%s' "$stamp_head" | cut -c1-8), but $stamp_branch now points at $(printf '%s' "$branch_head" | cut -c1-8). A commit landed after the evidence, so the evidence no longer describes what would merge. Re-earn it — re-review if the diff changed, re-run CI, re-smoke — and the done gate will re-stamp.$unreasoned_note" \
+  shipshape_emit_deny "PR #$number's evidence is stale: it was earned at $(printf '%s' "$stamp_head" | cut -c1-8), but $stamp_branch now points at $(printf '%s' "$branch_head" | cut -c1-8). A commit landed after the evidence, so the evidence no longer describes what would merge. Re-earn it — re-review if the diff changed, re-run CI, re-smoke, run any bound plan's verify commands again — and the done gate will re-stamp.$unreasoned_note" \
     merge_gate_stale "shipshape-ci-watch $number"
   exit 0
 fi

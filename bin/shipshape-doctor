@@ -61,9 +61,13 @@ review_leg="$(leg_eval review review)"
 ci_leg="$(leg_eval ci ci)"
 smoke_leg="$(leg_eval smoke smoke)"
 # A waiver with no plan bound has nothing to waive, and the band draws this leg
-# only while a plan is bound.
-plan_leg="none|"
-[ -z "$(shipshape_plan_field "$scratch" path)" ] || plan_leg="$(leg_eval plan plan)"
+# only while a plan is bound. A plan that was cleared says so in the detail.
+if [ -n "$(shipshape_plan_field "$scratch" path)" ]; then
+  plan_leg="$(leg_eval plan plan)"
+else
+  plan_cleared="$(shipshape_plan_cleared "$scratch")"
+  plan_leg="none|${plan_cleared:+no plan bound; cleared: $plan_cleared}"
+fi
 merge_waived=""
 shipshape_waived merge_gate && merge_waived="yes"
 
@@ -192,7 +196,7 @@ $other_dirs
 SHIPSHAPE_OTHERS
   printf '  The usual causes: older ShipShape hooks, which ran from the main checkout\n'
   printf '  in a desktop-app worktree session, or a subagent working in a worktree of\n'
-  printf '  its own. Nothing there counts here: a leg that reads missing below is\n'
+  printf '  its own. Nothing there counts here: a leg that reads missing or open below is\n'
   printf '  produced again, in this checkout.\n'
   [ -n "$other_review" ] &&
     printf '  For the review, re-dispatch the whole-branch review rather than copying\n  its report.\n'
@@ -244,16 +248,27 @@ case "${plan_leg%%|*}" in
   unreadable)    leg_line plan "unreadable — $detail; fix it and bind again" ;;
 esac
 
-# One line per task the leg is not happy with, then what closes them. A left-out
-# task prints whatever the leg says: the reason is the part a reviewer reads.
+# One line per task the leg is not happy with, then what closes them, then what
+# the scope left out. Those print whatever the leg says, because the reason is
+# the part a reviewer reads, and a waived or misplaced plan does not change it.
+plan_task() { printf '           %-14s %s%s\n' "$1" "$2" "${3:+ — $3}"; }
 case "${plan_leg%%|*}" in
-  waived|none|elsewhere) : ;;
+  none) : ;;
   *)
-    shipshape_plan_rows "$scratch" | while IFS="$sep" read -r task task_state _ note; do
-      case "$task_state" in ok|closed) continue ;; esac
-      printf '           %-14s %s%s\n' "$task" "$task_state" "${note:+ — $note}"
+    plan_rows="$(shipshape_plan_rows "$scratch")"
+    case "${plan_leg%%|*}" in
+      waived|elsewhere) : ;;
+      *)
+        printf '%s\n' "$plan_rows" | while IFS="$sep" read -r task task_state _ note; do
+          case "$task_state" in ok|closed|left-out|'') continue ;; esac
+          plan_task "$task" "$task_state" "$note"
+        done
+        shipshape_plan_rerun "$scratch" | sed 's/^/           /'
+        ;;
+    esac
+    printf '%s\n' "$plan_rows" | while IFS="$sep" read -r task task_state _ note; do
+      [ "$task_state" != "left-out" ] || plan_task "$task" "$task_state" "$note"
     done
-    shipshape_plan_rerun "$scratch" | sed 's/^/           /'
     ;;
 esac
 

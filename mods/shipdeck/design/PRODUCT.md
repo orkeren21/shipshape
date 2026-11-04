@@ -12,8 +12,8 @@ solo session, a lane inside an epic, or the epic's Architect. Between
 prompts the operator glances at the band above the prompt box to answer
 three questions without asking the session: how full is this context, what
 seat is this, and is the branch's evidence (whole-branch review, CI, scoped
-smoke, any bound plan) done yet. The glance lasts about a second, often while dictating the
-next prompt or switching sessions.
+smoke, any bound plan) done yet. The glance lasts about a second, often
+while dictating the next prompt or switching sessions.
 
 ## Product Purpose
 

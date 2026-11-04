@@ -72,18 +72,22 @@ worst of them. It reads `elsewhere` when the plan was bound on another branch,
 because `git checkout -b` must not switch a gate off, and `unreadable` when the
 plan is gone, a fence no longer parses, or a `--tasks` id left the plan. With no
 plan bound it reads `none`, which settles it. A reasoned `skip_plan` line in
-`.shipshape.yaml` waives it. Tasks a `--tasks` scope leaves out show in the
-doctor and in the done gate's nudge, with the reason.
+`.shipshape.yaml` waives it. Tasks a `--tasks` scope leaves out, and a plan
+dropped with `--clear`, show in the doctor and from the done gate with the reason,
+in a one-time note if the branch is otherwise satisfied. A `verifyCommand` is one
+shell line, and one spanning lines is refused at the bind and reads `unreadable`:
+a line break changes what a shell runs. The bound scope is also handed to the
+whole-branch reviewer.
 
 **Retired in 0.6.0: the three task hooks.** `task-capture`,
 `task-completion-gate` and `blockedby-gate` read the fence from Claude Code's
 task events, and those tools are gated by model. In a default environment on
 2.1.317, Claude 5 models and Opus 4.8 had none of `TaskCreate`, `TaskUpdate`,
 `TaskList` or `TaskGet`; Sonnet 4.6 and Haiku 4.5 had them. The desktop app also
-tells its sessions to use its own plan tool instead. The hooks worked where they
-ran: with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` both gates refused as designed. Most
-sessions never ran them. The fence stayed, and moved to the plan file, which
-every session has. The check moved from each task's close to the finish, and it
+tells its sessions to use its own plan tool instead, as its system prompt reads.
+The hooks worked where they ran: with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` both gates
+refused as designed. Most sessions never ran them. The fence stayed, and moved to
+the plan file, which works on every model and surface. The check moved from each task's close to the finish, and it
 stayed strict about freshness: in three field plans, 20 of 23 tasks with a record
 had their files move at least twice after it, which is why one run may now cover
 many tasks. Ordering is no longer enforced. `blockedBy` is a reading aid, looked
@@ -214,7 +218,9 @@ The plan leg proves that the plan as it stands was verified, not that it is the
 plan that was agreed. The plan is the session's own gitignored file and the leg
 reads it live, so a task removed from it stops counting. Binding is the session's
 choice too: `shipshape-pr-open` names a missing binding on stderr, and nothing
-more.
+more. Narrowing a bound plan is reported, not refused. And `files` is only as good
+as what it lists: a file deleted after its record does not make the record stale,
+and a glob there is a name, not a pattern.
 
 ## The pipeline
 

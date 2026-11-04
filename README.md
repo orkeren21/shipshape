@@ -93,7 +93,7 @@ waits for you.
 
 A plan's tasks are held to it too. Claude Code's task tools are gated by model
 and the desktop app has its own plan tool, so the check reads the plan file,
-which every session has: `shipshape-plan` binds it, and the pull request is held
+which works everywhere: `shipshape-plan` binds it, and the pull request is held
 until every task has a passing, current `shipshape-verify` record. One run can
 cover many tasks, and a plan that spans pull requests binds the slice each one
 carries, with a reason a reviewer reads.

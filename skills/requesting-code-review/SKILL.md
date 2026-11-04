@@ -54,7 +54,8 @@ the cost from confident phrasing to knowing fabrication, and that is the whole
 claim.
 
 Hand the reviewer a package: the diff, what the change was meant to do, where
-to look. Never your session history — history puts the reviewer on your
+to look and, with a plan bound or cleared, what `shipshape-plan` prints, so a
+narrowed scope gets read. Never your session history — history puts the reviewer on your
 thought process instead of the work product, which is the one thing you needed
 a second reader for.
 

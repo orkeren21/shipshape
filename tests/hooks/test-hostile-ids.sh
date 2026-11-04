@@ -130,10 +130,8 @@ assert_eq "ok|" "$(leg)" "a literal glob in the file list matches nothing rather
 
 # --- a directory named in the file list --------------------------------------
 #
-# A fence may name a directory as what a task produces. Comparing against it
-# needs a reference point find can actually parse: -newermt is a GNU extension
-# that macOS rejects, and the error would be swallowed, leaving the staleness
-# check quietly doing nothing at all.
+# A fence may name a directory as what a task produces, and a file inside it
+# moving is the task's file moving.
 
 mkdir -p "$repo/generated"
 printf 'v1\n' > "$repo/generated/one.txt"

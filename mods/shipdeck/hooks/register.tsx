@@ -460,7 +460,7 @@ export const register: Register = (on, options) => {
       // 8px a column is an estimate that errs narrow: about 752px against 664
       // at 85 columns, the one width measured, so the slope is unknown. The row
       // fits this figure, and past its real width the app scales the drawing
-      // down to fit, with no clip or scroll.
+      // down to fit, with no clip or scroll (seen in the desktop app, 2026-11-04).
       const drawing = drawBand(model, style, Math.max(240, (e.props.bodyColumns || 100) * 8 - 16))
       row = <Svg key="shipdeck-band" source={drawing.source} width={drawing.width} height={drawing.height} alt={drawing.alt} />
     } else {

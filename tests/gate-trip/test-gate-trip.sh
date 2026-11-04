@@ -235,6 +235,12 @@ assert_eq "1" "$?" "TRIPPED: narrowing the scope with no reason is refused"
 assert_eq "1" "$?" "TRIPPED: dropping the plan with no reason is refused"
 assert_file "$scratch/plan" "and the binding stands"
 
+# Skip: a fence whose command holds a line break. As a shell line it fails, and
+# flattened into a re-run line the same words pass, so it is refused at the bind.
+printf '```json:metadata\n{"id":"g1x","verifyCommand":"true\\nfalse"}\n```\n' > "$work/multi.md"
+(cd "$repo" && shipshape-plan "$work/multi.md" >/dev/null 2>&1)
+assert_eq "1" "$?" "TRIPPED: a verifyCommand spanning lines is refused at the bind"
+
 # The honest path: one run through the wrapper covers both tasks.
 : > "$repo/suite.passes"
 (cd "$repo" && shipshape-verify g1a,g1b 'test -f suite.passes' >/dev/null 2>&1)
@@ -248,7 +254,7 @@ printf 'edited after the verify\n' >> "$repo/src.txt"
 out="$(stop "$CLAIM")"
 assert_eq "block" "$(hook_field "$out" decision)" \
   "TRIPPED: editing a task's file after verifying makes its record stale"
-assert_contains "$(hook_field "$out" reason)" "g1a, g1b" "and the refusal names the tasks"
+assert_contains "$(hook_field "$out" reason)" "g1a (src.txt)" "and the refusal names the task and the file"
 
 (cd "$repo" && shipshape-verify g1a,g1b 'test -f suite.passes' >/dev/null 2>&1)
 out="$(stop "$CLAIM")"

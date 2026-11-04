@@ -10,14 +10,18 @@
 # on the leg reads the fences in that file beside this session's
 # shipshape-verify records, and the done gate and the merge gate hold the pull
 # request until every task in scope has a passing, current record. It reads the
-# plan because the plan is what every session has: the task tools are gated by
-# model, and the desktop app's own task list leaves nothing a hook can read.
+# plan file because that works on every model and surface: Claude Code's task
+# tools are gated by model (measured on 2.1.317), and the desktop app has its own
+# task list.
 #
 # --tasks is how a plan spans pull requests. The tasks left out are listed with
 # the reason wherever the leg is reported, so narrowing the scope is something a
 # reviewer reads rather than something the leg quietly stopped checking. An
 # explicit list, not a prefix, because a plan's second PR is rarely one, and not
-# a diff overlap, because a skipped task touches nothing and would pass.
+# a diff overlap, because a skipped task touches nothing and would pass. --clear
+# drops the plan, and leaves a record the doctor and the done gate print, for the
+# same reason. Neither is refused: narrowing a plan is the session's call to make,
+# in the open.
 #
 # Binding again keeps the time when the plan is the same one. A record counts
 # only from that time on: two plans in one session often share ids and commands,
@@ -61,22 +65,30 @@ needs_reason() { # <what the reason is for>
 
 scratch="$(shipshape_scratch_path)"
 file="$scratch/plan"
+cleared="$scratch/plan-cleared"
 
 report() {
-  local bound_path leg state detail rows rerun us id row_state row_detail
+  local bound_path scope leg state detail rows rerun us id row_state row_detail
   bound_path="$(shipshape_plan_field "$scratch" path)"
   if [ -z "$bound_path" ]; then
     printf 'no plan bound for this session\n'
+    [ ! -f "$cleared" ] || printf 'cleared: %s\n' "$(shipshape_plan_cleared "$scratch")"
     return 0
   fi
-  leg="$(shipshape_leg_plan "$scratch")"
+  if shipshape_waived plan; then
+    leg="waived|$(shipshape_waiver_line plan)"
+  else
+    leg="$(shipshape_leg_plan "$scratch")"
+  fi
   state="${leg%%|*}"
   detail="${leg#*|}"
   printf 'plan: %s\n' "$bound_path"
+  scope="$(shipshape_plan_field "$scratch" tasks)"
+  [ -z "$scope" ] || printf 'scope: %s — %s\n' "$scope" "$(shipshape_plan_field "$scratch" reason)"
   printf 'leg: %s%s\n' "$state" "${detail:+ — $detail}"
   if [ "$state" = "elsewhere" ]; then
     printf 'bind it here, or drop it:\n'
-    printf '  shipshape-plan %s\n' "$bound_path"
+    printf '  %s\n' "$(shipshape_plan_rebind "$scratch")"
     printf '  shipshape-plan --clear --reason <why>\n'
     return 0
   fi
@@ -88,9 +100,10 @@ report() {
   done <<SHIPSHAPE_ROWS
 $rows
 SHIPSHAPE_ROWS
+  [ "$state" != "waived" ] || return 0
   rerun="$(shipshape_plan_rerun "$scratch")"
   if [ -n "$rerun" ]; then
-    printf 'to verify:\n'
+    printf 'to verify, each command quoted whole:\n'
     printf '%s\n' "$rerun" | sed 's/^/  /'
   fi
 }
@@ -156,8 +169,16 @@ if [ -n "$clear" ]; then
     printf 'no plan bound for this session\n'
     exit 0
   fi
-  if ! rm -f "$file" 2>/dev/null; then
-    shipshape_trace plan "could not drop the binding at $file"
+  # The record goes first: a plan dropped with nothing saying so is the failure
+  # this exists for, and a clearing that did not happen is not one to report.
+  tmp="$cleared.tmp.$$"
+  if ! {
+    printf 'path=%s\n' "$bound_path"
+    printf 'reason=%s\n' "$reason"
+    printf 'epoch=%s\n' "$(date -u +%s)"
+  } > "$tmp" 2>/dev/null || ! mv -f "$tmp" "$cleared" 2>/dev/null || ! rm -f "$file" 2>/dev/null; then
+    rm -f "$tmp" "$cleared" 2>/dev/null
+    shipshape_trace_into "$scratch" plan "could not drop the binding at $file"
     refuse "could not write $file"
   fi
   shipshape_trace plan "cleared $bound_path: $reason"
@@ -191,6 +212,9 @@ while IFS= read -r fence; do
     *",$id,"*) refuse "two fences in $path share the id $id once sanitised" ;;
   esac
   known="$known$id,"
+  case "$(shipshape_json_get "$fence" verifyCommand)" in
+    *$'\n'*|*$'\r'*) refuse "$id's verifyCommand spans lines: it has to be one shell line, because a line break changes what runs" ;;
+  esac
 done <<SHIPSHAPE_FENCES
 $fences
 SHIPSHAPE_FENCES
@@ -213,17 +237,22 @@ done <<SHIPSHAPE_FENCES
 $fences
 SHIPSHAPE_FENCES
 
+# Entry by entry, not through shipshape_id_list: an entry that sanitises to
+# nothing has to be refused, or the scope bound is narrower than the one typed.
 scope=""
 if [ -n "$scoped" ]; then
-  wanted="$(shipshape_id_list "$tasks")"
-  [ -n "$wanted" ] || refuse "--tasks names no task"
-  for id in $wanted; do
+  while IFS= read -r entry; do
+    [ -n "${entry//[[:space:]]/}" ] || continue
+    id="$(shipshape_safe_id "$entry" "")"
     case "$known" in
       *",$id,"*) : ;;
-      *) refuse "--tasks names $id, which is not in $path" ;;
+      *) refuse "--tasks names $entry, which is not in $path" ;;
     esac
     scope="$scope${scope:+,}$id"
-  done
+  done <<SHIPSHAPE_TASKS
+$(printf '%s' "$tasks" | tr ',' '\n')
+SHIPSHAPE_TASKS
+  [ -n "$scope" ] || refuse "--tasks names no task"
 fi
 
 # --- write -------------------------------------------------------------------
@@ -249,6 +278,7 @@ if ! {
   shipshape_trace plan "could not write the binding at $file"
   refuse "could not write $file"
 fi
+rm -f "$cleared" 2>/dev/null
 
 shipshape_trace plan "bound $path on ${branch:-no branch}${scope:+, tasks $scope: $reason}"
 report

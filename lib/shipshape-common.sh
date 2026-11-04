@@ -62,6 +62,12 @@ shipshape_safe_id() {
   printf '%s\n' "$id"
 }
 
+# Quote text for a line printed to paste, so it reaches the command whole.
+shipshape_shell_quote() { # <text>
+  local q="'" quoted="'\\''"
+  printf "'%s'" "${1//$q/$quoted}"
+}
+
 # shipshape_id_list t1,t2 -> one safe id per line, dropping entries that leave
 # nothing. Safe ids hold no space or glob character, so a caller may word-split
 # this; the comma is what shipshape-verify and --tasks agree a list is.
@@ -684,8 +690,8 @@ shipshape_leg_smoke() { # <scratch>
 # shipshape-plan binds a plan file to the session, and the fences in that file
 # say what verifying each task means. The leg reads the plan live and the
 # session's verify records beside it, and reads nothing else: a task's state in
-# whatever task list the surface offers is a display, and the task tools do not
-# exist at all on most models.
+# whatever task list the surface offers is a display, and Claude Code's task
+# tools are gated by model (on 2.1.317, Claude 5 models and Opus 4.8 have none).
 #
 # The binding is key=value lines at <scratch>/plan: path, branch, tasks, reason,
 # epoch. Written by shipshape-plan alone.
@@ -716,8 +722,10 @@ shipshape_plan_fences() { # <plan>
   ' "$1" 2>/dev/null
 }
 
-# A fence and a record agree on a command up to whitespace: the fence is
-# hand-written JSON, and the record is what the caller's quoting left.
+# A fence and a record agree on a command up to spaces: the fence is hand-written
+# JSON, and the record is what the caller's quoting left. For comparing only. A
+# command is printed as the fence wrote it, because two spaces inside quotes are
+# not one, and a pasted line has to run what the fence asked for.
 shipshape_plan_normal() { # <text>
   local text
   text="$(printf '%s' "$1" | LC_ALL=C tr -s '[:space:]' ' ')"
@@ -742,9 +750,10 @@ _shipshape_plan_row() { # <id> <state> <command> <detail>
 #
 # Against the task's own files, not HEAD: the normal order is verify, then
 # commit, so a HEAD comparison would reject good work. A directory is compared
-# against the record itself, because find's -newermt is a GNU extension macOS
-# rejects, and the failure would be swallowed. Read line by line, so a path
-# holding a space stays one path and a * stays a name.
+# against the record itself, less the session's scratch and git's folder:
+# verifying writes to the first, so a task naming the repo root could never
+# close. Read line by line, so a path holding a space stays one path and a *
+# stays a name.
 _shipshape_plan_moved() { # <fence> <record> <record epoch> <root>
   local record="$2" epoch="$3" root="$4" entry target newest mtime
   shipshape_json_array "$1" files | while IFS= read -r entry; do
@@ -754,7 +763,7 @@ _shipshape_plan_moved() { # <fence> <record> <record epoch> <root>
       *) target="$root/$entry" ;;
     esac
     if [ -d "$target" ]; then
-      newest="$(find "$target" -type f -newer "$record" 2>/dev/null | head -1)"
+      newest="$(find "$target" -type f -newer "$record" ! -path '*/.shipshape/*' ! -path '*/.git/*' 2>/dev/null | head -1)"
       [ -n "$newest" ] && printf '%s, ' "${newest#"$root"/}"
     elif [ -f "$target" ]; then
       mtime="$(shipshape_mtime "$target")" || continue
@@ -764,7 +773,7 @@ _shipshape_plan_moved() { # <fence> <record> <record epoch> <root>
 }
 
 # shipshape_plan_rows <scratch> -> one row per fence, split on the ASCII unit
-# separator: id, state, normalised command, detail. An empty field survives
+# separator: id, state, the fence's command, detail. An empty field survives
 # that split; a tab is IFS whitespace, and would collapse it.
 #
 # The one reader. The leg aggregates this, and shipshape-plan, the doctor and
@@ -779,14 +788,19 @@ _shipshape_plan_moved() { # <fence> <record> <record epoch> <root>
 #   failed         the last run exited non-zero
 #   stale          a file of the task's changed since; the detail names it
 #   ok             closed on a passing, current record
-#   unreadable     the plan, a fence or a --tasks id cannot be read
+#   unreadable     the plan, a fence or a --tasks id cannot be read, two fences
+#                  share an id, or a verifyCommand spans lines
 #
 # The epoch is the binding's. Two plans in one session often share ids and
 # commands, so a record from before the binding can be another plan's t1, and
 # reading it would pass a task nobody built.
+#
+# A verifyCommand is one shell line. A line break is not whitespace to a shell:
+# "true\nfalse" exits 1 and "true false" exits 0, so a command read past one could
+# pass a failing task.
 shipshape_plan_rows() { # <scratch>
   local scratch="$1" path tasks reason bound root fences
-  local fence raw id command record epoch recorded status moved index=0 seen=","
+  local fence id command wanted record epoch recorded status moved index=0 seen=","
   path="$(shipshape_plan_field "$scratch" path)"
   [ -n "$path" ] || return 0
   if [ ! -f "$path" ]; then
@@ -807,24 +821,36 @@ shipshape_plan_rows() { # <scratch>
   printf '%s\n' "$fences" | {
     while IFS= read -r fence; do
       index=$((index + 1))
-      raw="$(shipshape_json_get "$fence" id)"
-      id="$(shipshape_safe_id "$raw" "")"
+      id="$(shipshape_safe_id "$(shipshape_json_get "$fence" id)" "")"
       if [ -z "$id" ]; then
         _shipshape_plan_row "fence-$index" unreadable "" "it does not parse, or has no usable id"
         continue
       fi
+      case "$seen" in
+        *",$id,"*)
+          _shipshape_plan_row "$id" unreadable "" "two fences share this id once sanitised"
+          continue
+          ;;
+      esac
       seen="$seen$id,"
-      command="$(shipshape_plan_normal "$(shipshape_json_get "$fence" verifyCommand)")"
       if [ -n "$tasks" ]; then
         case ",$tasks," in
           *",$id,"*) : ;;
           *)
-            _shipshape_plan_row "$id" left-out "$command" "$reason"
+            _shipshape_plan_row "$id" left-out "" "$reason"
             continue
             ;;
         esac
       fi
-      if [ -z "$command" ]; then
+      command="$(shipshape_json_get "$fence" verifyCommand)"
+      case "$command" in
+        *$'\n'* | *$'\r'*)
+          _shipshape_plan_row "$id" unreadable "" "its verifyCommand spans lines, and has to be one shell line"
+          continue
+          ;;
+      esac
+      wanted="$(shipshape_plan_normal "$command")"
+      if [ -z "$wanted" ]; then
         _shipshape_plan_row "$id" closed "" ""
         continue
       fi
@@ -845,7 +871,7 @@ shipshape_plan_rows() { # <scratch>
         continue
       fi
       recorded="$(shipshape_plan_normal "$(_shipshape_record_field "$record" command)")"
-      if [ "$recorded" != "$command" ]; then
+      if [ "$recorded" != "$wanted" ]; then
         _shipshape_plan_row "$id" wrong-command "$command" "recorded: ${recorded:-nothing}"
         continue
       fi
@@ -920,7 +946,7 @@ shipshape_leg_plan() { # <scratch>
 # suite, and one run covers them all. Quoted so the line reaches shipshape-verify
 # whole: a command split at its && records only the first half.
 shipshape_plan_rerun() { # <scratch>
-  local us ids command q="'" quoted="'\\''"
+  local us ids command
   us="$(printf '\037')"
   shipshape_plan_rows "$1" | awk -F"$us" -v OFS="$us" '
     $2 == "open" || $2 == "stale" || $2 == "failed" || $2 == "wrong-command" {
@@ -928,8 +954,27 @@ shipshape_plan_rerun() { # <scratch>
     }
     END { for (i = 1; i <= n; i++) print tasks[order[i]], order[i] }
   ' | while IFS="$us" read -r ids command; do
-    printf "shipshape-verify %s '%s'\n" "$ids" "${command//$q/$quoted}"
+    printf 'shipshape-verify %s %s\n' "$ids" "$(shipshape_shell_quote "$command")"
   done
+}
+
+# shipshape_plan_rebind <scratch> -> the line that binds this plan again, whole:
+# a remedy printed without the scope would widen it when pasted.
+shipshape_plan_rebind() { # <scratch>
+  local tasks line
+  line="shipshape-plan $(shipshape_shell_quote "$(shipshape_plan_field "$1" path)")"
+  tasks="$(shipshape_plan_field "$1" tasks)"
+  [ -z "$tasks" ] ||
+    line="$line --tasks $tasks --reason $(shipshape_shell_quote "$(shipshape_plan_field "$1" reason)")"
+  printf '%s\n' "$line"
+}
+
+# --clear leaves a record, so dropping a plan is something a reader meets rather
+# than a binding that quietly stopped existing. The next bind replaces it.
+shipshape_plan_cleared() { # <scratch> -> "<plan> — <reason>", when one was cleared
+  local file="$1/plan-cleared"
+  [ -f "$file" ] || return 0
+  printf '%s — %s\n' "$(sed -n 's/^path=//p' "$file" | head -1)" "$(sed -n 's/^reason=//p' "$file" | head -1)"
 }
 
 # 0 when every leg is ok or carries a reasoned waiver — the same judgment the

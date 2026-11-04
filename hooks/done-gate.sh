@@ -98,7 +98,7 @@ while IFS= read -r record_file; do
     fi
     if [ "$settled" = no ]; then
       rec_url="$(record_field "$record_file" url)"
-      elsewhere_lines="${elsewhere_lines}  - PR #$rec_number (${rec_url:-url unrecorded}) from branch $rec_branch — opened this session and still owing its evidence set (review, CI, smoke, plan).
+      elsewhere_lines="${elsewhere_lines}  - PR #$rec_number (${rec_url:-url unrecorded}) from branch $rec_branch — opened this session and still owing its evidence set (review, CI, smoke, any bound plan).
 "
     fi
   else
@@ -214,11 +214,18 @@ fi
 # --- the plan ----------------------------------------------------------------
 #
 # The leg gives one word for the whole plan. The re-run lines cover every task
-# a run would close, so one paste settles them, whatever the worst one was.
+# a run would close, so one paste settles them, whatever the worst one was. A
+# waiver with no plan bound has nothing to waive, so it is not listed as active.
 
+us="$(printf '\037')"
 plan_rerun() { shipshape_plan_rerun "$scratch" | sed 's/^/      /'; }
+plan_moved() {
+  shipshape_plan_rows "$scratch" | awk -F"$us" '
+    $2 == "stale" { printf "%s%s (%s)", comma, $1, $4; comma = ", " }
+  '
+}
 
-if shipshape_waived plan; then
+if shipshape_waived plan && [ -n "$(shipshape_plan_field "$scratch" path)" ]; then
   shipshape_trace done-gate "plan leg waived: $(shipshape_waiver_line plan)"
   note_waived "$(shipshape_waiver_line plan)"
 else
@@ -231,7 +238,7 @@ case "${leg%%|*}" in
 $(plan_rerun)"
     ;;
   stale)
-    add "plan — stale: a file of $detail changed after its record, which now describes code that has moved. Verify again:
+    add "plan — stale: a file changed after its record, which now describes code that has moved: $(plan_moved). Verify again:
 $(plan_rerun)"
     ;;
   failed)
@@ -243,25 +250,31 @@ $(plan_rerun)"
 $(plan_rerun)"
     ;;
   elsewhere)
-    add "plan — $detail. Bind it here with shipshape-plan $(shipshape_plan_field "$scratch" path), or drop it with shipshape-plan --clear --reason <why>."
+    add "plan — $detail. Bind it here with $(shipshape_plan_rebind "$scratch"), or drop it with shipshape-plan --clear --reason <why>."
     ;;
   unreadable)
-    add "plan — cannot read $detail: the plan is gone, a fence no longer parses, or a --tasks id left the plan. Fix that and bind it again with shipshape-plan, or drop it with shipshape-plan --clear --reason <why>."
+    add "plan — cannot read $detail: the plan is gone, a fence no longer parses, two fences share an id, a verifyCommand spans lines, or a --tasks id left the plan. Fix that, and bind it again with shipshape-plan if the path changed."
     ;;
 esac
 [ "$missing" != "$before_plan" ] && shipshape_waiver_unreasoned plan && leg_note_unreasoned plan
 fi
 
-# Tasks a --tasks scope left out go in the nudge beside the waivers, and for the
-# same reason: nothing checks them on this branch, and a reviewer should read so.
-left_out=""
+# What narrowed the plan goes beside the waivers, and for the same reason:
+# nothing checks those tasks on this branch, and a reader should know. It stays
+# visible when the branch is satisfied too, where there is no nudge to carry it.
+narrowed=""
 if [ -n "$(shipshape_plan_field "$scratch" tasks)" ]; then
-  left_out="$(shipshape_plan_rows "$scratch" | awk -F"$(printf '\037')" '
+  left_out="$(shipshape_plan_rows "$scratch" | awk -F"$us" '
     $2 == "left-out" { ids = ids comma $1; comma = ", " }
     END { print ids }
   ')"
-  [ -z "$left_out" ] || left_out="$left_out — $(shipshape_plan_field "$scratch" reason)"
+  [ -z "$left_out" ] ||
+    narrowed="  - left out of its scope: $left_out — $(shipshape_plan_field "$scratch" reason)
+"
 fi
+plan_cleared="$(shipshape_plan_cleared "$scratch")"
+[ -z "$plan_cleared" ] || narrowed="$narrowed  - cleared: $plan_cleared
+"
 
 # The legs above describe the branch the session is on. With no record for
 # this branch, their verdicts belong to nobody and are discarded — the other
@@ -295,6 +308,16 @@ if [ -z "$missing" ] && [ -z "$elsewhere_lines" ]; then
   # this one's silence.
   rm -f "$scratch/done-gate-last-nudge"
   shipshape_trace done-gate "armed and satisfied — every leg present and current"
+  # One note, not a block: narrowing is the session's call, made in the open.
+  if [ -n "$narrowed" ] && [ -n "$current_numbers" ]; then
+    digest="$(printf '%s' "$narrowed" | cksum 2>/dev/null | cut -d' ' -f1)"
+    if [ "$digest" != "$(cat "$scratch/done-gate-narrowed" 2>/dev/null)" ]; then
+      printf '%s' "$digest" > "$scratch/done-gate-narrowed"
+      shipshape_emit_system_message "ShipShape — the evidence is complete, for a narrowed plan:
+
+$narrowed" done_gate_plan_narrowed
+    fi
+  fi
   exit 0
 fi
 
@@ -379,12 +402,11 @@ Active waivers (.shipshape.yaml):
 
 $waived_lines"
 fi
-if [ -n "$left_out" ]; then
+if [ -n "$narrowed" ]; then
   nudge_text="$nudge_text
-Left out of the plan's scope:
+The plan was narrowed:
 
-  - $left_out
-"
+$narrowed"
 fi
 nudge_text="$nudge_text
 Run shipshape-doctor for the full evidence state."

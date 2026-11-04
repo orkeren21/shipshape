@@ -135,7 +135,9 @@ touch "$repo/src.txt"
 give_all
 out="$(stop "$CLAIM")"
 assert_eq "block" "$(hook_field "$out" decision)" "a task's file changing after its record holds it"
-assert_contains "$(hook_field "$out" reason)" "t1" "and the block names the task"
+reason="$(hook_field "$out" reason)"
+assert_contains "$reason" "t1" "and the block names the task"
+assert_contains "$reason" "src.txt" "and the file that moved"
 
 verify "tests/run.sh --all" 0
 out="$(stop "$CLAIM")"
@@ -147,14 +149,16 @@ out="$(stop "$CLAIM")"
 assert_eq "block" "$(hook_field "$out" decision)" "a plan bound on another branch holds it"
 reason="$(hook_field "$out" reason)"
 assert_contains "$reason" "some/other-branch" "the block names the branch"
-assert_contains "$reason" "shipshape-plan" "and how to bind it here"
+assert_contains "$reason" "shipshape-plan '$plan'" "and the line that binds it here"
 assert_contains "$reason" "--clear" "and how to drop it"
 
 bind
 mv "$plan" "$plan.gone"
 out="$(stop "$CLAIM")"
 assert_eq "block" "$(hook_field "$out" decision)" "a vanished plan holds it"
-assert_contains "$(hook_field "$out" reason)" "$plan" "and the block names the path"
+reason="$(hook_field "$out" reason)"
+assert_contains "$reason" "$plan" "and the block names the path"
+assert_not_contains "$reason" "--clear" "unreadable blocks: dropping the plan is not offered as the fix"
 mv "$plan.gone" "$plan"
 
 rm -f "$scratch/verify/t1"
@@ -179,7 +183,40 @@ nudge="$(hook_field "$(stop "$CHAT")" systemMessage)"
 assert_contains "$nudge" "t2, t3" "the nudge lists what the scope left out"
 assert_contains "$nudge" "t2 and t3 ship in the next PR" "with the reason"
 
-rm -f "$scratch/plan" "$scratch/done-gate-last-nudge" "$stamp"
+# A waiver with no plan bound waives nothing, so it is not listed as active.
+rm -f "$scratch/plan" "$scratch/done-gate-last-nudge"
+printf 'skip_plan: true  # reason: the plan is a sketch\n' > "$repo/.shipshape.yaml"
+nudge="$(hook_field "$(stop "$CHAT")" systemMessage)"
+assert_ne "" "$nudge" "with the review missing the nudge speaks"
+assert_not_contains "$nudge" "skip_plan" "and a waiver with nothing bound is not in it"
+rm -f "$repo/.shipshape.yaml"
+
+# Narrowing passes, as ruled, and it does not pass unread. A satisfied branch
+# gets no nudge, so the note is its own, and speaks once.
+plan_bin="$SHIPSHAPE_REPO_ROOT/bin/shipshape-plan"
+plan_as() { (cd "$repo" && SHIPSHAPE_SESSION_ID="$session" "$plan_bin" "$@"); }
+give_all
+plan_as "$plan" --tasks t1 --reason "t2 and t3 ship in the next PR" >/dev/null 2>&1
+verify "tests/run.sh --all" 0
+out="$(stop "$CLAIM")"
+assert_eq "" "$(hook_field "$out" decision)" "a late --tasks with its scope closed does not block"
+assert_file "$stamp" "and the stamp is written"
+note="$(hook_field "$out" systemMessage)"
+assert_contains "$note" "t2, t3" "but the satisfied branch says what was left out"
+assert_contains "$note" "t2 and t3 ship in the next PR" "and why"
+assert_eq "" "$(hook_field "$(stop "$CLAIM")" systemMessage)" "once"
+
+plan_as --clear --reason "the plan was a sketch" >/dev/null 2>&1
+out="$(stop "$CLAIM")"
+assert_eq "" "$(hook_field "$out" decision)" "a cleared plan does not block"
+assert_contains "$(hook_field "$out" systemMessage)" "the plan was a sketch" "and the reason reaches the reader, not only the trace"
+assert_eq "" "$(hook_field "$(stop "$CLAIM")" systemMessage)" "once"
+
+rm -f "$scratch"/review-*.md "$scratch/done-gate-last-nudge"
+nudge="$(hook_field "$(stop "$CHAT")" systemMessage)"
+assert_contains "$nudge" "the plan was a sketch" "a nudge carries the clearing too"
+
+rm -f "$scratch/plan" "$scratch/plan-cleared" "$scratch/done-gate-last-nudge" "$stamp" "$scratch/done-gate-narrowed"
 rm -rf "$scratch/verify"
 give_all
 

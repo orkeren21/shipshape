@@ -114,12 +114,16 @@ refused "a fence that does not parse" "fence 2" -- "$repo/docs/broken.md"
 { fence '{"files":[]}'; } > "$repo/docs/no-id.md"
 refused "a fence with no id" "fence 1" -- "$repo/docs/no-id.md"
 
+{ fence '{"id":"t1","verifyCommand":"true\nfalse"}'; } > "$repo/docs/multi.md"
+refused "a verifyCommand spanning lines" "one shell line" -- "$repo/docs/multi.md"
+
 { fence '{"id":"a/b"}'; fence '{"id":"a-b"}'; } > "$repo/docs/twins.md"
 refused "two ids that sanitise alike" "a-b" -- "$repo/docs/twins.md"
 
 refused "a --tasks id not in the plan" "t9" -- "$plan" --tasks t1,t9 --reason "slice"
 refused "--tasks with no reason" "reason" -- "$plan" --tasks t1
 refused "--tasks naming nothing" "--tasks" -- "$plan" --tasks "," --reason "slice"
+refused "a --tasks entry that sanitises to nothing" "///" -- "$plan" --tasks "t1,///" --reason "slice"
 refused "a blank reason" "reason" -- "$plan" --tasks t1 --reason "   "
 refused "--clear with no reason" "reason" -- --clear
 refused "a newline in a reason" "line" -- "$plan" --tasks t1 --reason "$(printf 'slice\nepoch=1')"
@@ -138,15 +142,23 @@ assert_eq "1" "$?" "with no JSON reader a bind is refused"
 assert_contains "$out" "JSON" "and says what is missing"
 assert_eq "$before" "$(cat "$file")" "and the binding stands"
 
-# A write that failed is reported as one, as the seat's is.
-chmod a-w "$scratch"
-out="$("$plan_bin" "$other" 2>&1)"
-status=$?
-chmod u+w "$scratch"
+# A write that failed is reported as one, as the seat's is. Root writes through
+# the mode, so there the writes would succeed and the rest of this file's state
+# would not be what it expects.
 if [ "$(id -u)" != "0" ]; then
+  chmod a-w "$scratch"
+  out="$("$plan_bin" "$other" 2>&1)"
+  status=$?
+  out_clear="$("$plan_bin" --clear --reason "dropping it" 2>&1)"
+  status_clear=$?
+  chmod u+w "$scratch"
   assert_ne "0" "$status" "a failed write exits non-zero"
   assert_contains "$out" "could not write" "and says so"
   assert_eq "$before" "$(cat "$file")" "and the binding stands"
+  assert_ne "0" "$status_clear" "a clearing that could not be recorded fails too"
+  assert_contains "$out_clear" "could not write" "and says so"
+  assert_eq "$before" "$(cat "$file")" "and the binding stands"
+  assert_no_file "$scratch/plan-cleared" "and nothing says it was cleared"
 fi
 
 # --- usage ------------------------------------------------------------------------
@@ -178,6 +190,18 @@ assert_eq "0" "$?" "with no arguments it reports the binding"
 assert_contains "$out" "$plan" "and names the plan"
 assert_contains "$out" "open" "with the leg's state"
 
+"$plan_bin" "$plan" --tasks t1 --reason "t2 and t3 ship later" >/dev/null 2>&1
+out="$("$plan_bin" 2>&1)"
+assert_contains "$out" "scope: t1 — t2 and t3 ship later" "a scope is reported, with its reason"
+"$plan_bin" "$plan" >/dev/null 2>&1
+assert_not_contains "$("$plan_bin" 2>&1)" "scope:" "and binding every task drops the line"
+
+printf 'skip_plan: true  # reason: a sketch\n' > "$repo/.shipshape.yaml"
+out="$("$plan_bin" 2>&1)"
+assert_contains "$out" "waived" "the report reads the waiver, as the doctor and the gates do"
+assert_not_contains "$out" "shipshape-verify" "and offers nothing to run"
+rm -f "$repo/.shipshape.yaml"
+
 mkdir -p "$scratch/verify"
 printf 'task=t1\ncommand=tests/run.sh\nexit=0\nepoch=%s\n--- output ---\n' "$(date -u +%s)" > "$scratch/verify/t1"
 printf 'task=t2\ncommand=tests/run.sh\nexit=0\nepoch=%s\n--- output ---\n' "$(date -u +%s)" > "$scratch/verify/t2"
@@ -191,6 +215,7 @@ out="$("$plan_bin" 2>&1)"
 assert_eq "0" "$?" "a report on another branch still succeeds"
 assert_contains "$out" "elsewhere" "and says the binding is not for this branch"
 assert_contains "$out" "--clear" "and names the ways out"
+assert_contains "$out" "shipshape-plan '$plan'" "with a line to paste"
 git checkout -q "$branch"
 
 mv "$plan" "$plan.moved"
@@ -206,6 +231,14 @@ assert_eq "0" "$?" "clearing with a reason succeeds"
 assert_no_file "$file" "the binding is gone"
 assert_contains "$(cat "$scratch/trace.log")" "this branch is prose only" "and the reason stays in the trace"
 assert_eq "none|" "$(shipshape_leg_plan "$scratch")" "the leg has nothing to say"
+assert_contains "$(shipshape_plan_cleared "$scratch")" "this branch is prose only" "and the clearing is kept for a reader"
+out="$("$plan_bin" 2>&1)"
+assert_contains "$out" "no plan bound" "the report says nothing is bound"
+assert_contains "$out" "this branch is prose only" "and what was cleared, and why"
+
+"$plan_bin" "$plan" >/dev/null 2>&1
+assert_no_file "$scratch/plan-cleared" "binding again replaces the clearing"
+"$plan_bin" --clear --reason "prose only after all" >/dev/null 2>&1
 
 out="$("$plan_bin" --clear --reason "again" 2>&1)"
 assert_eq "0" "$?" "clearing nothing is not an error"

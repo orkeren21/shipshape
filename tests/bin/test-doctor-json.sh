@@ -233,6 +233,22 @@ out="$(text)"
 assert_contains "$out" "left-out" "a left-out task shows even when the leg is ok"
 assert_contains "$out" "t3 ships in the next PR" "with the reason"
 
+# Always means always: the two states that print no task lines keep these.
+printf 'skip_plan: true  # reason: the plan is a sketch\n' > "$repo/.shipshape.yaml"
+assert_contains "$(text)" "t3 ships in the next PR" "a waived leg still shows what was left out"
+rm -f "$repo/.shipshape.yaml"
+bind "another-branch" "t1,t2" "t3 ships in the next PR"
+assert_contains "$(text)" "t3 ships in the next PR" "and so does a plan bound elsewhere"
+
+# Left-out tasks come after what closes the rest, so a reader meets the debt first.
+bind "" "t1,t2" "t3 ships in the next PR"
+rm -f "$scratch/verify/t2"
+out="$(text)"
+first="$(printf '%s\n' "$out" | grep -n 'shipshape-verify' | head -1 | cut -d: -f1)"
+last="$(printf '%s\n' "$out" | grep -n 'left-out' | head -1 | cut -d: -f1)"
+[ "${first:-0}" -lt "${last:-0}" ] || fail "the re-run lines come before the left-out tasks"
+verified t2 "tests/run.sh" 0
+
 bind
 rm -f "$scratch/verify/t2"
 printf 'skip_plan: true  # reason: the plan is a sketch\n' > "$repo/.shipshape.yaml"
@@ -245,6 +261,14 @@ json >/dev/null
 text >/dev/null
 assert_eq "$before" "$(find "$scratch" | sort)" "reading the plan leg wrote nothing"
 rm -rf "$scratch/plan" "$scratch/verify"
+
+# A cleared plan reads as none, and says so: the band draws nothing, and a
+# reader of the doctor still finds what was dropped.
+printf 'path=%s\nreason=prose only\nepoch=1\n' "$plan" > "$scratch/plan-cleared"
+leg_case plan none "cleared: $plan — prose only" "a cleared plan"
+out="$(json)"
+assert_contains "$(jget "$out" legs.plan.detail)" "prose only" "and the JSON's detail carries it"
+rm -f "$scratch/plan-cleared"
 
 # --- running reviewers ------------------------------------------------------------
 

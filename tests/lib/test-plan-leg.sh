@@ -114,9 +114,21 @@ assert_eq "wrong-command|t1" "$(leg)" "the leg reads wrong-command"
 
 record t1 "  tests/run.sh   " 0
 assert_eq "ok" "$(row_state t1)" "whitespace differences are not a different command"
-write_plan '{"id":"t1","files":[],"verifyCommand":"tests/run.sh\n  --all"}'
-record t1 "tests/run.sh --all" 0
-assert_eq "ok" "$(row_state t1)" "a line break in the fence normalises away too"
+
+# A verifyCommand is one shell line. A line break is not whitespace to a shell:
+# "true\nfalse" exits 1, and the same words on one line exit 0, so reading it as
+# the one-line form would close a failing task.
+write_plan '{"id":"t1","files":[],"verifyCommand":"true\nfalse"}'
+record t1 "true false" 0
+assert_eq "unreadable" "$(row_state t1)" "a verifyCommand spanning lines cannot be judged"
+assert_contains "$(row_detail t1)" "one shell line" "and the row says why"
+assert_eq "unreadable|t1" "$(leg)" "and it blocks"
+bind "t2" "t1 ships later"
+write_plan \
+  '{"id":"t1","files":[],"verifyCommand":"true\nfalse"}' \
+  '{"id":"t2","files":[],"verifyCommand":"tests/run.sh"}'
+assert_eq "left-out" "$(row_state t1)" "a task out of scope is not judged at all"
+bind
 write_plan '{"id":"t1","files":[],"verifyCommand":"tests/run.sh"}'
 
 record t1 "tests/run.sh" 1
@@ -168,6 +180,17 @@ mkdir -p "$repo/sub/dir"
 assert_eq "stale" "$(cd "$repo/sub/dir" && row_state t1)" "entries resolve against the repo root, not the cwd"
 touch -t 202001010000 "$repo/bin/wrapper"
 
+# Verifying writes to the session's scratch, so a task naming the repo root
+# would otherwise be stale the moment its record landed, and could never close.
+write_plan '{"id":"t1","files":["."],"verifyCommand":"tests/run.sh"}'
+touch -t 202001010000 "$repo/src.txt" "$repo/docs" 2>/dev/null
+printf 'noise\n' > "$scratch/trace.log"
+printf 'noise\n' > "$repo/.git/noise"
+assert_eq "ok" "$(row_state t1)" "the session's own scratch and git's folder do not count as a task's files"
+printf 'real\n' > "$repo/real.txt"
+assert_eq "stale" "$(row_state t1)" "and a real file under the root still does"
+rm -f "$repo/real.txt" "$repo/.git/noise"
+
 # A star is a name, a space and a comma are part of a path.
 printf 'new\n' > "$repo/fresh.txt"
 write_plan '{"id":"t1","files":["*"],"verifyCommand":"tests/run.sh"}'
@@ -200,6 +223,19 @@ assert_eq "open|t3" "$(leg)" "every task in scope has to close"
 bind "t2,t9" "slice B"
 assert_eq "unreadable" "$(row_state t9)" "a --tasks id that left the plan is unreadable"
 assert_eq "unreadable|t9" "$(leg)" "and blocks: the scope no longer says what it said"
+
+# --- two fences, one id --------------------------------------------------------
+#
+# The bind refuses these, and an edit afterwards can still make them: one record
+# would then answer for two tasks.
+
+reset
+write_plan \
+  '{"id":"t/1","files":[],"verifyCommand":"tests/run.sh"}' \
+  '{"id":"t-1","files":[],"verifyCommand":"tests/run.sh"}'
+bind
+record t-1 "tests/run.sh" 0
+assert_eq "unreadable|t-1" "$(leg)" "two fences sharing an id once sanitised cannot be judged"
 
 # --- worst first ----------------------------------------------------------------
 
@@ -356,6 +392,21 @@ record t1 "tests/run.sh" 0
 assert_contains "$(shipshape_plan_rerun "$scratch")" "shipshape-verify t2 'tests/run.sh'" \
   "a task that closed drops out of its group"
 
+# The command is printed as the fence wrote it. Normalising is for comparing:
+# two spaces inside quotes are not one, and a pasted line has to run the same.
+write_plan '{"id":"t1","files":[],"verifyCommand":"grep -q \"a  b\" c.txt"}'
+bind
+rm -rf "$scratch/verify"
+assert_eq "shipshape-verify t1 'grep -q \"a  b\" c.txt'" "$(shipshape_plan_rerun "$scratch")" \
+  "the re-run line keeps the command as written"
+write_plan \
+  '{"id":"t1","files":[],"verifyCommand":"tests/run.sh"}' \
+  '{"id":"t2","files":[],"verifyCommand":"tests/run.sh"}' \
+  '{"id":"t3","files":[],"verifyCommand":"npm test && npm run typecheck"}' \
+  '{"id":"t4","files":[],"verifyCommand":"grep -q '"'"'a b'"'"' c.txt"}'
+bind
+record t1 "tests/run.sh" 0
+
 # The quoting is the point: the printed line, pasted, records the fence's command.
 line="$(shipshape_plan_rerun "$scratch" | grep t4)"
 shim="$work/shim"
@@ -363,5 +414,26 @@ mkdir -p "$shim"
 printf '#!/bin/sh\nprintf "%%s" "$2"\n' > "$shim/shipshape-verify"
 chmod +x "$shim/shipshape-verify"
 assert_eq "grep -q 'a b' c.txt" "$(PATH="$shim:$PATH" sh -c "$line")" "a pasted line reaches the wrapper whole"
+
+# --- the line that binds it again ------------------------------------------------
+
+spaced="$work/a plan's folder/plan.md"
+mkdir -p "$(dirname "$spaced")"
+printf 'path=%s\nbranch=%s\ntasks=\nreason=\nepoch=1\n' "$spaced" "$here" > "$scratch/plan"
+line="$(shipshape_plan_rebind "$scratch")"
+assert_eq "$spaced" "$(PATH="$shim:$PATH" sh -c "printf '%s' $(shipshape_shell_quote "$spaced")")" \
+  "a quoted path survives a space and an apostrophe"
+assert_contains "$line" "shipshape-plan '" "the line is quoted to paste"
+printf 'path=%s\nbranch=%s\ntasks=t1,t2\nreason=it'"'"'s slice B\nepoch=1\n' "$plan" "$here" > "$scratch/plan"
+assert_eq "shipshape-plan '$plan' --tasks t1,t2 --reason 'it'\\''s slice B'" "$(shipshape_plan_rebind "$scratch")" \
+  "and it keeps the scope, or binding again would widen it"
+
+# --- a cleared plan --------------------------------------------------------------
+
+reset
+assert_eq "" "$(shipshape_plan_cleared "$scratch")" "nothing cleared, nothing to say"
+printf 'path=/a/plan.md\nreason=prose only\nepoch=1\n' > "$scratch/plan-cleared"
+assert_eq "/a/plan.md — prose only" "$(shipshape_plan_cleared "$scratch")" "a cleared plan names itself and the reason"
+rm -f "$scratch/plan-cleared"
 
 finish
