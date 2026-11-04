@@ -302,7 +302,8 @@ async function shapePrompt($: EngineInterface, text: string, isRefineOption: boo
   if (isRefineEnvOff || !isRefineOption || (await read($, refineOff))) return null
   const scored = score(split.body)
   if (!scored.isDump) {
-    void traceRefiner($, `skip ${scored.skip ?? 'signals'} (${scored.words} words${scored.signals.length > 0 ? `: ${scored.signals.join(', ')}` : ''})`)
+    // A desktop slash command raises an empty prompt: nothing to decide.
+    if (scored.words > 0) void traceRefiner($, `skip ${scored.skip ?? 'signals'} (${scored.words} words${scored.signals.length > 0 ? `: ${scored.signals.join(', ')}` : ''})`)
     return null
   }
   return refinePrompt($, split, scored, isQueued, signal)

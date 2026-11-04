@@ -667,6 +667,14 @@ test('a decision made before the first reading reaches the trace once there is o
   expect(seen.traces.some(t => t.includes('refiner: skip short'))).toBe(true)
 })
 
+test('the empty prompt a desktop slash command raises leaves no trace', async ($, on) => {
+  const { clock, seen } = world(on)
+  await start($, clock)
+  await submit($, '')
+  await clock.settle()
+  expect(seen.traces).toHaveLength(0)
+})
+
 test('a trace that cannot be written costs nothing', async ($, on) => {
   const { clock, seen } = world(on, { traceThrows: true })
   await start($, clock)
