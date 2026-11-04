@@ -128,14 +128,9 @@ export async function readEpic($: EngineInterface, epic: string): Promise<EpicVi
 }
 
 // Lines for the session's trace, in the hooks' format. $.fs has no append and
-// the bash hooks write this file too, so the shell's >> adds them. A trace
-// must never cost what it records.
+// the bash hooks write this file too, so the shell's >> adds them.
 export async function appendTrace($: EngineInterface, scratch: string, lines: string[]): Promise<void> {
-  try {
-    await $.process.run(['bash', '-c', 'mkdir -p "$1" && printf "%s\\n" "$2" >> "$1/trace.log"', 'shipdeck', scratch, lines.join('\n')], { timeoutMs: 5_000 })
-  } catch {
-    // no trace, then
-  }
+  await $.process.run(['bash', '-c', 'mkdir -p "$1" && printf "%s\\n" "$2" >> "$1/trace.log"', 'shipdeck', scratch, lines.join('\n')], { timeoutMs: 5_000 })
 }
 
 // The original prompt and what the session received, kept beside the

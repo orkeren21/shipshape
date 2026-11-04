@@ -37,6 +37,7 @@ type World = {
   doctor?: DoctorJson | string
   reply?: unknown
   replies?: unknown[]
+  answer?: (prompt: string) => string
   modelDelays?: number[]
   writeThrows?: boolean
   files?: Record<string, string>
@@ -120,7 +121,7 @@ function world(on: On, w: World = {}) {
     seen.model.push(e)
     if (delay) await clock.sleep(delay)
     const next = w.replies ? w.replies[reply++] : w.reply
-    return { value: next ?? { isAnswered: true, text: REFINED, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } } as never
+    return { value: next ?? { isAnswered: true, text: w.answer?.((e as { prompt: string }).prompt) ?? REFINED, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } } as never
   })
   // The engine's own drawing of a transcript row: the text it is handed.
   on('ui.render', { component: 'UserMessage' }, ($e, e) => {
@@ -133,6 +134,7 @@ function world(on: On, w: World = {}) {
   on('config.set', (_, e) => ({ value: e.value }) as never)
   on('session.start', (_, e) => ({ cwd: e.cwd }) as never)
   on('tool.call', () => ({ result: {} }) as never)
+  on('turn.complete', () => ({ text: '' }) as never)
   on('prompt.submit', (_, e) => { seen.entered.push(e.text); return { text: e.text } as never })
   return { clock, seen }
 }
@@ -447,12 +449,14 @@ test('a second dump is refined while the first is, not after it', async ($, on) 
 })
 
 test('a refused decrement keeps a finished refinement', async ($, on) => {
+  // The increment comes before the model's answer, the decrement after it.
+  let answered: unknown[] = []
   on('state.set', (_, e, next) => {
-    const w = e as { key?: string; value?: { value?: unknown }; previous?: { value?: unknown } }
-    if (w.key === 'refining' && w.value?.value === 0 && w.previous?.value === 1) return { deny: 'state host down' } as never
+    if ((e as { key?: string }).key === 'refining' && answered.length > 0) return { deny: 'state host down' } as never
     return next(e)
   })
   const { clock, seen } = world(on)
+  answered = seen.model
   await start($, clock)
   await submit($, DUMP)
   expect(seen.entered.at(-1)).toContain('## Goal')
@@ -489,13 +493,13 @@ const quitter = {
 }
 
 test('a prompt whose dispatch aborts while it is shaped does not sit out the 8 s wait', { plugins: [quitter] }, async ($, on) => {
-  const { clock, seen } = world(on, { modelDelays: [20_000, 3_000] })
+  const { clock, seen } = world(on, { modelDelays: [20_000, 3_000], answer: asked => (asked.includes('ABORTME') ? `${REFINED}\n\nthe aborted one` : REFINED) })
   await start($, clock)
   const first = submit($, DUMP)
   await clock.advance(1_000)
   const second = submit($, `${DUMP} ABORTME`)
   await clock.advance(4_000)
-  expect(seen.entered).toHaveLength(1)
+  expect(seen.entered.map(t => t.includes('the aborted one'))).toEqual([true])
   await clock.advance(30_000)
   await Promise.allSettled([first, second])
 })
@@ -716,4 +720,131 @@ test('a lane done in one epic is not news in the next one', async ($, on) => {
   w.files!['/epic-b/roster/f3.md'] = 'status: done'
   await clock.advance(30_000)
   expect(seen.toasts.some(t => t.includes('f3 done'))).toBe(true)
+})
+
+test('a refiner that timed out says so and sends the prompt as typed', async ($, on) => {
+  const { clock, seen } = world(on, { reply: { isAnswered: false, reason: 'aborted', usage: {} } })
+  await start($, clock)
+  await submit($, DUMP)
+  expect(seen.entered.at(-1)).toBe(DUMP)
+  expect(seen.toasts.some(t => t.includes('it timed out'))).toBe(true)
+})
+
+test('an interrupted refinement raises no toast', { plugins: [quitter] }, async ($, on) => {
+  const { clock, seen } = world(on, { modelDelays: [3_000], reply: { isAnswered: false, reason: 'aborted', usage: {} } })
+  await start($, clock)
+  const sent = submit($, `${DUMP} ABORTME`)
+  await clock.advance(5_000)
+  await Promise.allSettled([sent])
+  expect(seen.toasts.some(t => t.includes('did not answer'))).toBe(false)
+  expect(seen.traces.some(t => t.includes('refiner: interrupted'))).toBe(true)
+})
+
+async function bandSays($: Engine, words: RegExp): Promise<boolean> {
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const hit = await band.find({ type: 'Text', text: words })
+  await band.unmount()
+  return hit !== undefined
+}
+
+test('one failed doctor run keeps the reading, and a second in a row clears it', async ($, on) => {
+  const w: World = {}
+  const { clock } = world(on, w)
+  await start($, clock)
+  w.doctorFails = 2
+  await clock.advance(60_000)
+  expect(await bandSays($, /lane F2/)).toBe(true)
+  expect(await bandSays($, /evidence unavailable/)).toBe(false)
+  await clock.advance(60_000)
+  expect(await bandSays($, /lane F2/)).toBe(false)
+  expect(await bandSays($, /evidence unavailable/)).toBe(true)
+})
+
+test('a reading that never finishes counts as a failed run', async ($, on) => {
+  const w: World = {}
+  const { clock } = world(on, w)
+  await start($, clock)
+  w.idHangs = 2
+  await clock.advance(91_000)
+  expect(await bandSays($, /lane F2/)).toBe(true)
+  await clock.advance(60_000)
+  expect(await bandSays($, /evidence unavailable/)).toBe(true)
+})
+
+test('a good run between two failures starts the count again', async ($, on) => {
+  const w: World = {}
+  const { clock } = world(on, w)
+  await start($, clock)
+  w.doctorFails = 1
+  await clock.advance(120_000)
+  w.doctorFails = 1
+  await clock.advance(60_000)
+  expect(await bandSays($, /lane F2/)).toBe(true)
+})
+
+test('a core not found is looked for again after ten minutes, and not before', async ($, on) => {
+  const w: World = { coreAt: '/core', installed: [] }
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  expect(seen.lookups).toHaveLength(1)
+  w.installed = [{ id: 'shipshape@shipshape', enabled: true, installPath: '/core' }]
+  await clock.advance(60_000)
+  expect(seen.lookups).toHaveLength(1)
+  expect(seen.runs).toHaveLength(0)
+  await clock.advance(600_000)
+  expect(seen.lookups).toHaveLength(2)
+  expect(seen.runs.length).toBeGreaterThan(0)
+})
+
+test("a subagent's end asks for a throttled reading, and the session's own forces one", async ($, on) => {
+  const { clock, seen } = world(on)
+  await start($, clock)
+  const runs = seen.runs.length
+  const usage = seen.usage
+  await clock.advance(1_000)
+  await $.turn.complete({ reason: 'answer', agentId: 'agent-1' } as never)
+  await clock.settle()
+  expect(seen.runs.length).toBe(runs)
+  await clock.advance(5_000)
+  await $.turn.complete({ reason: 'answer', agentId: 'agent-1' } as never)
+  await clock.settle()
+  expect(seen.runs.length).toBe(runs + 1)
+  expect(seen.usage).toBe(usage)
+  await $.turn.complete({ reason: 'answer' } as never)
+  await clock.settle()
+  expect(seen.runs.length).toBe(runs + 2)
+  expect(seen.usage).toBe(usage + 1)
+})
+
+test('a reload starts from the drawn reading, so a prompt right after it refines at once', async ($, on) => {
+  seed(on, [STORED('doctor', doctorJson(), 'doctor-1')])
+  const { clock, seen } = world(on, { doctorDelay: 20_000 })
+  await start($, clock)
+  const sent = submit($, DUMP)
+  await clock.settle()
+  expect(seen.model).toHaveLength(1)
+  await sent
+  expect(seen.entered.at(-1)).toContain('## Goal')
+})
+
+test('a core that gives no reading says so once, however many dumps follow', async ($, on) => {
+  const { clock, seen } = world(on, { doctor: 'not json' })
+  await start($, clock)
+  await submit($, DUMP)
+  await submit($, `${DUMP} and again`)
+  expect(seen.toasts.filter(t => t.includes('refining waits for a ShipShape core reading'))).toHaveLength(1)
+})
+
+test('/refine says when refining waits for a reading', async ($, on) => {
+  const { clock } = world(on, { doctor: 'not json' })
+  await start($, clock)
+  const said = await $.command.run({ command: 'refine', args: '', origin: { kind: 'composer' }, presentation: {} } as never)
+  expect(said.text).toContain('waiting for a ShipShape core reading')
+})
+
+test('/refine says on when it is on', async ($, on) => {
+  const { clock } = world(on)
+  await start($, clock)
+  const said = await $.command.run({ command: 'refine', args: '', origin: { kind: 'composer' }, presentation: {} } as never)
+  expect(said.text).toContain('prompt refining is on.')
 })

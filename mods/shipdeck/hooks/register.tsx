@@ -93,7 +93,7 @@ async function writeTrace($: EngineInterface): Promise<void> {
 async function traceRefiner($: EngineInterface, decision: string): Promise<void> {
   try {
     const at = new Date(await $.clock.now()).toISOString().replace(/\.\d+Z$/, 'Z')
-    unwritten = [...unwritten, `${at} shipdeck refiner: ${decision}`].slice(-20)
+    unwritten.push(`${at} shipdeck refiner: ${decision}`)
     await writeTrace($)
   } catch {
     // a trace must never cost what it records
