@@ -25,11 +25,11 @@ value is entirely in being trustworthy, and one wrong fact makes the successor
 distrust all of it.
 
 **The plan.** If one is bound, its path and any `--tasks` scope with the reason,
-which `shipshape-plan` with no arguments prints with each task's state. If one was
-cleared or replaced this session, say which and why, because nothing else will
-reach the successor: verify records and a clearing stay with this session, as its
-review and smoke do, so the successor binds the plan again and runs the commands
-itself.
+which `shipshape-plan` with no arguments prints. Verify records stay with this
+session, as its review and smoke do, so the successor binds the plan again and
+runs the commands itself. If one was cleared or replaced this session, say which
+and why: a clearing stays with this session too, so nothing else will reach the
+successor.
 
 **Decisions made, with reasons.** Every material call and why it went that way.
 Without the reason the successor re-opens the decision the first time it

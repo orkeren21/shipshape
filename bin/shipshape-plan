@@ -69,8 +69,8 @@ needs_reason() { # <what the reason is for>
 scratch="$(shipshape_scratch_path)"
 file="$scratch/plan"
 
-# The file is a record of what the branch lost, so it names the branch the plan
-# was bound on, whichever branch the call came from.
+# The file is a record of what the branch lost, so it names the branch given,
+# which --clear works out below.
 record_cleared() { # <plan> <branch> <reason>
   local record tmp
   record="$(shipshape_plan_cleared_file "$scratch" "$2")"
@@ -189,10 +189,15 @@ if [ -n "$clear" ]; then
   # The record goes first: a plan dropped with nothing saying so is the failure
   # this exists for, and a clearing that did not happen is not one to report.
   # A branch that was never named, or has since gone, cannot be stood on, so a
-  # record filed there would never be read.
+  # record filed there would never be read and it lands where the call came from.
+  # Beside a same-named tag git calls a branch heads/<name>, and that one is still
+  # there. Outside a repo nothing can be checked, so the bound name stands.
   bound_branch="$(shipshape_plan_field "$scratch" branch)"
-  if [ -z "$bound_branch" ] || ! git show-ref --verify --quiet "refs/heads/$bound_branch"; then
-    bound_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  here="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  if [ -n "$here" ] &&
+    ! git show-ref --verify --quiet "refs/heads/$bound_branch" 2>/dev/null &&
+    ! git show-ref --verify --quiet "refs/heads/${bound_branch#heads/}" 2>/dev/null; then
+    bound_branch="$here"
   fi
   if ! record_cleared "$bound_path" "$bound_branch" "$reason" || ! rm -f "$file" 2>/dev/null; then
     rm -f "$(shipshape_plan_cleared_file "$scratch" "$bound_branch")" 2>/dev/null

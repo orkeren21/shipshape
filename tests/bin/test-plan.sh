@@ -248,6 +248,23 @@ sed "s/^branch=.*/branch=/" "$file" > "$file.new" && mv "$file.new" "$file"
 assert_contains "$(shipshape_plan_cleared "$scratch")" "bound with no branch" "a binding with no branch name clears where the call came from"
 rm -f "$cleared_file"
 
+# Beside a tag of the same name git calls the branch heads/v1, and it is still
+# there: the record stays on it, and the call prints that.
+git checkout -q -b v1
+git tag v1
+"$plan_bin" "$plan" >/dev/null 2>&1
+git checkout -q "$branch"
+out="$("$plan_bin" --clear --reason "beside a tag" 2>&1)"
+assert_contains "$out" "recorded on heads/v1" "a live branch beside a same-named tag keeps its clearing"
+assert_eq "" "$(shipshape_plan_cleared "$scratch")" "and the branch the call came from has none"
+git checkout -q v1 2>/dev/null || git checkout -q heads/v1
+assert_contains "$(shipshape_plan_cleared "$scratch")" "beside a tag" "the branch itself reads it"
+rm -f "$(shipshape_plan_cleared_file "$scratch")"
+git checkout -q "$branch"
+git tag -d v1 >/dev/null
+git branch -q -D v1
+"$plan_bin" "$plan" >/dev/null 2>&1
+
 git checkout -q -b doomed
 "$plan_bin" "$plan" >/dev/null 2>&1
 git branch -q -m doomed renamed
@@ -260,7 +277,7 @@ git branch -q -D renamed
 
 # --- binding another plan ------------------------------------------------------------
 #
-# Replacing a plan is not detected, the same as editing one: the leg reads the
+# Replacing a plan is not recorded, the same as editing one: the leg reads the
 # plan live, so deleting its failing tasks would reach the same place. The bind
 # says what it replaced, once, and keeps no state about it.
 
