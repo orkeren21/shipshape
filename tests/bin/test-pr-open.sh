@@ -122,6 +122,16 @@ rm -rf "$scratch"
 out="$(GH_STUB_CREATE_EXIT=1 "$pr_open" --title "doomed" 2>&1)"
 assert_not_contains "$out" "shipshape-plan" "and with no PR there is nothing to say"
 
+# A branch that dropped its plan is told that, not asked whether it has one.
+mkdir -p "$scratch"
+(
+  source "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh"
+  printf 'path=/a/plan.md\nreason=prose only\n' > "$(shipshape_plan_cleared_file "$scratch")"
+)
+out="$("$pr_open" --title "cleared" 2>&1)"
+assert_contains "$out" "prose only" "a cleared plan is named as the PR opens"
+assert_not_contains "$out" "If it has a plan" "rather than asked about"
+
 # --- gh missing --------------------------------------------------------------
 
 rm -rf "$scratch"

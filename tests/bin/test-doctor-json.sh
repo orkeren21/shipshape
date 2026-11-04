@@ -221,6 +221,7 @@ verified t1 "tests/run.sh" 0
 bind "another-branch"
 leg_case plan elsewhere "elsewhere — bound on another-branch, now on $branch" "a plan bound on another branch"
 assert_contains "$(text)" "--clear" "the report names the ways out"
+assert_contains "$(text)" "shipshape-plan '$plan'" "with a line to paste"
 
 bind
 mv "$plan" "$plan.gone"
@@ -228,6 +229,7 @@ leg_case plan unreadable "unreadable — $plan" "a vanished plan"
 out="$(text)"
 assert_contains "$out" "the plan is gone" "the report says what happened"
 assert_contains "$out" "skip_plan" "and the way out, since it blocks"
+assert_contains "$out" ".shipshape.yaml" "and where that goes"
 mv "$plan.gone" "$plan"
 
 bind "" "t1,t2" "t3 ships in the next PR"
@@ -267,13 +269,17 @@ rm -rf "$scratch/plan" "$scratch/verify"
 
 # A cleared plan reads as none, and says so: the band draws nothing, and a
 # reader of the doctor still finds what was dropped.
-cleared_file="$scratch/plan-cleared-$(printf '%s' "$branch" | tr -c 'A-Za-z0-9_-' '-')"
-printf 'path=%s\nreason=prose only\nepoch=1\n' "$plan" > "$cleared_file"
+cleared_file="$scratch/plan-cleared-$(printf '%s' "$branch" | cksum | cut -d' ' -f1)"
+printf 'path=%s\nreason=prose only\n' "$plan" > "$cleared_file"
 leg_case plan none "cleared: $plan — prose only" "a cleared plan"
 out="$(json)"
 assert_eq "$plan — prose only" "$(jget "$out" plan_cleared)" "and a field of its own carries it"
 assert_eq "null" "$(jget "$out" legs.plan.detail)" "leaving the leg's words alone"
-rm -f "$cleared_file"
+
+# The doctor is what a reader runs, so it says so with another plan bound too.
+bind
+assert_contains "$(text)" "cleared: $plan — prose only" "a clearing shows beside a bound plan"
+rm -rf "$scratch/plan" "$cleared_file"
 
 # --- running reviewers ------------------------------------------------------------
 

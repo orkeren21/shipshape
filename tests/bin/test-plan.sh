@@ -23,7 +23,7 @@ file="$scratch/plan"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 
 field() { sed -n "s/^$1=//p" "$file" 2>/dev/null | head -1; }
-cleared_file="$scratch/plan-cleared-$(shipshape_safe_id "$branch")"
+cleared_file="$(shipshape_plan_cleared_file "$scratch" "$branch")"
 
 mkdir -p "$repo/docs"
 plan="$repo/docs/plan.md"
@@ -224,6 +224,62 @@ out="$("$plan_bin" 2>&1)"
 assert_eq "0" "$?" "a report on a vanished plan still succeeds"
 assert_contains "$out" "unreadable" "and says what the leg says"
 mv "$plan.moved" "$plan"
+
+# --- a clearing lands on the branch the plan was bound on --------------------------
+#
+# `elsewhere` prints --clear as a way out, so the call often comes from another
+# branch. The plan was held on the first one, and that is where it was dropped.
+
+"$plan_bin" "$plan" >/dev/null 2>&1
+git checkout -q -b from-elsewhere
+"$plan_bin" --clear --reason "dropped from another branch" >/dev/null 2>&1
+assert_eq "0" "$?" "clearing from another branch succeeds"
+assert_not_contains "$("$plan_bin" 2>&1)" "dropped from another branch" "and says nothing here, where no plan was"
+git checkout -q "$branch"
+assert_contains "$("$plan_bin" 2>&1)" "dropped from another branch" "it is reported on the branch that lost the plan"
+rm -f "$cleared_file"
+
+# --- binding another plan is not a free --clear -------------------------------------
+
+mkdir -p "$scratch/verify"
+"$plan_bin" "$plan" >/dev/null 2>&1
+rm -f "$scratch/verify/t1" "$scratch/verify/t2"
+"$plan_bin" "$other" >/dev/null 2>&1
+assert_eq "0" "$?" "replacing an unfinished plan is not refused"
+assert_contains "$(shipshape_plan_cleared "$scratch")" "$plan — replaced by $other" "but the plan it dropped stays named"
+assert_contains "$("$plan_bin" 2>&1)" "replaced by $other" "and the report says so beside the new binding"
+
+"$plan_bin" "$repo/docs/ordered.md" >/dev/null 2>&1
+assert_contains "$(shipshape_plan_cleared "$scratch")" "$plan — replaced by $other" "a later swap does not hide the first plan dropped"
+
+"$plan_bin" --clear --reason "a real reason" >/dev/null 2>&1
+"$plan_bin" "$other" >/dev/null 2>&1
+assert_contains "$(shipshape_plan_cleared "$scratch")" "a real reason" "binding another plan leaves a real clearing standing"
+
+"$plan_bin" "$repo/docs/ordered.md" >/dev/null 2>&1
+rm -f "$cleared_file"
+"$plan_bin" "$plan" >/dev/null 2>&1
+"$plan_bin" "$other" >/dev/null 2>&1
+assert_contains "$(shipshape_plan_cleared "$scratch")" "$plan — replaced by" "a plan with open tasks is dropped, so it is named"
+"$plan_bin" "$plan" >/dev/null 2>&1
+assert_no_file "$cleared_file" "and binding that same plan again takes the record back"
+
+# Replacing a finished plan drops nothing.
+closed="$repo/docs/closed.md"
+fence '{"id":"c1"}' > "$closed"
+"$plan_bin" "$closed" >/dev/null 2>&1
+rm -f "$cleared_file"
+"$plan_bin" "$plan" >/dev/null 2>&1
+assert_no_file "$cleared_file" "a plan with nothing left to verify leaves no record when replaced"
+
+# Moving on to another branch drops nothing either: back here the leg reads elsewhere.
+git checkout -q -b moved-on
+"$plan_bin" "$other" >/dev/null 2>&1
+assert_eq "" "$(shipshape_plan_cleared "$scratch")" "binding on a new branch records nothing here"
+git checkout -q "$branch"
+assert_no_file "$cleared_file" "or on the branch left behind"
+assert_contains "$("$plan_bin" 2>&1)" "elsewhere" "where the leg holds instead"
+"$plan_bin" "$plan" >/dev/null 2>&1
 
 # --- clearing ----------------------------------------------------------------------
 

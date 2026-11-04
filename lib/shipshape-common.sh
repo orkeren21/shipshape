@@ -750,10 +750,11 @@ _shipshape_plan_row() { # <id> <state> <command> <detail>
 #
 # Against the task's own files, not HEAD: the normal order is verify, then
 # commit, so a HEAD comparison would reject good work. A directory is compared
-# against the record itself, less the session's scratch and git's folder:
-# verifying writes to the first, so a task naming the repo root could never
-# close. Read line by line, so a path holding a space stays one path and a *
-# stays a name.
+# against the record itself, less any .shipshape or .git inside it: verifying
+# writes to the first, so a task naming the repo root could never close. They are
+# pruned by name, not matched by path, because the checkout itself may sit under
+# a folder called either. Read line by line, so a path holding a space stays one
+# path and a * stays a name.
 _shipshape_plan_moved() { # <fence> <record> <record epoch> <root>
   local record="$2" epoch="$3" root="$4" entry target newest mtime
   shipshape_json_array "$1" files | while IFS= read -r entry; do
@@ -763,7 +764,7 @@ _shipshape_plan_moved() { # <fence> <record> <record epoch> <root>
       *) target="$root/$entry" ;;
     esac
     if [ -d "$target" ]; then
-      newest="$(find "$target" -type f -newer "$record" ! -path '*/.shipshape/*' ! -path '*/.git/*' 2>/dev/null | head -1)"
+      newest="$(find "$target" \( -name .git -o -name .shipshape \) -prune -o -type f -newer "$record" -print 2>/dev/null | head -1)"
       [ -n "$newest" ] && printf '%s, ' "${newest#"$root"/}"
     elif [ -f "$target" ]; then
       mtime="$(shipshape_mtime "$target")" || continue
@@ -969,13 +970,19 @@ shipshape_plan_rebind() { # <scratch>
   printf '%s\n' "$line"
 }
 
-# --clear leaves a record, so dropping a plan is something a reader meets rather
-# than a binding that quietly stopped existing. One per branch, as a binding
-# belongs to one: a session shipping two branches must not read one's clearing
-# on the other. The next bind on the branch replaces it.
-shipshape_plan_cleared_file() { # <scratch>
-  printf '%s/plan-cleared-%s\n' "$1" \
-    "$(shipshape_safe_id "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" "no-branch")"
+# Dropping a plan leaves a record, so it is something a reader meets rather than
+# a binding that quietly stopped existing. One per branch, as a binding belongs
+# to one: a session shipping two branches must not read one's clearing on the
+# other. The name is a checksum of the branch's name, because sanitising would
+# file feature/x and feature-x together, and every non-ASCII name as one.
+shipshape_plan_cleared_file() { # <scratch> [branch] (default: the current one)
+  local branch
+  if [ "$#" -ge 2 ]; then
+    branch="$2"
+  else
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  fi
+  printf '%s/plan-cleared-%s\n' "$1" "$(printf '%s' "$branch" | cksum | cut -d' ' -f1)"
 }
 
 shipshape_plan_cleared() { # <scratch> -> "<plan> — <reason>", when this branch cleared one

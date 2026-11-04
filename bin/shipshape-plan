@@ -10,9 +10,9 @@
 # on the leg reads the fences in that file beside this session's
 # shipshape-verify records, and the done gate and the merge gate hold the pull
 # request until every task in scope has a passing, current record. It reads the
-# plan file because that works on every model and surface: Claude Code's task
-# tools are gated by model (measured on 2.1.317), and the desktop app has its own
-# task list.
+# plan file because a file read depends on neither model nor surface: Claude
+# Code's task tools are gated by model (measured on 2.1.317), and the desktop app
+# has its own task list.
 #
 # --tasks is how a plan spans pull requests. The tasks left out are listed with
 # the reason wherever the leg is reported, so narrowing the scope is something a
@@ -20,8 +20,10 @@
 # explicit list, not a prefix, because a plan's second PR is rarely one, and not
 # a diff overlap, because a skipped task touches nothing and would pass. --clear
 # drops the plan, and leaves a record the doctor and the done gate print, for the
-# same reason. Neither is refused: narrowing a plan is the session's call to make,
-# in the open.
+# same reason. So does binding another plan over one with work left in it, or a
+# stub would be a --clear with no reason. Neither is refused: narrowing a plan is
+# the session's call to make, in the open. A record stands on the branch the plan
+# was bound on, until that same plan is bound again.
 #
 # Binding again keeps the time when the plan is the same one. A record counts
 # only from that time on: two plans in one session often share ids and commands,
@@ -65,14 +67,27 @@ needs_reason() { # <what the reason is for>
 
 scratch="$(shipshape_scratch_path)"
 file="$scratch/plan"
-cleared="$(shipshape_plan_cleared_file "$scratch")"
+
+# The file is a record of what the branch lost, so it names the branch the plan
+# was bound on, whichever branch the call came from.
+record_cleared() { # <plan> <branch> <reason>
+  local record tmp
+  record="$(shipshape_plan_cleared_file "$scratch" "$2")"
+  tmp="$record.tmp.$$"
+  if ! { printf 'path=%s\n' "$1"; printf 'branch=%s\n' "$2"; printf 'reason=%s\n' "$3"; } > "$tmp" 2>/dev/null ||
+    ! mv -f "$tmp" "$record" 2>/dev/null; then
+    rm -f "$tmp" 2>/dev/null
+    return 1
+  fi
+}
 
 report() {
-  local bound_path scope leg state detail rows rerun us id row_state row_detail
+  local bound_path scope dropped leg state detail rows rerun us id row_state row_detail
   bound_path="$(shipshape_plan_field "$scratch" path)"
+  dropped="$(shipshape_plan_cleared "$scratch")"
   if [ -z "$bound_path" ]; then
     printf 'no plan bound for this session\n'
-    [ ! -f "$cleared" ] || printf 'cleared: %s\n' "$(shipshape_plan_cleared "$scratch")"
+    [ -z "$dropped" ] || printf 'cleared: %s\n' "$dropped"
     return 0
   fi
   if shipshape_waived plan; then
@@ -85,6 +100,7 @@ report() {
   printf 'plan: %s\n' "$bound_path"
   scope="$(shipshape_plan_field "$scratch" tasks)"
   [ -z "$scope" ] || printf 'scope: %s — %s\n' "$scope" "$(shipshape_plan_field "$scratch" reason)"
+  [ -z "$dropped" ] || printf 'cleared: %s\n' "$dropped"
   printf 'leg: %s%s\n' "$state" "${detail:+ — $detail}"
   if [ "$state" = "elsewhere" ]; then
     printf 'bind it here, or drop it:\n'
@@ -171,13 +187,9 @@ if [ -n "$clear" ]; then
   fi
   # The record goes first: a plan dropped with nothing saying so is the failure
   # this exists for, and a clearing that did not happen is not one to report.
-  tmp="$cleared.tmp.$$"
-  if ! {
-    printf 'path=%s\n' "$bound_path"
-    printf 'reason=%s\n' "$reason"
-    printf 'epoch=%s\n' "$(date -u +%s)"
-  } > "$tmp" 2>/dev/null || ! mv -f "$tmp" "$cleared" 2>/dev/null || ! rm -f "$file" 2>/dev/null; then
-    rm -f "$tmp" "$cleared" 2>/dev/null
+  bound_branch="$(shipshape_plan_field "$scratch" branch)"
+  if ! record_cleared "$bound_path" "$bound_branch" "$reason" || ! rm -f "$file" 2>/dev/null; then
+    rm -f "$(shipshape_plan_cleared_file "$scratch" "$bound_branch")" 2>/dev/null
     shipshape_trace_into "$scratch" plan "could not drop the binding at $file"
     refuse "could not write $file"
   fi
@@ -258,10 +270,23 @@ fi
 # --- write -------------------------------------------------------------------
 
 epoch="$(shipshape_plan_field "$scratch" epoch)"
-if [ "$(shipshape_plan_field "$scratch" path)" != "$path" ] || [ -z "$epoch" ]; then
+old_path="$(shipshape_plan_field "$scratch" path)"
+old_branch="$(shipshape_plan_field "$scratch" branch)"
+if [ "$old_path" != "$path" ] || [ -z "$epoch" ]; then
   epoch="$(date -u +%s)"
 fi
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+
+# Taken before the binding moves, while the leg can still say what the old plan
+# had left in it. On the same branch only: bound elsewhere, the first branch
+# reads elsewhere when the session goes back, which already holds it.
+replaced=""
+if [ -n "$old_path" ] && [ "$old_path" != "$path" ] && [ "$old_branch" = "$branch" ]; then
+  case "$(shipshape_leg_plan "$scratch")" in
+    ok\|*) : ;;
+    *) replaced="yes" ;;
+  esac
+fi
 
 # A binding that was not written is reported as not written: the leg would read
 # the old one, or none, and a session told otherwise trusts the wrong plan.
@@ -278,7 +303,17 @@ if ! {
   shipshape_trace plan "could not write the binding at $file"
   refuse "could not write $file"
 fi
-rm -f "$cleared" 2>/dev/null
+
+# The first plan dropped stays named: a later swap must not hide it. Binding that
+# same plan again is what takes a record back.
+cleared="$(shipshape_plan_cleared_file "$scratch")"
+if [ -n "$replaced" ] && [ ! -f "$cleared" ]; then
+  record_cleared "$old_path" "$branch" "replaced by $path" ||
+    shipshape_trace plan "could not record that $old_path was replaced"
+fi
+if [ "$(sed -n 's/^path=//p' "$cleared" 2>/dev/null | head -1)" = "$path" ]; then
+  rm -f "$cleared" 2>/dev/null
+fi
 
 shipshape_trace plan "bound $path on ${branch:-no branch}${scope:+, tasks $scope: $reason}"
 report

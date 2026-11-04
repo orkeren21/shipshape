@@ -253,7 +253,7 @@ $(plan_rerun)"
     add "plan — $detail. Bind it here with $(shipshape_plan_rebind "$scratch"), or drop it with shipshape-plan --clear --reason <why>."
     ;;
   unreadable)
-    add "plan — cannot read $detail: the plan is gone, a fence no longer parses, two fences share an id, a verifyCommand spans lines, or a --tasks id left the plan. Fix that, and bind it again with shipshape-plan if the path changed. If the plan no longer applies, waive the leg in .shipshape.yaml: skip_plan: true  # reason: <why>"
+    add "plan — cannot read $detail: the plan is gone, a fence no longer parses, it holds no fences, two fences share an id, a verifyCommand spans lines, or a --tasks id left the plan. Fix that and bind it again with shipshape-plan, with a new --tasks if the scope changed. If the plan no longer applies, waive the leg in .shipshape.yaml: skip_plan: true  # reason: <why>"
     ;;
 esac
 [ "$missing" != "$before_plan" ] && shipshape_waiver_unreasoned plan && leg_note_unreasoned plan
@@ -309,14 +309,19 @@ if [ -z "$missing" ] && [ -z "$elsewhere_lines" ]; then
   rm -f "$scratch/done-gate-last-nudge"
   shipshape_trace done-gate "armed and satisfied — every leg present and current"
   # One note, not a block: narrowing is the session's call, made in the open.
-  if [ -n "$narrowed" ] && [ -n "$current_numbers" ]; then
+  # Remembered per pull request: the same clearing is news to a second PR, and
+  # walking between branches is news to neither.
+  if [ -n "$narrowed" ]; then
     digest="$(printf '%s' "$narrowed" | cksum 2>/dev/null | cut -d' ' -f1)"
-    if [ "$digest" != "$(cat "$scratch/done-gate-narrowed" 2>/dev/null)" ]; then
-      printf '%s' "$digest" > "$scratch/done-gate-narrowed"
-      shipshape_emit_system_message "ShipShape — the evidence is complete, for a narrowed plan:
+    unheard=""
+    for n in $current_numbers; do
+      [ "$digest" != "$(cat "$scratch/done-gate-narrowed-$n" 2>/dev/null)" ] || continue
+      printf '%s' "$digest" > "$scratch/done-gate-narrowed-$n"
+      unheard="yes"
+    done
+    [ -z "$unheard" ] || shipshape_emit_system_message "ShipShape — the evidence is complete, for a narrowed plan:
 
 $narrowed" done_gate_plan_narrowed
-    fi
   fi
   exit 0
 fi

@@ -58,7 +58,7 @@ reviewer can read: `shipshape-plan <path> --tasks <ids> --reason "<why>"`. The
 done gate says what was left out, and the pull request should too.
 
 If the branch has a plan and it was never bound, bind it now: a late bind costs
-one run. A branch with no plan has nothing to close.
+one run per command. A branch with no plan has nothing to close.
 
 ## 4. Smoke the changed flows
 

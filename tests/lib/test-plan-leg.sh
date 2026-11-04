@@ -191,6 +191,24 @@ printf 'real\n' > "$repo/real.txt"
 assert_eq "stale" "$(row_state t1)" "and a real file under the root still does"
 rm -f "$repo/real.txt" "$repo/.git/noise"
 
+# The carve-out is for those folders inside a task's directory, not for wherever
+# the checkout happens to live.
+nested="$work/under/.shipshape/checkout"
+make_repo "$nested"
+mkdir -p "$nested/gen"
+printf 'v1\n' > "$nested/gen/one.txt"
+touch -t 202001010000 "$nested/gen/one.txt"
+nested_scratch="$nested/.shipshape/plan-session"
+mkdir -p "$nested_scratch/verify"
+nested_plan="$work/nested.md"
+printf '```json:metadata\n{"id":"t1","files":["gen"],"verifyCommand":"tests/run.sh"}\n```\n' > "$nested_plan"
+printf 'path=%s\nbranch=\ntasks=\nreason=\nepoch=1\n' "$nested_plan" > "$nested_scratch/plan"
+printf 'task=t1\ncommand=tests/run.sh\nexit=0\nepoch=1577836800\n--- output ---\n' > "$nested_scratch/verify/t1"
+touch -t 202001010000 "$nested_scratch/verify/t1"
+printf 'v2\n' > "$nested/gen/one.txt"
+assert_eq "stale|t1" "$(SHIPSHAPE_SCRATCH_ROOT="$nested" shipshape_leg_plan "$nested_scratch")" \
+  "a checkout under a folder of that name still sees its own files move"
+
 # A star is a name, a space and a comma are part of a path.
 printf 'new\n' > "$repo/fresh.txt"
 write_plan '{"id":"t1","files":["*"],"verifyCommand":"tests/run.sh"}'
@@ -445,5 +463,14 @@ git checkout -q "$here"
 git branch -q -D second-branch
 assert_eq "/a/plan.md — prose only" "$(shipshape_plan_cleared "$scratch")" "back on its own branch it still says so"
 rm -f "$cleared_here"
+
+# The record's name comes from the branch's name as git has it. Sanitising would
+# file feature/x and feature-x together, and every non-ASCII name as one.
+assert_ne "$(shipshape_plan_cleared_file "$scratch" feature/x)" "$(shipshape_plan_cleared_file "$scratch" feature-x)" \
+  "two branches that sanitise alike keep separate records"
+assert_ne "$(shipshape_plan_cleared_file "$scratch" תיקון)" "$(shipshape_plan_cleared_file "$scratch" אחר)" \
+  "and so do two names with no ASCII in them"
+assert_eq "$cleared_here" "$(shipshape_plan_cleared_file "$scratch" "$here")" \
+  "and naming the branch is the same as standing on it"
 
 finish

@@ -55,7 +55,8 @@ with the same `--tasks` and reason. Evidence stays with the session that
 earned it, so your predecessor's verify records do not count here, any more than
 its review does. That is usually one run: `shipshape-verify t1,t2,t3
 "<command>"`. A task that cannot be run again goes out of scope with `--tasks`
-and a reason.
+and a reason. If the handoff says a plan was cleared, the gates here will not
+know, so say so in the pull request.
 
 ## Then continue
 

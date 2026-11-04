@@ -213,11 +213,31 @@ assert_eq "" "$(hook_field "$out" decision)" "a cleared plan does not block"
 assert_contains "$(hook_field "$out" systemMessage)" "the plan was a sketch" "and the reason reaches the reader, not only the trace"
 assert_eq "" "$(hook_field "$(stop "$CLAIM")" systemMessage)" "once"
 
+# One PR's silence is not another's: the same clearing on a second PR is news to
+# that PR, and walking between branches is not news to either.
+arm_on() { printf 'url=https://x/pull/%s\nnumber=%s\nbranch=%s\nepoch=%s\n' "$1" "$1" "$2" "$(date -u +%s)" > "$scratch/pr-armed-$1"; }
+rm -f "$scratch/pr-armed" "$scratch"/pr-satisfied-* "$scratch"/done-gate-narrowed*
+arm_on 1 "$branch_here"
+assert_contains "$(hook_field "$(stop "$CLAIM")" systemMessage)" "the plan was a sketch" "the first PR hears of the clearing"
+git -C "$repo" checkout -q -b second-pr
+arm_on 2 second-pr
+plan_as "$plan" >/dev/null 2>&1
+plan_as --clear --reason "the plan was a sketch" >/dev/null 2>&1
+assert_contains "$(hook_field "$(stop "$CLAIM")" systemMessage)" "the plan was a sketch" "and so does a second, with the same words"
+git -C "$repo" checkout -q "$branch_here"
+assert_eq "" "$(hook_field "$(stop "$CLAIM")" systemMessage)" "going back is not news"
+git -C "$repo" checkout -q second-pr
+assert_eq "" "$(hook_field "$(stop "$CLAIM")" systemMessage)" "and neither is returning"
+git -C "$repo" checkout -q "$branch_here"
+git -C "$repo" branch -q -D second-pr
+rm -f "$scratch"/pr-armed-* "$scratch"/pr-satisfied-*
+arm
+
 rm -f "$scratch"/review-*.md "$scratch/done-gate-last-nudge"
 nudge="$(hook_field "$(stop "$CHAT")" systemMessage)"
 assert_contains "$nudge" "the plan was a sketch" "a nudge carries the clearing too"
 
-rm -f "$scratch/plan" "$scratch"/plan-cleared-* "$scratch/done-gate-last-nudge" "$stamp" "$scratch/done-gate-narrowed"
+rm -f "$scratch/plan" "$scratch"/plan-cleared-* "$scratch/done-gate-last-nudge" "$stamp" "$scratch"/done-gate-narrowed*
 rm -rf "$scratch/verify"
 give_all
 

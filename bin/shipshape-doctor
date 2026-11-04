@@ -243,8 +243,9 @@ case "${plan_leg%%|*}" in
   stale)         leg_line plan "stale — a file of $detail changed after its record" ;;
   failed)        leg_line plan "failed — $detail exited non-zero" ;;
   wrong-command) leg_line plan "wrong command — $detail ran something other than the fence's command; quote it whole" ;;
-  elsewhere)     leg_line plan "elsewhere — $detail; bind it here, or shipshape-plan --clear --reason <why>" ;;
-  unreadable)    leg_line plan "unreadable — $detail; fix it and bind again, or waive it: skip_plan: true  # reason: <why>" ;;
+  elsewhere)     leg_line plan "elsewhere — $detail; bind it here, or shipshape-plan --clear --reason <why>"
+                 printf '           %s\n' "$(shipshape_plan_rebind "$scratch")" ;;
+  unreadable)    leg_line plan "unreadable — $detail; fix it and bind again, or waive it in .shipshape.yaml: skip_plan: true  # reason: <why>" ;;
 esac
 
 # One line per task the leg is not happy with, then what closes them, then what
@@ -268,6 +269,7 @@ case "${plan_leg%%|*}" in
     printf '%s\n' "$plan_rows" | while IFS="$sep" read -r task task_state _ note; do
       [ "$task_state" != "left-out" ] || plan_task "$task" "$task_state" "$note"
     done
+    [ -z "$plan_cleared" ] || printf '           cleared: %s\n' "$plan_cleared"
     ;;
 esac
 

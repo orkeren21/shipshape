@@ -235,6 +235,17 @@ assert_eq "1" "$?" "TRIPPED: narrowing the scope with no reason is refused"
 assert_eq "1" "$?" "TRIPPED: dropping the plan with no reason is refused"
 assert_file "$scratch/plan" "and the binding stands"
 
+# Skip: swap the plan for one with nothing in it. It is not refused, and the
+# plan it dropped stays named.
+stub="$work/stub.md"
+printf '```json:metadata\n{"id":"g1z"}\n```\n' > "$stub"
+(cd "$repo" && shipshape-plan "$stub" >/dev/null 2>&1)
+out="$(stop "$CLAIM")"
+assert_contains "$(hook_field "$out" systemMessage)" "replaced by" \
+  "TRIPPED: swapping an unfinished plan for a stub passes, and says what it dropped"
+(cd "$repo" && shipshape-plan "$plan" >/dev/null 2>&1)
+assert_eq "block" "$(hook_field "$(stop "$CLAIM")" decision)" "binding the real plan again holds the branch as before"
+
 # Skip: a fence whose command holds a line break. As a shell line it fails, and
 # flattened into a re-run line the same words pass, so it is refused at the bind.
 printf '```json:metadata\n{"id":"g1x","verifyCommand":"true\\nfalse"}\n```\n' > "$work/multi.md"
