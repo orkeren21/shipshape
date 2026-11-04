@@ -174,8 +174,8 @@ async function readDoctor($: EngineInterface): Promise<void> {
     await update($, doctor, prev => (JSON.stringify(prev) === JSON.stringify(got.doctor) ? prev : got.doctor))
     await update($, note, () => null)
     if (got.doctor.seat?.role === 'architect' && !(await read($, paneOpened))) {
-      await update($, paneOpened, () => true)
       void $.ui.open({ id: PANE, title: 'Epic' })
+      await update($, paneOpened, () => true).catch(() => {})
     }
     await refreshEpic($)
   } else {
@@ -495,8 +495,8 @@ export const register: Register = (on, options) => {
     }
     const d = await read($, doctor)
     if (d?.seat?.role === 'architect') {
-      await update($, paneOpened, () => true)
       const opened = await $.ui.open({ id: PANE, title: 'Epic' })
+      await update($, paneOpened, () => true).catch(() => {})
       return { text: opened.isPlaced ? 'shipdeck: the epic pane is open.' : `shipdeck: the epic pane waits for room (${opened.reason}).` }
     }
     const why = (await read($, note)) ?? ''

@@ -99,7 +99,7 @@ refuses anything.
 |---|---|---|
 | band | `ui.render` `AbovePrompt` | The band above the prompt: seat, context gauge, evidence legs, notices. Desktop draws one SVG per row (`github` or `linear` style), with text pinned to measured widths; the terminal draws the same row as text. |
 | row | `ui.render` `UserMessage` | The desktop draws a prompt as typed, so a refined prompt's row is redrawn with what the session received. |
-| refiner | `prompt.submit` | Rewrites a dictated dump with Sonnet 5.5, using `refiner/instructions.md`: the `refining-prompts` skill's body verbatim (a packaging test pins it), plus a delivery section. |
+| refiner | `prompt.submit` | Rewrites a dictated dump with Sonnet 5.5, using `refiner/instructions.md`: the `refining-prompts` skill's body verbatim (a packaging test pins it), plus a delivery section. Each decision goes to the session trace as counts and reasons, never the words. |
 | refresh | `session.start`, `tool.call`, `turn.complete`, a 60 s clock | Re-reads `$.session.usage()` and runs `shipshape-doctor --json`, at most every 5 s after `Bash`, `Agent` or `Task`. |
 | epic pane | `ui.render` `Pane` | For an Architect seat: the roster, the lanes done, the last five rulings. |
 | epic refresh | a 30 s clock | Re-reads the epic folder while the seat is `architect`; a lane whose status turns `done` raises a notice. |
@@ -110,8 +110,10 @@ refuses anything.
 **Evidence comes from bash, once.** The band never reads an artifact
 itself. It runs the core's `shipshape-doctor --json`, passing
 `SHIPSHAPE_SESSION_ID` from `$.session.id()`, which is the same id the hooks
-name the scratch folder by. So the display and the gates read the same files
-through the same evaluators. The mod finds the core by checking three places
+name the scratch folder by. It runs in the main loop's folder, tracked from
+the session's own hooks and the clock, because a shell `cd` moves the gates
+and `$.session.root()` stays where the session started. So the display and
+the gates read the same files through the same evaluators. The mod finds the core by checking three places
 in order: the checkout it sits in, `claude plugin list --json`, then the
 installed-plugins record. With no core found, or one older than 0.5.0, the
 legs read `evidence unavailable`, never green.

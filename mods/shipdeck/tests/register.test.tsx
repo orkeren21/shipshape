@@ -702,6 +702,23 @@ test('a pane opened before a reload is not opened again by the reading', async (
   expect(seen.opened).toHaveLength(0)
 })
 
+test('a refused write of that flag still opens the pane, and costs the reading nothing', async ($, on) => {
+  on('state.set', (_, e, next) => {
+    if ((e as { key?: string }).key === 'paneOpened') return { deny: 'state host down' } as never
+    return next(e)
+  })
+  const { clock, seen } = world(on, {
+    doctor: doctorJson({ seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }),
+    files: { '/epic/roster/f1.md': 'status: active', '/epic/decisions.md': '' },
+    dirs: { '/epic/roster': ['f1.md'] },
+  })
+  await start($, clock)
+  expect(seen.opened).toEqual(['shipdeck-epic'])
+  const pane = await $.ui.mount({ plugin: 'shipdeck', surface: 'desktop', component: 'Pane', requestId: 'shipdeck-epic', props: { title: 'Epic', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as never })
+  expect(await pane.find({ type: 'Text', text: /^f1$/ })).toBeDefined()
+  await pane.unmount()
+})
+
 test('a lane done in one epic is not news in the next one', async ($, on) => {
   const seat = (epic: string) => doctorJson({ seat: { role: 'architect', lane: null, epic, handoff: null } })
   const w: World = {
