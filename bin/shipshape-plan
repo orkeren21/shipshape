@@ -65,7 +65,7 @@ needs_reason() { # <what the reason is for>
 
 scratch="$(shipshape_scratch_path)"
 file="$scratch/plan"
-cleared="$scratch/plan-cleared"
+cleared="$(shipshape_plan_cleared_file "$scratch")"
 
 report() {
   local bound_path scope leg state detail rows rerun us id row_state row_detail

@@ -253,7 +253,7 @@ $(plan_rerun)"
     add "plan — $detail. Bind it here with $(shipshape_plan_rebind "$scratch"), or drop it with shipshape-plan --clear --reason <why>."
     ;;
   unreadable)
-    add "plan — cannot read $detail: the plan is gone, a fence no longer parses, two fences share an id, a verifyCommand spans lines, or a --tasks id left the plan. Fix that, and bind it again with shipshape-plan if the path changed."
+    add "plan — cannot read $detail: the plan is gone, a fence no longer parses, two fences share an id, a verifyCommand spans lines, or a --tasks id left the plan. Fix that, and bind it again with shipshape-plan if the path changed. If the plan no longer applies, waive the leg in .shipshape.yaml: skip_plan: true  # reason: <why>"
     ;;
 esac
 [ "$missing" != "$before_plan" ] && shipshape_waiver_unreasoned plan && leg_note_unreasoned plan

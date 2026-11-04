@@ -35,7 +35,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `shipshape-pr-open` | `gh pr create` | `pr-armed` — arms the done gate |
 | `shipshape-ci-watch` | `gh pr checks --watch` | `ci-status` — green means *mergeable*, not "the checks that ran passed". A pull request blocked only on a human approval, with a clean check rollup, is recorded `green-pending-review` and accepted. |
 | `shipshape-verify` | a task's verify command | `verify/<task-id>`, one for each id in a comma-separated list, from a single run |
-| `shipshape-plan` | nothing — records a fact | `plan` — the file whose fences the plan leg reads, the branch it was bound on, and any `--tasks` scope with its required reason. Refuses a plan the leg could not read. A record counts only from the binding on, so another plan's `t1` cannot pass this one's. |
+| `shipshape-plan` | nothing — records a fact | `plan` — the file whose fences the plan leg reads, the branch it was bound on, and any `--tasks` scope with its required reason. Refuses a plan the leg could not read. A record counts only from the binding on, so another plan's `t1` cannot pass this one's. `--clear` drops the binding and leaves `plan-cleared-<branch>` with the reason. |
 | `shipshape-smoke` | any command | `smoke.log` |
 | `shipshape-seat` | nothing — records a fact | `seat` — whether the session is an Architect, a lane or solo, its epic folder and its handoff. context-watch picks thresholds from it; session-start re-orients a compacted session from it. Also prints the session id a roster file needs. |
 | `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Names any other checkout's folder for the same session: where older hooks in a desktop-app worktree session left their half of the evidence, or what a subagent working in its own worktree left there. Always exits 0; diagnosis is not enforcement. `--json` prints the same evaluation as one object (format 1): each leg's state in the evaluator's own word, the seat, the scratch path, reviewers still running, and the armed PRs. shipdeck draws its band from it. |
@@ -74,7 +74,8 @@ plan is gone, a fence no longer parses, or a `--tasks` id left the plan. With no
 plan bound it reads `none`, which settles it. A reasoned `skip_plan` line in
 `.shipshape.yaml` waives it. Tasks a `--tasks` scope leaves out, and a plan
 dropped with `--clear`, show in the doctor and from the done gate with the reason,
-in a one-time note if the branch is otherwise satisfied. A `verifyCommand` is one
+in a one-time note if the branch is otherwise satisfied. `--json` carries a clearing
+in `plan_cleared`, beside the legs. A `verifyCommand` is one
 shell line, and one spanning lines is refused at the bind and reads `unreadable`:
 a line break changes what a shell runs. The bound scope is also handed to the
 whole-branch reviewer.

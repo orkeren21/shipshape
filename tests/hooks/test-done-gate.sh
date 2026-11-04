@@ -159,6 +159,7 @@ assert_eq "block" "$(hook_field "$out" decision)" "a vanished plan holds it"
 reason="$(hook_field "$out" reason)"
 assert_contains "$reason" "$plan" "and the block names the path"
 assert_not_contains "$reason" "--clear" "unreadable blocks: dropping the plan is not offered as the fix"
+assert_contains "$reason" "skip_plan" "and it is no dead end: the waiver is named, with its reason"
 mv "$plan.gone" "$plan"
 
 rm -f "$scratch/verify/t1"
@@ -216,7 +217,7 @@ rm -f "$scratch"/review-*.md "$scratch/done-gate-last-nudge"
 nudge="$(hook_field "$(stop "$CHAT")" systemMessage)"
 assert_contains "$nudge" "the plan was a sketch" "a nudge carries the clearing too"
 
-rm -f "$scratch/plan" "$scratch/plan-cleared" "$scratch/done-gate-last-nudge" "$stamp" "$scratch/done-gate-narrowed"
+rm -f "$scratch/plan" "$scratch"/plan-cleared-* "$scratch/done-gate-last-nudge" "$stamp" "$scratch/done-gate-narrowed"
 rm -rf "$scratch/verify"
 give_all
 

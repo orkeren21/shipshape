@@ -970,9 +970,17 @@ shipshape_plan_rebind() { # <scratch>
 }
 
 # --clear leaves a record, so dropping a plan is something a reader meets rather
-# than a binding that quietly stopped existing. The next bind replaces it.
-shipshape_plan_cleared() { # <scratch> -> "<plan> — <reason>", when one was cleared
-  local file="$1/plan-cleared"
+# than a binding that quietly stopped existing. One per branch, as a binding
+# belongs to one: a session shipping two branches must not read one's clearing
+# on the other. The next bind on the branch replaces it.
+shipshape_plan_cleared_file() { # <scratch>
+  printf '%s/plan-cleared-%s\n' "$1" \
+    "$(shipshape_safe_id "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" "no-branch")"
+}
+
+shipshape_plan_cleared() { # <scratch> -> "<plan> — <reason>", when this branch cleared one
+  local file
+  file="$(shipshape_plan_cleared_file "$1")"
   [ -f "$file" ] || return 0
   printf '%s — %s\n' "$(sed -n 's/^path=//p' "$file" | head -1)" "$(sed -n 's/^reason=//p' "$file" | head -1)"
 }

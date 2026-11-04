@@ -432,8 +432,18 @@ assert_eq "shipshape-plan '$plan' --tasks t1,t2 --reason 'it'\\''s slice B'" "$(
 
 reset
 assert_eq "" "$(shipshape_plan_cleared "$scratch")" "nothing cleared, nothing to say"
-printf 'path=/a/plan.md\nreason=prose only\nepoch=1\n' > "$scratch/plan-cleared"
+cleared_here="$(shipshape_plan_cleared_file "$scratch")"
+printf 'path=/a/plan.md\nreason=prose only\nepoch=1\n' > "$cleared_here"
 assert_eq "/a/plan.md — prose only" "$(shipshape_plan_cleared "$scratch")" "a cleared plan names itself and the reason"
-rm -f "$scratch/plan-cleared"
+
+# A clearing belongs to its branch, as a binding does: a session shipping two
+# branches must not read one's clearing on the other.
+git checkout -q -b second-branch
+assert_eq "" "$(shipshape_plan_cleared "$scratch")" "another branch has no clearing to report"
+assert_ne "$cleared_here" "$(shipshape_plan_cleared_file "$scratch")" "and its own record would not touch this one"
+git checkout -q "$here"
+git branch -q -D second-branch
+assert_eq "/a/plan.md — prose only" "$(shipshape_plan_cleared "$scratch")" "back on its own branch it still says so"
+rm -f "$cleared_here"
 
 finish

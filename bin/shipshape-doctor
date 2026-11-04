@@ -61,13 +61,11 @@ review_leg="$(leg_eval review review)"
 ci_leg="$(leg_eval ci ci)"
 smoke_leg="$(leg_eval smoke smoke)"
 # A waiver with no plan bound has nothing to waive, and the band draws this leg
-# only while a plan is bound. A plan that was cleared says so in the detail.
-if [ -n "$(shipshape_plan_field "$scratch" path)" ]; then
-  plan_leg="$(leg_eval plan plan)"
-else
-  plan_cleared="$(shipshape_plan_cleared "$scratch")"
-  plan_leg="none|${plan_cleared:+no plan bound; cleared: $plan_cleared}"
-fi
+# only while a plan is bound. A clearing is not one of the leg's words: it reads
+# as none, and what was dropped travels beside it.
+plan_leg="none|"
+[ -z "$(shipshape_plan_field "$scratch" path)" ] || plan_leg="$(leg_eval plan plan)"
+plan_cleared="$(shipshape_plan_cleared "$scratch")"
 merge_waived=""
 shipshape_waived merge_gate && merge_waived="yes"
 
@@ -168,8 +166,9 @@ SHIPSHAPE_PRS
   printf '"legs":{"review":%s,"ci":%s,"smoke":%s,"plan":%s},' \
     "$(leg_json "$review_leg")" "$(leg_json "$ci_leg")" "$(leg_json "$smoke_leg")" \
     "$(leg_json "$plan_leg")"
-  printf '"pending":[%s],"merge_gate_waived":%s,"prs":[%s]}\n' \
-    "$pending_json" "$([ -n "$merge_waived" ] && echo true || echo false)" "$prs_json"
+  printf '"pending":[%s],"merge_gate_waived":%s,"plan_cleared":%s,"prs":[%s]}\n' \
+    "$pending_json" "$([ -n "$merge_waived" ] && echo true || echo false)" \
+    "$(str "$plan_cleared")" "$prs_json"
   exit 0
 fi
 
@@ -238,14 +237,14 @@ esac
 detail="${plan_leg#*|}"
 case "${plan_leg%%|*}" in
   waived)        leg_line plan "waived — $detail" ;;
-  none)          leg_line plan "${detail:-no plan bound}" ;;
+  none)          leg_line plan "${detail:-no plan bound}${plan_cleared:+; cleared: $plan_cleared}" ;;
   ok)            leg_line plan "ok — every task in scope closed" ;;
   open)          leg_line plan "open — $detail has no current record" ;;
   stale)         leg_line plan "stale — a file of $detail changed after its record" ;;
   failed)        leg_line plan "failed — $detail exited non-zero" ;;
   wrong-command) leg_line plan "wrong command — $detail ran something other than the fence's command; quote it whole" ;;
   elsewhere)     leg_line plan "elsewhere — $detail; bind it here, or shipshape-plan --clear --reason <why>" ;;
-  unreadable)    leg_line plan "unreadable — $detail; fix it and bind again" ;;
+  unreadable)    leg_line plan "unreadable — $detail; fix it and bind again, or waive it: skip_plan: true  # reason: <why>" ;;
 esac
 
 # One line per task the leg is not happy with, then what closes them, then what

@@ -72,6 +72,7 @@ assert_eq "missing" "$(jget "$out" legs.review.state)" "no review yet"
 assert_eq "missing" "$(jget "$out" legs.ci.state)" "no CI yet"
 assert_eq "missing" "$(jget "$out" legs.smoke.state)" "no smoke yet"
 assert_eq "none" "$(jget "$out" legs.plan.state)" "no plan bound, and the key is always there"
+assert_eq "null" "$(jget "$out" plan_cleared)" "and nothing cleared"
 [ -d "$scratch" ] && fail "--json created the scratch directory"
 
 # --- the seat comes through whole ----------------------------------------------
@@ -224,7 +225,9 @@ assert_contains "$(text)" "--clear" "the report names the ways out"
 bind
 mv "$plan" "$plan.gone"
 leg_case plan unreadable "unreadable — $plan" "a vanished plan"
-assert_contains "$(text)" "the plan is gone" "the report says what happened"
+out="$(text)"
+assert_contains "$out" "the plan is gone" "the report says what happened"
+assert_contains "$out" "skip_plan" "and the way out, since it blocks"
 mv "$plan.gone" "$plan"
 
 bind "" "t1,t2" "t3 ships in the next PR"
@@ -264,11 +267,13 @@ rm -rf "$scratch/plan" "$scratch/verify"
 
 # A cleared plan reads as none, and says so: the band draws nothing, and a
 # reader of the doctor still finds what was dropped.
-printf 'path=%s\nreason=prose only\nepoch=1\n' "$plan" > "$scratch/plan-cleared"
+cleared_file="$scratch/plan-cleared-$(printf '%s' "$branch" | tr -c 'A-Za-z0-9_-' '-')"
+printf 'path=%s\nreason=prose only\nepoch=1\n' "$plan" > "$cleared_file"
 leg_case plan none "cleared: $plan — prose only" "a cleared plan"
 out="$(json)"
-assert_contains "$(jget "$out" legs.plan.detail)" "prose only" "and the JSON's detail carries it"
-rm -f "$scratch/plan-cleared"
+assert_eq "$plan — prose only" "$(jget "$out" plan_cleared)" "and a field of its own carries it"
+assert_eq "null" "$(jget "$out" legs.plan.detail)" "leaving the leg's words alone"
+rm -f "$cleared_file"
 
 # --- running reviewers ------------------------------------------------------------
 

@@ -16,6 +16,9 @@ export type DoctorJson = {
   legs: { review: DoctorLeg; ci: DoctorLeg; smoke: DoctorLeg; plan?: DoctorLeg }
   pending: { agent: string; kind: string; since: number | null }[]
   merge_gate_waived: boolean
+  // A plan this branch dropped with --clear: "<plan> — <reason>". Absent from a
+  // core older than 0.6.0. Nothing draws it; the doctor's words are for a reader.
+  plan_cleared?: string | null
   prs: { number: string; url: string | null; branch: string | null; state: string }[]
 }
 

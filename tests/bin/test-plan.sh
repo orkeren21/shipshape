@@ -23,6 +23,7 @@ file="$scratch/plan"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 
 field() { sed -n "s/^$1=//p" "$file" 2>/dev/null | head -1; }
+cleared_file="$scratch/plan-cleared-$(shipshape_safe_id "$branch")"
 
 mkdir -p "$repo/docs"
 plan="$repo/docs/plan.md"
@@ -158,7 +159,7 @@ if [ "$(id -u)" != "0" ]; then
   assert_ne "0" "$status_clear" "a clearing that could not be recorded fails too"
   assert_contains "$out_clear" "could not write" "and says so"
   assert_eq "$before" "$(cat "$file")" "and the binding stands"
-  assert_no_file "$scratch/plan-cleared" "and nothing says it was cleared"
+  assert_no_file "$cleared_file" "and nothing says it was cleared"
 fi
 
 # --- usage ------------------------------------------------------------------------
@@ -237,8 +238,20 @@ assert_contains "$out" "no plan bound" "the report says nothing is bound"
 assert_contains "$out" "this branch is prose only" "and what was cleared, and why"
 
 "$plan_bin" "$plan" >/dev/null 2>&1
-assert_no_file "$scratch/plan-cleared" "binding again replaces the clearing"
+assert_no_file "$cleared_file" "binding again replaces the clearing"
 "$plan_bin" --clear --reason "prose only after all" >/dev/null 2>&1
+
+# A clearing is its branch's. Binding on another branch leaves it standing.
+assert_file "$cleared_file" "the clearing is recorded for this branch"
+git checkout -q -b later-work
+assert_no_file "$scratch/plan" "the binding was cleared"
+out="$("$plan_bin" 2>&1)"
+assert_not_contains "$out" "prose only after all" "another branch does not report this one's clearing"
+"$plan_bin" "$plan" >/dev/null 2>&1
+assert_file "$cleared_file" "and binding there does not remove it"
+"$plan_bin" --clear --reason "later work is prose too" >/dev/null 2>&1
+git checkout -q "$branch"
+assert_contains "$("$plan_bin" 2>&1)" "prose only after all" "each branch keeps its own clearing"
 
 out="$("$plan_bin" --clear --reason "again" 2>&1)"
 assert_eq "0" "$?" "clearing nothing is not an error"
