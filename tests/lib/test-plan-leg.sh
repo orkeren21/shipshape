@@ -55,6 +55,13 @@ row_state() { shipshape_plan_rows "$scratch" | awk -F"$us" -v id="$1" '$1 == id 
 row_detail() { shipshape_plan_rows "$scratch" | awk -F"$us" -v id="$1" '$1 == id { print $4 }'; }
 reset() { rm -rf "$scratch/verify" "$scratch/plan"; }
 
+# --- the id list ---------------------------------------------------------------
+
+assert_eq "t1
+t2
+t3" "$(shipshape_id_list ' t1 ,, t2,../t3,')" "a list is one safe id per line, and an entry leaving nothing drops out"
+assert_eq "" "$(shipshape_id_list ',')" "a list of nothing is nothing"
+
 # --- no binding --------------------------------------------------------------
 
 assert_eq "none|" "$(leg)" "with no plan bound the leg has nothing to say"
@@ -227,6 +234,7 @@ assert_contains "$(shipshape_plan_rows "$scratch")" "gone" "the row says what ha
 
 printf 'No fences here any more.\n' > "$plan"
 assert_eq "unreadable|$plan" "$(leg)" "a plan with its fences removed cannot read as all closed"
+assert_contains "$(shipshape_plan_rows "$scratch")" "no fences" "and the row says so, for the doctor to print"
 
 write_plan '{"id":"t1","files":[],"verifyCommand":"tests/run.sh"}' '{"id":"t2",'
 record t1 "tests/run.sh" 0
@@ -239,7 +247,11 @@ write_plan '{"id":"...","files":[]}'
 assert_eq "unreadable|fence-1" "$(leg)" "nor can one whose id sanitises to nothing"
 
 write_plan '{"id":"t1","files":[],"verifyCommand":"tests/run.sh"}' ''
-assert_eq "unreadable|fence-2" "$(leg)" "an empty fence at the end of the plan is not silently dropped"
+assert_eq "unreadable|fence-2" "$(leg)" "a blank fence at the end of the plan is not silently dropped"
+
+# Nothing at all between the markers: $(...) would strip a line with nothing on it.
+{ write_plan '{"id":"t1","files":[],"verifyCommand":"tests/run.sh"}'; printf '```json:metadata\n```\n' >> "$plan"; }
+assert_eq "unreadable|fence-2" "$(leg)" "nor is a fence with no lines in it"
 
 printf '```json:metadata\n{"id":"t1","files":[],"verifyCommand":"tests/run.sh"}\n' > "$plan"
 assert_eq "ok" "$(row_state t1)" "an unterminated fence that still parses is read"
