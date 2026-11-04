@@ -25,7 +25,7 @@ value is entirely in being trustworthy, and one wrong fact makes the successor
 distrust all of it.
 
 **The plan.** If one is bound, its path and any `--tasks` scope with the reason;
-if one was cleared or replaced, that and why. `shipshape-plan` with no arguments
+if one was cleared or replaced, that too. `shipshape-plan` with no arguments
 prints them, with each task's state. Verify records and that clearing stay with
 this session, as its review and smoke do, so the successor binds the plan again
 and runs the commands itself, and the handoff is what carries the clearing.

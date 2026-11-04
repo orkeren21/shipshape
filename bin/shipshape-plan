@@ -20,10 +20,11 @@
 # explicit list, not a prefix, because a plan's second PR is rarely one, and not
 # a diff overlap, because a skipped task touches nothing and would pass. --clear
 # drops the plan, and leaves a record the doctor and the done gate print, for the
-# same reason. So does binding another plan over one with work left in it, or a
-# stub would be a --clear with no reason. Neither is refused: narrowing a plan is
-# the session's call to make, in the open. A record stands on the branch the plan
-# was bound on, until that same plan is bound again.
+# same reason. Neither is refused: narrowing a plan is the session's call to make,
+# in the open. The record stands on the branch the plan was bound on, until that
+# same plan is bound again. Binding another plan prints the one it replaced and
+# keeps no state: the leg reads the plan live, so a session could reach the same
+# place by editing it, and DETAILS says so.
 #
 # Binding again keeps the time when the plan is the same one. A record counts
 # only from that time on: two plans in one session often share ids and commands,
@@ -271,22 +272,10 @@ fi
 
 epoch="$(shipshape_plan_field "$scratch" epoch)"
 old_path="$(shipshape_plan_field "$scratch" path)"
-old_branch="$(shipshape_plan_field "$scratch" branch)"
 if [ "$old_path" != "$path" ] || [ -z "$epoch" ]; then
   epoch="$(date -u +%s)"
 fi
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
-
-# Taken before the binding moves, while the leg can still say what the old plan
-# had left in it. On the same branch only: bound elsewhere, the first branch
-# reads elsewhere when the session goes back, which already holds it.
-replaced=""
-if [ -n "$old_path" ] && [ "$old_path" != "$path" ] && [ "$old_branch" = "$branch" ]; then
-  case "$(shipshape_leg_plan "$scratch")" in
-    ok\|*) : ;;
-    *) replaced="yes" ;;
-  esac
-fi
 
 # A binding that was not written is reported as not written: the leg would read
 # the old one, or none, and a session told otherwise trusts the wrong plan.
@@ -304,17 +293,16 @@ if ! {
   refuse "could not write $file"
 fi
 
-# The first plan dropped stays named: a later swap must not hide it. Binding that
-# same plan again is what takes a record back.
+# Only that same plan back takes a clearing back, or binding a stub would erase
+# the record of what was dropped.
 cleared="$(shipshape_plan_cleared_file "$scratch")"
-if [ -n "$replaced" ] && [ ! -f "$cleared" ]; then
-  record_cleared "$old_path" "$branch" "replaced by $path" ||
-    shipshape_trace plan "could not record that $old_path was replaced"
-fi
 if [ "$(sed -n 's/^path=//p' "$cleared" 2>/dev/null | head -1)" = "$path" ]; then
   rm -f "$cleared" 2>/dev/null
 fi
 
 shipshape_trace plan "bound $path on ${branch:-no branch}${scope:+, tasks $scope: $reason}"
+if [ -n "$old_path" ] && [ "$old_path" != "$path" ]; then
+  printf 'replaced: %s\n' "$old_path"
+fi
 report
 exit 0

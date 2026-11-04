@@ -239,46 +239,26 @@ git checkout -q "$branch"
 assert_contains "$("$plan_bin" 2>&1)" "dropped from another branch" "it is reported on the branch that lost the plan"
 rm -f "$cleared_file"
 
-# --- binding another plan is not a free --clear -------------------------------------
+# --- binding another plan ------------------------------------------------------------
+#
+# Replacing a plan is not detected, the same as editing one: the leg reads the
+# plan live, so deleting its failing tasks would reach the same place. The bind
+# says what it replaced, once, and keeps no state about it.
 
-mkdir -p "$scratch/verify"
 "$plan_bin" "$plan" >/dev/null 2>&1
-rm -f "$scratch/verify/t1" "$scratch/verify/t2"
-"$plan_bin" "$other" >/dev/null 2>&1
-assert_eq "0" "$?" "replacing an unfinished plan is not refused"
-assert_contains "$(shipshape_plan_cleared "$scratch")" "$plan — replaced by $other" "but the plan it dropped stays named"
-assert_contains "$("$plan_bin" 2>&1)" "replaced by $other" "and the report says so beside the new binding"
+out="$("$plan_bin" "$other" 2>&1)"
+assert_eq "0" "$?" "replacing a plan is not refused"
+assert_contains "$out" "replaced: $plan" "the bind names the plan it replaced"
+assert_no_file "$cleared_file" "and keeps no record of it"
+assert_not_contains "$("$plan_bin" 2>&1)" "replaced:" "so the next report does not repeat it"
+assert_not_contains "$("$plan_bin" "$other" 2>&1)" "replaced:" "binding the same plan replaces nothing"
 
-"$plan_bin" "$repo/docs/ordered.md" >/dev/null 2>&1
-assert_contains "$(shipshape_plan_cleared "$scratch")" "$plan — replaced by $other" "a later swap does not hide the first plan dropped"
-
+# A real clearing stands until the plan it dropped is back.
 "$plan_bin" --clear --reason "a real reason" >/dev/null 2>&1
+assert_not_contains "$("$plan_bin" "$plan" 2>&1)" "replaced:" "with nothing bound there is nothing to replace"
+assert_contains "$(shipshape_plan_cleared "$scratch")" "a real reason" "binding another plan leaves a clearing standing"
 "$plan_bin" "$other" >/dev/null 2>&1
-assert_contains "$(shipshape_plan_cleared "$scratch")" "a real reason" "binding another plan leaves a real clearing standing"
-
-"$plan_bin" "$repo/docs/ordered.md" >/dev/null 2>&1
-rm -f "$cleared_file"
-"$plan_bin" "$plan" >/dev/null 2>&1
-"$plan_bin" "$other" >/dev/null 2>&1
-assert_contains "$(shipshape_plan_cleared "$scratch")" "$plan — replaced by" "a plan with open tasks is dropped, so it is named"
-"$plan_bin" "$plan" >/dev/null 2>&1
-assert_no_file "$cleared_file" "and binding that same plan again takes the record back"
-
-# Replacing a finished plan drops nothing.
-closed="$repo/docs/closed.md"
-fence '{"id":"c1"}' > "$closed"
-"$plan_bin" "$closed" >/dev/null 2>&1
-rm -f "$cleared_file"
-"$plan_bin" "$plan" >/dev/null 2>&1
-assert_no_file "$cleared_file" "a plan with nothing left to verify leaves no record when replaced"
-
-# Moving on to another branch drops nothing either: back here the leg reads elsewhere.
-git checkout -q -b moved-on
-"$plan_bin" "$other" >/dev/null 2>&1
-assert_eq "" "$(shipshape_plan_cleared "$scratch")" "binding on a new branch records nothing here"
-git checkout -q "$branch"
-assert_no_file "$cleared_file" "or on the branch left behind"
-assert_contains "$("$plan_bin" 2>&1)" "elsewhere" "where the leg holds instead"
+assert_no_file "$cleared_file" "and binding that same plan again takes it back"
 "$plan_bin" "$plan" >/dev/null 2>&1
 
 # --- clearing ----------------------------------------------------------------------
