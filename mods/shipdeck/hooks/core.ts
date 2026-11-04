@@ -101,9 +101,10 @@ export async function findCore($: EngineInterface, dir: string): Promise<{ root:
 // lasting cd into another repository; a real gate's trace landed in that
 // repository while root() still named the worktree.
 //
-// Outside a git repo the gates fall back to CLAUDE_PROJECT_DIR, which a hook
-// is handed and a process of ours is not, so the doctor is told it. Without
-// that its scratch would be whatever folder the shell had wandered to.
+// Outside a git repo the gates fall back to CLAUDE_PROJECT_DIR. A process of
+// ours does not have it (measured on 2.1.309: unset under $.process.run), so
+// the doctor is told it. Without that its scratch would be whatever folder the
+// shell had wandered to.
 export async function runDoctor($: EngineInterface, root: string, dir: string): Promise<{ doctor: DoctorJson } | { note: string; isTransient: boolean }> {
   try {
     const sid = await $.session.id()
