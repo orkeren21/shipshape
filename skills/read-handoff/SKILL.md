@@ -48,6 +48,15 @@ the other way around: rewrite `roster/architect.md` first, then announce
 the succession to the lanes — the order and the duties are in
 `shipshape:epic-architecture`.
 
+## Bind the plan again
+
+If the handoff names a bound plan, bind it here with `shipshape-plan <path>`,
+with the same `--tasks` and reason. Evidence stays with the session that
+earned it, so your predecessor's verify records do not count here, any more than
+its review does. That is usually one run: `shipshape-verify t1,t2,t3
+"<command>"`. A task that cannot be run again goes out of scope with `--tasks`
+and a reason.
+
 ## Then continue
 
 Pick up the next action and work. You are the same lane, not a new one: the

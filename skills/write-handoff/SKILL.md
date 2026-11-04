@@ -24,6 +24,11 @@ prints it) so the successor can take the same one. Verify each claim as you writ
 value is entirely in being trustworthy, and one wrong fact makes the successor
 distrust all of it.
 
+**The plan.** If one is bound, its path and any `--tasks` scope with the reason.
+`shipshape-plan` with no arguments prints them, with each task's state. Verify
+records stay with this session, as its review and smoke do, so the successor
+binds the plan again and runs the commands itself.
+
 **Decisions made, with reasons.** Every material call and why it went that way.
 Without the reason the successor re-opens the decision the first time it
 becomes inconvenient, which is exactly when the reason mattered.

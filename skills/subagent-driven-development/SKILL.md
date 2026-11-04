@@ -18,7 +18,7 @@ through the same gates.
 Before anything is dispatched, ensure the lane has its own workspace via
 `shipshape:using-git-worktrees`. With several implementers writing at once,
 this stops being hygiene and starts being the thing that keeps the branch
-coherent.
+coherent. Bind the plan there too, with `shipshape-plan <path>`.
 
 ## Work streams, not tasks
 
@@ -45,7 +45,10 @@ AC: <the acceptance criterion> — PROVEN BY <what the tool actually printed>
 
 A criterion with no output behind it is not met yet, whatever the report says.
 Implementers run their task's verify command through `shipshape-verify
-<task-id> <command>` like anyone else — the record is what closes the task.
+<task-id> <command>` like anyone else. An implementer in a worktree of its own
+leaves that record there, where the plan leg does not read it, so run the
+command again in the session's checkout once the work is integrated. That
+record is the one that closes the task.
 
 ## Model policy
 
