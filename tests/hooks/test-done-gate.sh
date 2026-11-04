@@ -6,8 +6,8 @@
 #   session words its status.
 #
 #   It disarms on artifacts too — a review report, green CI, a smoke log, each
-#   newer than the code being shipped. Evidence a later commit invalidated is
-#   as good as missing.
+#   newer than the code being shipped, and a record for each task of a bound
+#   plan. Evidence a later commit invalidated is as good as missing.
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$here/hook-helpers.sh"
@@ -95,6 +95,93 @@ out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")"
 assert_eq "0" "$(hook_status)" "complete evidence lets the turn end"
 assert_eq "" "$(hook_field "$out" decision)" "complete evidence does not block"
 assert_eq "" "$(hook_field "$out" systemMessage)" "complete evidence is not nagged about"
+
+# --- the plan: a bound plan is a fourth leg ------------------------------------
+#
+# The three legs are complete here throughout, so whatever the gate says is the
+# plan's doing. With no plan bound the leg has nothing to say, which the block
+# above has just shown.
+
+plan="$work/plan.md"
+branch_here="$(git -C "$repo" rev-parse --abbrev-ref HEAD)"
+printf '```json:metadata\n{"id":"t1","files":["src.txt"],"verifyCommand":"tests/run.sh --all"}\n```\n' > "$plan"
+bind()   { printf 'path=%s\nbranch=%s\ntasks=%s\nreason=%s\nepoch=1\n' "$plan" "${1:-$branch_here}" "${2:-}" "${3:-}" > "$scratch/plan"; }
+verify() { mkdir -p "$scratch/verify"; printf 'task=t1\ncommand=%s\nexit=%s\nepoch=%s\n--- output ---\n' "$1" "$2" "${3:-$(date -u +%s)}" > "$scratch/verify/t1"; }
+stop()   { run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$1")" "$repo"; }
+stamp="$scratch/pr-satisfied-legacy"
+
+bind
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" "a task with no record holds a completion claim"
+reason="$(hook_field "$out" reason)"
+assert_contains "$reason" "plan" "the block names the leg"
+assert_contains "$reason" "t1" "and the task"
+assert_contains "$reason" "shipshape-verify t1 'tests/run.sh --all'" "and gives the line to paste"
+assert_no_file "$stamp" "and no stamp is written"
+
+verify "tests/run.sh --all" 3
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" "a red record holds it too"
+assert_contains "$(hook_field "$out" reason)" "failed" "and the block says it failed"
+
+verify "tests/run.sh" 0
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" "a record of another command holds it"
+assert_contains "$(hook_field "$out" reason)" "whole" "and the block says to quote the command whole"
+assert_contains "$(hook_field "$out" reason)" "shipshape-verify t1 'tests/run.sh --all'" "with the fence's command"
+
+verify "tests/run.sh --all" 0 2
+touch "$repo/src.txt"
+give_all
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" "a task's file changing after its record holds it"
+assert_contains "$(hook_field "$out" reason)" "t1" "and the block names the task"
+
+verify "tests/run.sh --all" 0
+out="$(stop "$CLAIM")"
+assert_eq "" "$(hook_field "$out" decision)" "a passing, current record releases it"
+assert_file "$stamp" "and the stamp is written"
+
+bind "some/other-branch"
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" "a plan bound on another branch holds it"
+reason="$(hook_field "$out" reason)"
+assert_contains "$reason" "some/other-branch" "the block names the branch"
+assert_contains "$reason" "shipshape-plan" "and how to bind it here"
+assert_contains "$reason" "--clear" "and how to drop it"
+
+bind
+mv "$plan" "$plan.gone"
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" "a vanished plan holds it"
+assert_contains "$(hook_field "$out" reason)" "$plan" "and the block names the path"
+mv "$plan.gone" "$plan"
+
+rm -f "$scratch/verify/t1"
+printf 'skip_plan: true\n' > "$repo/.shipshape.yaml"
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" "an unreasoned skip_plan is not honoured"
+assert_contains "$(hook_field "$out" reason)" "skip_plan" "and the gate says so"
+
+printf 'skip_plan: true  # reason: the plan is a sketch\n' > "$repo/.shipshape.yaml"
+out="$(stop "$CLAIM")"
+assert_eq "" "$(hook_field "$out" decision)" "a reasoned skip_plan waives the leg"
+assert_contains "$(cat "$scratch/trace.log")" "plan leg waived" "and leaves a record"
+rm -f "$repo/.shipshape.yaml"
+
+# Left-out tasks sit beside the waivers, for the same reason: an exception only
+# the plan's binding knows about is one the reviewer never reads.
+printf '```json:metadata\n{"id":"t1","verifyCommand":"tests/run.sh --all"}\n```\n```json:metadata\n{"id":"t2","verifyCommand":"x"}\n```\n```json:metadata\n{"id":"t3","verifyCommand":"x"}\n```\n' > "$plan"
+bind "" "t1" "t2 and t3 ship in the next PR"
+verify "tests/run.sh --all" 0
+rm -f "$scratch"/review-*.md "$scratch/done-gate-last-nudge"
+nudge="$(hook_field "$(stop "$CHAT")" systemMessage)"
+assert_contains "$nudge" "t2, t3" "the nudge lists what the scope left out"
+assert_contains "$nudge" "t2 and t3 ship in the next PR" "with the reason"
+
+rm -f "$scratch/plan" "$scratch/done-gate-last-nudge" "$stamp"
+rm -rf "$scratch/verify"
+give_all
 
 # --- staleness: a commit lands after the evidence ----------------------------
 #

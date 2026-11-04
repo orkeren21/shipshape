@@ -5,16 +5,20 @@
 # behind when a pull request is actually created; from that moment the session
 # owes evidence, whatever words it uses about its own state.
 #
-# Disarmed by artifacts too, all three of them:
+# Disarmed by artifacts too:
 #
 #   review-*.md  a whole-branch review report, written by review-capture from
 #                what the reviewer subagent returned
 #   ci-status    green, from shipshape-ci-watch
 #   smoke.log    from shipshape-smoke
+#   plan         when one is bound with shipshape-plan, a passing, current
+#                shipshape-verify record for every task in scope
 #
-# Each has to be newer than the branch's HEAD commit. Recency is measured
-# against the code, not the clock: smoke ran, then a fix landed, and the smoke
-# no longer describes what is being shipped.
+# The first three have to be newer than the branch's HEAD commit. Recency is
+# measured against the code, not the clock: smoke ran, then a fix landed, and
+# the smoke no longer describes what is being shipped. A task's record is
+# measured against the task's own files, because the order there is verify,
+# then commit.
 #
 # Two tiers. A soft nudge on every ending turn lists what is still outstanding
 # and lets the turn end. A hard block is reserved for an explicit claim of
@@ -94,7 +98,7 @@ while IFS= read -r record_file; do
     fi
     if [ "$settled" = no ]; then
       rec_url="$(record_field "$record_file" url)"
-      elsewhere_lines="${elsewhere_lines}  - PR #$rec_number (${rec_url:-url unrecorded}) from branch $rec_branch — opened this session and still owing its evidence set (review, CI, smoke).
+      elsewhere_lines="${elsewhere_lines}  - PR #$rec_number (${rec_url:-url unrecorded}) from branch $rec_branch — opened this session and still owing its evidence set (review, CI, smoke, plan).
 "
     fi
   else
@@ -207,6 +211,58 @@ esac
 [ "$missing" != "$before_smoke" ] && shipshape_waiver_unreasoned smoke && leg_note_unreasoned smoke
 fi
 
+# --- the plan ----------------------------------------------------------------
+#
+# The leg gives one word for the whole plan. The re-run lines cover every task
+# a run would close, so one paste settles them, whatever the worst one was.
+
+plan_rerun() { shipshape_plan_rerun "$scratch" | sed 's/^/      /'; }
+
+if shipshape_waived plan; then
+  shipshape_trace done-gate "plan leg waived: $(shipshape_waiver_line plan)"
+  note_waived "$(shipshape_waiver_line plan)"
+else
+before_plan="$missing"
+leg="$(shipshape_leg_plan "$scratch")"
+detail="${leg#*|}"
+case "${leg%%|*}" in
+  open)
+    add "plan — not verified: $detail. Run each task's command through the wrapper:
+$(plan_rerun)"
+    ;;
+  stale)
+    add "plan — stale: a file of $detail changed after its record, which now describes code that has moved. Verify again:
+$(plan_rerun)"
+    ;;
+  failed)
+    add "plan — the last verify of $detail failed. Fix what it caught, then verify again:
+$(plan_rerun)"
+    ;;
+  wrong-command)
+    add "plan — $detail verified with something other than the fence's command. Quote the command whole, so the caller's shell does not split it:
+$(plan_rerun)"
+    ;;
+  elsewhere)
+    add "plan — $detail. Bind it here with shipshape-plan $(shipshape_plan_field "$scratch" path), or drop it with shipshape-plan --clear --reason <why>."
+    ;;
+  unreadable)
+    add "plan — cannot read $detail: the plan is gone, a fence no longer parses, or a --tasks id left the plan. Fix that and bind it again with shipshape-plan, or drop it with shipshape-plan --clear --reason <why>."
+    ;;
+esac
+[ "$missing" != "$before_plan" ] && shipshape_waiver_unreasoned plan && leg_note_unreasoned plan
+fi
+
+# Tasks a --tasks scope left out go in the nudge beside the waivers, and for the
+# same reason: nothing checks them on this branch, and a reviewer should read so.
+left_out=""
+if [ -n "$(shipshape_plan_field "$scratch" tasks)" ]; then
+  left_out="$(shipshape_plan_rows "$scratch" | awk -F"$(printf '\037')" '
+    $2 == "left-out" { ids = ids comma $1; comma = ", " }
+    END { print ids }
+  ')"
+  [ -z "$left_out" ] || left_out="$left_out — $(shipshape_plan_field "$scratch" reason)"
+fi
+
 # The legs above describe the branch the session is on. With no record for
 # this branch, their verdicts belong to nobody and are discarded — the other
 # branches' records are judged on their stamps, not on this branch's files.
@@ -238,7 +294,7 @@ if [ -z "$missing" ] && [ -z "$elsewhere_lines" ]; then
   # PR whose outstanding list happens to read identically must not inherit
   # this one's silence.
   rm -f "$scratch/done-gate-last-nudge"
-  shipshape_trace done-gate "armed and satisfied — review, CI and smoke all present and current"
+  shipshape_trace done-gate "armed and satisfied — every leg present and current"
   exit 0
 fi
 
@@ -322,6 +378,13 @@ if [ -n "$waived_lines" ]; then
 Active waivers (.shipshape.yaml):
 
 $waived_lines"
+fi
+if [ -n "$left_out" ]; then
+  nudge_text="$nudge_text
+Left out of the plan's scope:
+
+  - $left_out
+"
 fi
 nudge_text="$nudge_text
 Run shipshape-doctor for the full evidence state."

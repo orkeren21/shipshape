@@ -63,7 +63,7 @@ scratch="$(shipshape_scratch_path)"
 file="$scratch/plan"
 
 report() {
-  local bound_path leg state detail rows rerun us id row_state command row_detail
+  local bound_path leg state detail rows rerun us id row_state row_detail
   bound_path="$(shipshape_plan_field "$scratch" path)"
   if [ -z "$bound_path" ]; then
     printf 'no plan bound for this session\n'
@@ -82,7 +82,7 @@ report() {
   fi
   us="$(printf '\037')"
   rows="$(shipshape_plan_rows "$scratch")"
-  while IFS="$us" read -r id row_state command row_detail; do
+  while IFS="$us" read -r id row_state _ row_detail; do
     [ -n "$id" ] || continue
     printf '  %-16s %s%s\n' "$id" "$row_state" "${row_detail:+ — $row_detail}"
   done <<SHIPSHAPE_ROWS

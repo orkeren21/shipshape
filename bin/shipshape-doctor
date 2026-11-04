@@ -60,6 +60,7 @@ leg_eval() { # <leg> <waiver key> -> "state|detail"
 review_leg="$(leg_eval review review)"
 ci_leg="$(leg_eval ci ci)"
 smoke_leg="$(leg_eval smoke smoke)"
+plan_leg="$(leg_eval plan plan)"
 merge_waived=""
 shipshape_waived merge_gate && merge_waived="yes"
 
@@ -157,8 +158,9 @@ SHIPSHAPE_PRS
   printf '{"format":1,"session":%s,"branch":%s,"head":%s,"scratch":%s,"seat":%s,' \
     "$(str "$(shipshape_session_id)")" "$(str "$current_branch")" \
     "$(str "$current_head")" "$(str "$scratch")" "$seat_json"
-  printf '"legs":{"review":%s,"ci":%s,"smoke":%s},' \
-    "$(leg_json "$review_leg")" "$(leg_json "$ci_leg")" "$(leg_json "$smoke_leg")"
+  printf '"legs":{"review":%s,"ci":%s,"smoke":%s,"plan":%s},' \
+    "$(leg_json "$review_leg")" "$(leg_json "$ci_leg")" "$(leg_json "$smoke_leg")" \
+    "$(leg_json "$plan_leg")"
   printf '"pending":[%s],"merge_gate_waived":%s,"prs":[%s]}\n' \
     "$pending_json" "$([ -n "$merge_waived" ] && echo true || echo false)" "$prs_json"
   exit 0
@@ -224,6 +226,32 @@ case "${smoke_leg%%|*}" in
   no-runs)  leg_line smoke "no completed run — exercise the changed flows through shipshape-smoke" ;;
   failures) leg_line smoke "${detail%%/*} of ${detail#*/} commands failed — a failing smoke is not evidence" ;;
   ok)       leg_line smoke "ok — all commands exit 0, current HEAD" ;;
+esac
+
+detail="${plan_leg#*|}"
+case "${plan_leg%%|*}" in
+  waived)        leg_line plan "waived — $detail" ;;
+  none)          leg_line plan "${detail:-no plan bound}" ;;
+  ok)            leg_line plan "ok — every task in scope closed" ;;
+  open)          leg_line plan "open — $detail has no current record" ;;
+  stale)         leg_line plan "stale — a file of $detail changed after its record" ;;
+  failed)        leg_line plan "failed — $detail exited non-zero" ;;
+  wrong-command) leg_line plan "wrong command — $detail ran something other than the fence's command; quote it whole" ;;
+  elsewhere)     leg_line plan "elsewhere — $detail; bind it here, or shipshape-plan --clear --reason <why>" ;;
+  unreadable)    leg_line plan "unreadable — $detail; fix it and bind again" ;;
+esac
+
+# One line per task the leg is not happy with, then what closes them. A left-out
+# task prints whatever the leg says: the reason is the part a reviewer reads.
+case "${plan_leg%%|*}" in
+  waived|none|elsewhere) : ;;
+  *)
+    shipshape_plan_rows "$scratch" | while IFS="$sep" read -r task task_state _ note; do
+      case "$task_state" in ok|closed) continue ;; esac
+      printf '           %-14s %s%s\n' "$task" "$task_state" "${note:+ — $note}"
+    done
+    shipshape_plan_rerun "$scratch" | sed 's/^/           /'
+    ;;
 esac
 
 if [ -n "$merge_waived" ]; then
