@@ -124,10 +124,7 @@ assert_not_contains "$out" "shipshape-plan" "and with no PR there is nothing to 
 
 # A branch that dropped its plan is told that, not asked whether it has one.
 mkdir -p "$scratch"
-(
-  source "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh"
-  printf 'path=/a/plan.md\nreason=prose only\n' > "$(shipshape_plan_cleared_file "$scratch")"
-)
+printf 'path=/a/plan.md\nbranch=feature\nreason=prose only\n' > "$scratch/plan-cleared"
 out="$("$pr_open" --title "cleared" 2>&1)"
 assert_contains "$out" "prose only" "a cleared plan is named as the PR opens"
 assert_not_contains "$out" "If it has a plan" "rather than asked about"

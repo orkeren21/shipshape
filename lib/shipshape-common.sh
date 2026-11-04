@@ -971,25 +971,16 @@ shipshape_plan_rebind() { # <scratch>
 }
 
 # Dropping a plan leaves a record, so it is something a reader meets rather than
-# a binding that quietly stopped existing. One per branch, as a binding belongs
-# to one: a session shipping two branches must not read one's clearing on the
-# other. The name is a checksum of the branch's name, because sanitising would
-# file feature/x and feature-x together, and every non-ASCII name as one.
-shipshape_plan_cleared_file() { # <scratch> [branch] (default: the current one)
-  local branch
-  if [ "$#" -ge 2 ]; then
-    branch="$2"
-  else
-    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
-  fi
-  printf '%s/plan-cleared-%s\n' "$1" "$(printf '%s' "$branch" | cksum | cut -d' ' -f1)"
-}
-
-shipshape_plan_cleared() { # <scratch> -> "<plan> — <reason>", when one was cleared on this branch
-  local file
-  file="$(shipshape_plan_cleared_file "$1")"
+# a binding that quietly stopped existing. One for the session, and every reader
+# shows it wherever it stands: the branch is a label to print, not a key that can
+# stop matching. A session shipping two branches sees the other's clearing, which
+# over-reports a note and loses nothing.
+shipshape_plan_cleared() { # <scratch> -> "<plan> — <reason> (on <branch>)", if one was cleared
+  local file="$1/plan-cleared" branch
   [ -f "$file" ] || return 0
-  printf '%s — %s\n' "$(sed -n 's/^path=//p' "$file" | head -1)" "$(sed -n 's/^reason=//p' "$file" | head -1)"
+  branch="$(sed -n 's/^branch=//p' "$file" | head -1)"
+  printf '%s — %s (on %s)\n' "$(sed -n 's/^path=//p' "$file" | head -1)" \
+    "$(sed -n 's/^reason=//p' "$file" | head -1)" "${branch:-no branch}"
 }
 
 # 0 when every leg is ok or carries a reasoned waiver — the same judgment the

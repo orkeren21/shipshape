@@ -23,7 +23,7 @@ file="$scratch/plan"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 
 field() { sed -n "s/^$1=//p" "$file" 2>/dev/null | head -1; }
-cleared_file="$(shipshape_plan_cleared_file "$scratch" "$branch")"
+cleared_file="$scratch/plan-cleared"
 
 mkdir -p "$repo/docs"
 plan="$repo/docs/plan.md"
@@ -225,54 +225,40 @@ assert_eq "0" "$?" "a report on a vanished plan still succeeds"
 assert_contains "$out" "unreadable" "and says what the leg says"
 mv "$plan.moved" "$plan"
 
-# --- a clearing lands on the branch the plan was bound on --------------------------
+# --- a clearing is the session's ------------------------------------------------------
 #
 # `elsewhere` prints --clear as a way out, so the call often comes from another
-# branch. The plan was held on the first one, and that is where it was dropped.
+# branch. There is one record, and every reader shows it wherever it stands,
+# labelled with the branch the plan was bound on. A session shipping two branches
+# sees the other's clearing: a note over-reported, which is harmless, not lost.
 
 "$plan_bin" "$plan" >/dev/null 2>&1
 git checkout -q -b from-elsewhere
 out="$("$plan_bin" --clear --reason "dropped from another branch" 2>&1)"
 assert_eq "0" "$?" "clearing from another branch succeeds"
-assert_contains "$out" "recorded on $branch" "and says where the record went, since it is not here"
-assert_not_contains "$("$plan_bin" 2>&1)" "dropped from another branch" "and says nothing here, where no plan was"
+assert_contains "$out" "$cleared_file" "and says where the record is"
+assert_contains "$("$plan_bin" 2>&1)" "dropped from another branch (on $branch)" "it shows here, labelled with the branch that lost the plan"
 git checkout -q "$branch"
-assert_contains "$("$plan_bin" 2>&1)" "dropped from another branch" "it is reported on the branch that lost the plan"
+assert_contains "$("$plan_bin" 2>&1)" "dropped from another branch (on $branch)" "and there"
 rm -f "$cleared_file"
 
-# A branch that cannot be stood on would hold a record nobody reads, so that
-# clearing lands where the call came from.
+# The label is text from the binding, so nothing about the branch can lose it.
 "$plan_bin" "$plan" >/dev/null 2>&1
 sed "s/^branch=.*/branch=/" "$file" > "$file.new" && mv "$file.new" "$file"
 "$plan_bin" --clear --reason "bound with no branch" >/dev/null 2>&1
-assert_contains "$(shipshape_plan_cleared "$scratch")" "bound with no branch" "a binding with no branch name clears where the call came from"
+assert_contains "$(shipshape_plan_cleared "$scratch")" "bound with no branch (on no branch)" "a binding with no branch name is still read"
 rm -f "$cleared_file"
 
-# Beside a tag of the same name git calls the branch heads/v1, and it is still
-# there: the record stays on it, and the call prints that.
 git checkout -q -b v1
-git tag v1
 "$plan_bin" "$plan" >/dev/null 2>&1
-git checkout -q "$branch"
-out="$("$plan_bin" --clear --reason "beside a tag" 2>&1)"
-assert_contains "$out" "recorded on heads/v1" "a live branch beside a same-named tag keeps its clearing"
-assert_eq "" "$(shipshape_plan_cleared "$scratch")" "and the branch the call came from has none"
-git checkout -q v1 2>/dev/null || git checkout -q heads/v1
-assert_contains "$(shipshape_plan_cleared "$scratch")" "beside a tag" "the branch itself reads it"
-rm -f "$(shipshape_plan_cleared_file "$scratch")"
+git tag v1
+"$plan_bin" --clear --reason "a tag arrived" >/dev/null 2>&1
+assert_contains "$(shipshape_plan_cleared "$scratch")" "a tag arrived" "a tag respelling the branch does not hide it"
 git checkout -q "$branch"
 git tag -d v1 >/dev/null
 git branch -q -D v1
-"$plan_bin" "$plan" >/dev/null 2>&1
-
-git checkout -q -b doomed
-"$plan_bin" "$plan" >/dev/null 2>&1
-git branch -q -m doomed renamed
-"$plan_bin" --clear --reason "bound before a rename" >/dev/null 2>&1
-assert_contains "$(shipshape_plan_cleared "$scratch")" "bound before a rename" "so does one bound on a branch that has since been renamed"
-rm -f "$(shipshape_plan_cleared_file "$scratch")"
-git checkout -q "$branch"
-git branch -q -D renamed
+assert_contains "$(shipshape_plan_cleared "$scratch")" "a tag arrived (on v1)" "and neither does the branch going"
+rm -f "$cleared_file"
 "$plan_bin" "$plan" >/dev/null 2>&1
 
 # --- binding another plan ------------------------------------------------------------
@@ -313,17 +299,19 @@ assert_contains "$out" "this branch is prose only" "and what was cleared, and wh
 assert_no_file "$cleared_file" "binding again replaces the clearing"
 "$plan_bin" --clear --reason "prose only after all" >/dev/null 2>&1
 
-# A clearing is its branch's. Binding on another branch leaves it standing.
-assert_file "$cleared_file" "the clearing is recorded for this branch"
+# Another branch reads it, binding another plan there leaves it standing, and a
+# second clearing replaces the first.
+assert_file "$cleared_file" "the clearing is recorded"
 git checkout -q -b later-work
 assert_no_file "$scratch/plan" "the binding was cleared"
-out="$("$plan_bin" 2>&1)"
-assert_not_contains "$out" "prose only after all" "another branch does not report this one's clearing"
-"$plan_bin" "$plan" >/dev/null 2>&1
-assert_file "$cleared_file" "and binding there does not remove it"
+assert_contains "$("$plan_bin" 2>&1)" "prose only after all" "another branch reads the clearing"
+"$plan_bin" "$other" >/dev/null 2>&1
+assert_file "$cleared_file" "and binding another plan there does not remove it"
 "$plan_bin" --clear --reason "later work is prose too" >/dev/null 2>&1
 git checkout -q "$branch"
-assert_contains "$("$plan_bin" 2>&1)" "prose only after all" "each branch keeps its own clearing"
+out="$("$plan_bin" 2>&1)"
+assert_contains "$out" "later work is prose too (on later-work)" "a second clearing replaces the first"
+assert_not_contains "$out" "prose only after all" "so the last one is the one reported"
 
 out="$("$plan_bin" --clear --reason "again" 2>&1)"
 assert_eq "0" "$?" "clearing nothing is not an error"

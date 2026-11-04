@@ -269,16 +269,16 @@ rm -rf "$scratch/plan" "$scratch/verify"
 
 # A cleared plan reads as none, and says so: the band draws nothing, and a
 # reader of the doctor still finds what was dropped.
-cleared_file="$scratch/plan-cleared-$(printf '%s' "$branch" | cksum | cut -d' ' -f1)"
-printf 'path=%s\nreason=prose only\n' "$plan" > "$cleared_file"
-leg_case plan none "cleared: $plan — prose only" "a cleared plan"
+cleared_file="$scratch/plan-cleared"
+printf 'path=%s\nbranch=%s\nreason=prose only\n' "$plan" "$branch" > "$cleared_file"
+leg_case plan none "cleared: $plan — prose only (on $branch)" "a cleared plan"
 out="$(json)"
-assert_eq "$plan — prose only" "$(jget "$out" plan_cleared)" "and a field of its own carries it"
+assert_eq "$plan — prose only (on $branch)" "$(jget "$out" plan_cleared)" "and a field of its own carries it"
 assert_eq "null" "$(jget "$out" legs.plan.detail)" "leaving the leg's words alone"
 
 # The doctor is what a reader runs, so it says so with another plan bound too.
 bind
-assert_contains "$(text)" "cleared: $plan — prose only" "a clearing shows beside a bound plan"
+assert_contains "$(text)" "cleared: $plan — prose only (on $branch)" "a clearing shows beside a bound plan"
 rm -rf "$scratch/plan" "$cleared_file"
 
 # --- running reviewers ------------------------------------------------------------

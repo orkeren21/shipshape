@@ -450,27 +450,21 @@ assert_eq "shipshape-plan '$plan' --tasks t1,t2 --reason 'it'\\''s slice B'" "$(
 
 reset
 assert_eq "" "$(shipshape_plan_cleared "$scratch")" "nothing cleared, nothing to say"
-cleared_here="$(shipshape_plan_cleared_file "$scratch")"
-printf 'path=/a/plan.md\nreason=prose only\nepoch=1\n' > "$cleared_here"
-assert_eq "/a/plan.md — prose only" "$(shipshape_plan_cleared "$scratch")" "a cleared plan names itself and the reason"
+printf 'path=/a/plan.md\nbranch=feature/x\nreason=prose only\n' > "$scratch/plan-cleared"
+assert_eq "/a/plan.md — prose only (on feature/x)" "$(shipshape_plan_cleared "$scratch")" \
+  "a cleared plan names itself, the reason and its branch"
 
-# A clearing belongs to its branch, as a binding does: a session shipping two
-# branches must not read one's clearing on the other.
+# One record, read the same from anywhere: which branch it was is text to print,
+# not a key that can stop matching.
 git checkout -q -b second-branch
-assert_eq "" "$(shipshape_plan_cleared "$scratch")" "another branch has no clearing to report"
-assert_ne "$cleared_here" "$(shipshape_plan_cleared_file "$scratch")" "and its own record would not touch this one"
+assert_eq "/a/plan.md — prose only (on feature/x)" "$(shipshape_plan_cleared "$scratch")" \
+  "another branch reads the same clearing"
 git checkout -q "$here"
 git branch -q -D second-branch
-assert_eq "/a/plan.md — prose only" "$(shipshape_plan_cleared "$scratch")" "back on its own branch it still says so"
-rm -f "$cleared_here"
 
-# The record's name comes from the branch's name as git has it. Sanitising would
-# file feature/x and feature-x together, and every non-ASCII name as one.
-assert_ne "$(shipshape_plan_cleared_file "$scratch" feature/x)" "$(shipshape_plan_cleared_file "$scratch" feature-x)" \
-  "two branches that sanitise alike keep separate records"
-assert_ne "$(shipshape_plan_cleared_file "$scratch" תיקון)" "$(shipshape_plan_cleared_file "$scratch" אחר)" \
-  "and so do two names with no ASCII in them"
-assert_eq "$cleared_here" "$(shipshape_plan_cleared_file "$scratch" "$here")" \
-  "and naming the branch is the same as standing on it"
+printf 'path=/a/plan.md\nbranch=\nreason=prose only\n' > "$scratch/plan-cleared"
+assert_eq "/a/plan.md — prose only (on no branch)" "$(shipshape_plan_cleared "$scratch")" \
+  "a binding with no branch name still reads"
+rm -f "$scratch/plan-cleared"
 
 finish
