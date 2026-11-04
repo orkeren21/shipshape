@@ -6,7 +6,7 @@ export type { DoctorJson, DoctorLeg } from '../types'
 
 export type LegState = 'ok' | 'running' | 'stale' | 'fail' | 'missing' | 'waived'
 
-export type Leg = { name: 'review' | 'CI' | 'smoke'; state: LegState; age?: string }
+export type Leg = { name: 'review' | 'CI' | 'smoke' | 'plan'; state: LegState; age?: string }
 
 export type Tone = 'ok' | 'warn' | 'bad'
 

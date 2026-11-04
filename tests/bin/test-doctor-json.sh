@@ -184,6 +184,12 @@ leg_case plan none "no plan bound" "no plan bound"
 out="$(json)"
 assert_eq "null" "$(jget "$out" legs.plan.detail)" "with no detail"
 
+# A waiver with no plan bound waives nothing, and the band draws a leg only
+# while a plan is bound, so the two cannot read as a leg.
+printf 'skip_plan: true  # reason: the plan is a sketch\n' > "$repo/.shipshape.yaml"
+leg_case plan none "no plan bound" "a waiver with no plan bound"
+rm -f "$repo/.shipshape.yaml"
+
 bind
 leg_case plan open "open — t1, t2, t3" "tasks with no record"
 out="$(json)"

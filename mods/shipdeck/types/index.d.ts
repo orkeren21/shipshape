@@ -11,7 +11,9 @@ export type DoctorJson = {
   head: string | null
   scratch: string
   seat: { role: string; lane: string | null; epic: string | null; handoff: string | null } | null
-  legs: { review: DoctorLeg; ci: DoctorLeg; smoke: DoctorLeg }
+  // plan is optional because format 1 is additive: a core older than 0.6.0
+  // sends no such key.
+  legs: { review: DoctorLeg; ci: DoctorLeg; smoke: DoctorLeg; plan?: DoctorLeg }
   pending: { agent: string; kind: string; since: number | null }[]
   merge_gate_waived: boolean
   prs: { number: string; url: string | null; branch: string | null; state: string }[]

@@ -60,7 +60,10 @@ leg_eval() { # <leg> <waiver key> -> "state|detail"
 review_leg="$(leg_eval review review)"
 ci_leg="$(leg_eval ci ci)"
 smoke_leg="$(leg_eval smoke smoke)"
-plan_leg="$(leg_eval plan plan)"
+# A waiver with no plan bound has nothing to waive, and the band draws this leg
+# only while a plan is bound.
+plan_leg="none|"
+[ -z "$(shipshape_plan_field "$scratch" path)" ] || plan_leg="$(leg_eval plan plan)"
 merge_waived=""
 shipshape_waived merge_gate && merge_waived="yes"
 

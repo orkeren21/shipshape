@@ -174,7 +174,7 @@ size.
 
 - **Seat** (600, 12.5px): the leftmost word in the GitHub style.
 - **Value** (500, 12px, tabular): `37%`, and chip text in the Linear style.
-- **Label** (400, 12px): `context`, `review`, `CI`, `smoke`.
+- **Label** (400, 12px): `context`, `review`, `CI`, `smoke`, `plan`.
 - **Notice** (500, 11.5px in the GitHub pill, 12px in a Linear chip).
 - **Refining** (400, 12px, slate): the one label that is a status, not a value.
 
@@ -205,7 +205,7 @@ last, until it fits. The narrowest band is 240px, and everything fits there:
 4. Notices become a count.
 5. GitHub's bar becomes Linear's ring, which keeps the tone and the handoff
    zone. A percentage on its own would lose both.
-6. Legs that passed go to their initial (`R`, `C`, `S`), and `evidence
+6. Legs that passed go to their initial (`R`, `C`, `S`, `P`), and `evidence
    unavailable` becomes `unavailable`.
 7. Legs that did not pass, but did not fail, do the same.
 8. The spacing tightens: GitHub's gaps and Linear's chips.
@@ -215,6 +215,9 @@ last, until it fits. The narrowest band is 240px, and everything fits there:
 
 Order never changes, every leg stays drawn at every width, and a failed leg
 keeps its corners to the end. What the row drops stays in the alt text.
+
+The fourth leg, `plan`, is drawn only while the session has a plan bound. With
+none bound there is no leg at all, because nothing is not the same as not run.
 
 ## Elevation & Depth
 
