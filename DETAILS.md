@@ -99,7 +99,7 @@ refuses anything.
 |---|---|---|
 | band | `ui.render` `AbovePrompt` | The band above the prompt: seat, context gauge, evidence legs, notices. Desktop draws one SVG per row (`github` or `linear` style), with text pinned to measured widths; the terminal draws the same row as text. |
 | row | `ui.render` `UserMessage` | The desktop draws a prompt as typed, so a refined prompt's row is redrawn with what the session received. |
-| refiner | `prompt.submit` | Rewrites a dictated dump with Sonnet 5.5, using `refiner/instructions.md`: the `refining-prompts` skill's body verbatim (a packaging test pins it), plus a delivery section. |
+| refiner | `prompt.submit` | Rewrites a dictated dump with Sonnet 5.5, using `refiner/instructions.md`: the `refining-prompts` skill's body verbatim (a packaging test pins it), plus a delivery section. While it is on, each decision goes to the session trace as counts and reasons, never the words. |
 | refresh | `session.start`, `tool.call`, `turn.complete`, a 60 s clock | Re-reads `$.session.usage()` and runs `shipshape-doctor --json`, at most every 5 s after `Bash`, `Agent` or `Task`. |
 | epic pane | `ui.render` `Pane` | For an Architect seat: the roster, the lanes done, the last five rulings. |
 | epic refresh | a 30 s clock | Re-reads the epic folder while the seat is `architect`; a lane whose status turns `done` raises a notice. |
@@ -110,11 +110,16 @@ refuses anything.
 **Evidence comes from bash, once.** The band never reads an artifact
 itself. It runs the core's `shipshape-doctor --json`, passing
 `SHIPSHAPE_SESSION_ID` from `$.session.id()`, which is the same id the hooks
-name the scratch folder by. So the display and the gates read the same files
-through the same evaluators. The mod finds the core by checking three places
-in order: the checkout it sits in, `claude plugin list --json`, then the
-installed-plugins record. With no core found, or one older than 0.5.0, the
-legs read `evidence unavailable`, never green.
+name the scratch folder by. It runs in the main loop's folder, tracked from
+the session's own hooks and the clock, because a shell `cd` moves the gates
+and `$.session.root()` does not. So the display and the gates read the same
+files through the same evaluators. Outside a git repo the doctor is handed
+`$.session.root()`, which keeps the session's own scratch folder; in a desktop
+worktree session the gates fall back to the main checkout's instead, and with no
+repo the band draws no legs, so no verdict is affected. The mod finds the core
+by checking three places in order: the checkout it sits in, `claude plugin list
+--json`, then the installed-plugins record. With no core found, or one older
+than 0.5.0, the legs read `evidence unavailable`, never green.
 
 **When the refiner runs.** It skips a slash command, a hidden prompt, a
 prompt from anyone other than the operator (another session's message, a
@@ -139,9 +144,13 @@ raise them before starting. `raw:` skips one prompt; `/refine off`, the
 
 Operator prompts keep their typed order within a bound: each is refined (or
 not) at once, then waits for every operator prompt ahead of it to enter, for
-at most 8 seconds after its own shaping ends. A hook's own budget is 10 seconds, and waiting on another prompt
-counts against it (only `$` calls and `next` do not), so a refinement slower
-than that lets a follow-up through first.
+at most 8 seconds after its own shaping ends. A hook's own budget is 10
+seconds, and waiting on another prompt counts against it (`$` calls and `next`
+do not, except `$.clock.sleep`), so a refinement slower than that lets a
+follow-up through first. A session's first dictation may wait up to 5 seconds for the doctor's
+first reading before it is refined, since the reading names where the original
+is kept. A prompt already queued skips that wait, so the two never share one
+hook's budget.
 
 **What the desktop app draws** was probed in a live session before the
 design was settled:

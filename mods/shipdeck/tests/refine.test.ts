@@ -84,6 +84,7 @@ describe('score', () => {
 describe('checkReply', () => {
   test('KEEP keeps', () => {
     expect(checkReply('  KEEP\n')).toEqual({ kind: 'keep' })
+    expect(checkReply('KEEP.')).toEqual({ kind: 'keep' })
   })
   test('a reply with a Goal section is the refined prompt', () => {
     expect(checkReply('## Goal\nShip the band.\n\n## Starts with\nshipshape:brainstorming')).toEqual({

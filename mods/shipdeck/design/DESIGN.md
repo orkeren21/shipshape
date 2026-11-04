@@ -87,8 +87,7 @@ The band is read the way a helmsman reads a panel: in one glance, left to
 right, with every mark meaning exactly one thing. It sits above the prompt
 in Claude Code, beside work the operator is in the middle of, so it is
 quiet by default and speaks only through state. Seat, context and evidence
-always appear in that order and in the same place, so the eye learns where
-to land.
+always appear in that order, so the eye learns where to land.
 
 Two styles share one grammar. **GitHub** (the default) puts icons beside
 plain labels, with a thin context bar and no chrome. **Linear** puts each
@@ -125,7 +124,8 @@ state lives.
 - **Ink** (`oklch(0.27 0.012 60)` / `oklch(0.93 0.008 60)`): seat, values
   and labels of legs that have run.
 - **Slate** (`oklch(0.50 0.012 60)` / `oklch(0.72 0.008 60)`): secondary
-  words (`context`) and the labels of legs not yet run.
+  words (`context`), the labels of legs not yet run, and the handoff mark on
+  the gauge.
 - **Mist** (`oklch(0.60 0.010 60)` / `oklch(0.60 0.008 60)`): icons for
   missing and waived legs. It is at 3.5:1 in both themes, the floor for
   non-text graphics.
@@ -151,9 +151,10 @@ that is not a notice.
 
 **The Seat Threshold Rule.** The context fill turns brass at the seat's
 first handoff threshold and red at its second: 70 and 85 for lanes and solo
-sessions, 85 and 92 for an Architect (context-watch's defaults). The colour
-repeats what the number already says; the alt text puts it in words ("at the
-handoff point", "past the handoff point"), so it is never colour alone.
+sessions, 85 and 92 for an Architect (context-watch's defaults). The gauge
+also marks the first threshold in a neutral, so the fill's position says what
+its hue says; the alt text puts it in words ("at the handoff point", "past
+the handoff point"). It is never colour alone.
 
 **The Terminal Exception.** The terminal has no gauge to fill, so there the
 percentage itself carries the context tone, and state glyphs stand in for
@@ -193,10 +194,27 @@ mocks:
   bar to its value.
 - 14px between GitHub legs and 16px after the GitHub context group; 6px
   between Linear chips.
-- 14px after the seat (GitHub), 12px when it is a chip.
+- 14px after the seat (GitHub), 6px when it is a chip.
 
-On a narrow band, the row first drops the word `context`, then cuts the seat
-to 12 characters with an ellipsis. Order never changes.
+On a narrow band the row gives things up one at a time, each on top of the
+last, until it fits. The narrowest band is 240px, and everything fits there:
+
+1. The word `context` goes.
+2. The seat is cut to 12 characters with an ellipsis.
+3. Refining keeps its spinner and loses its words.
+4. Notices become a count.
+5. GitHub's bar becomes Linear's ring, which keeps the tone and the handoff
+   zone. A percentage on its own would lose both.
+6. Legs that passed go to their initial (`R`, `C`, `S`), and `evidence
+   unavailable` becomes `unavailable`.
+7. Legs that did not pass, but did not fail, do the same.
+8. The spacing tightens: GitHub's gaps and Linear's chips.
+9. The seat loses the word `lane` and is cut to 5 characters.
+10. The seat goes.
+11. A failed leg goes to its initial, and last of all a reviewer's age goes.
+
+Order never changes, every leg stays drawn at every width, and a failed leg
+keeps its corners to the end. What the row drops stays in the alt text.
 
 ## Elevation & Depth
 
@@ -206,13 +224,16 @@ hairline and a 4.5% tint, not by lift.
 
 ## Shapes
 
-Circles for state: filled states (ok, failed) at 12 to 13px, rings (not run,
-waived, running, stale) at 10.5 to 12px, so a filled mark reads a touch
-heavier than an open one. A 6px bar (GitHub) or a 13px ring and pie (Linear)
-for context. Linear chips have a 5px radius; GitHub notices are 10px-radius
-pills with a 1px edge, while Linear notices are tinted 5px chips like every
-other Linear item. Strokes are 1.4 to 1.8px: thinner for marks inside a
-filled circle, heavier for the spinner arc.
+Circles for state: filled ok at 12 to 13px, rings (not run, waived, running,
+Linear's stale) at 10.5 to 12px, so a filled mark reads a touch heavier than
+an open one. Failed is the one mark with corners: an octagon the size of the
+ok disc, so the two differ in outline as well as hue. GitHub's stale is a
+7px dot. A 6px bar (GitHub) or a 13px ring and pie (Linear, and GitHub on a
+narrow band) for context. Linear chips have a 5px radius; GitHub notices are
+10px-radius pills with a 1px edge, while Linear notices are tinted 5px chips
+like every other Linear item. Strokes are 1.4 to 1.8px: thinner for marks
+inside a filled circle, heavier for the spinner arc. The octagon's 0.8px edge
+only rounds its corners.
 
 ## Components
 
@@ -225,7 +246,7 @@ One shape per state, in both styles:
 | ok | filled green circle, check | filled green circle, check |
 | running | brass spinner arc | brass spinner arc |
 | stale | brass dot | brass ring with a half pie |
-| failed | filled red circle, cross | filled red circle, cross |
+| failed | filled red octagon, cross | filled red octagon, cross |
 | missing | mist hollow circle | mist dashed circle |
 | waived | mist circle with a slash | mist circle with a slash |
 
@@ -234,10 +255,13 @@ A running reviewer older than 15 minutes shows its age beside the label
 
 ### Context gauge
 
-- **GitHub:** a 56×6px bar, `track` behind and the state hue in front, then
-  `37%` (value) and `context` (label).
-- **Linear:** a 13px ring and pie in the state hue, inside a chip, then
-  `37% context`.
+- **GitHub:** a 56×6px bar, `track` behind and the state hue in front, a
+  10px slate tick at the seat's first threshold, then `37%` (value) and
+  `context` (label).
+- **Linear:** a 13px `track` ring with a slate zone from the seat's first
+  threshold round to the top, like a tachometer's redline, and a pie in the
+  state hue inside it, in a chip, then `37% context`. A tick across a ring
+  this small reads as a clock hand.
 
 ### Seat
 
@@ -249,19 +273,21 @@ A running reviewer older than 15 minutes shows its age beside the label
 
 GitHub: a green-tint pill with a 1px green edge. Linear: a green-tint chip
 with a dot. It reads `F1 done` or `successor card waiting`. At most two show,
-and they stay until the operator's next prompt.
+and they stay until the operator's next prompt. On a narrow band one mark
+holds their count instead.
 
 ### Refining
 
 While a prompt is with the refiner, a brass spinner and
-`refining your prompt…` lead the row.
+`refining your prompt…` lead the row. On a narrow band the spinner leads it
+alone.
 
 ### Unavailable
 
 When the core is missing, or gives no format 1 reading, a mist circle with
-a `?` and `evidence unavailable` take the legs' place. Before the doctor's
-first answer, and outside a git repo, no legs are drawn at all: nothing is
-not the same as unavailable.
+a `?` and `evidence unavailable` take the legs' place (`unavailable`, on a
+narrow band). Before the doctor's first answer, and outside a git repo, no
+legs are drawn at all: nothing is not the same as unavailable.
 
 ## Do's and Don'ts
 
