@@ -175,6 +175,7 @@ type Fit = {
   showContextWord: boolean
   // 0: no seat.
   seatMax: number
+  showLaneWord: boolean
   showRefiningWord: boolean
   showNoticeWords: boolean
   isGaugeSmall: boolean
@@ -184,13 +185,13 @@ type Fit = {
   isTight: boolean
 }
 
-const WIDEST: Fit = { showContextWord: true, seatMax: 40, showRefiningWord: true, showNoticeWords: true, isGaugeSmall: false, labels: 'all', showAge: true, isTight: false }
+const WIDEST: Fit = { showContextWord: true, seatMax: 40, showLaneWord: true, showRefiningWord: true, showNoticeWords: true, isGaugeSmall: false, labels: 'all', showAge: true, isTight: false }
 
 // What a narrow band gives up, in this order, each step on top of the last.
 // A word goes before the mark beside it, and a passing leg's word before one
-// that needs reading. The seat outlasts all of that, and only a failed leg's
-// word outlasts the seat. Every leg stays drawn at every width, and the alt
-// text keeps what the row dropped.
+// that needs reading. The seat outlasts all of that, shrinking to its own name
+// before it goes, and only a failed leg's word outlasts it. Every leg stays
+// drawn at every width, and the alt text keeps what the row dropped.
 const GIVEN_UP: Partial<Fit>[] = [
   { showContextWord: false },
   { seatMax: 12 },
@@ -200,6 +201,7 @@ const GIVEN_UP: Partial<Fit>[] = [
   { labels: 'not-passed' },
   { labels: 'failed' },
   { isTight: true },
+  { showLaneWord: false, seatMax: 5 },
   { seatMax: 0 },
   { labels: 'none' },
   { showAge: false },
@@ -208,6 +210,8 @@ const GIVEN_UP: Partial<Fit>[] = [
 function cut(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s
 }
+
+const seatText = (seat: string, fit: Fit) => cut(fit.showLaneWord ? seat : seat.replace(/^lane /, ''), fit.seatMax)
 
 function keepsWord(l: Leg, fit: Fit): boolean {
   if (fit.labels === 'all') return true
@@ -236,7 +240,7 @@ function github(m: BandModel, fit: Fit): Row {
     if (fit.showRefiningWord) R.text('refining your prompt…', { cls: 'muted' }).gap(16)
     else R.gap(fit.isTight ? 0 : 6)
   }
-  if (m.seat && fit.seatMax) R.text(cut(m.seat, fit.seatMax), { size: 12.5, weight: 600 }).gap(fit.isTight ? 8 : 14)
+  if (m.seat && fit.seatMax) R.text(seatText(m.seat, fit), { size: 12.5, weight: 600 }).gap(fit.isTight ? 8 : 14)
   if (m.ctx !== null) {
     const pct = m.ctx
     const tone: Tone = ctxTone(pct, m.role)
@@ -263,7 +267,7 @@ function linear(m: BandModel, fit: Fit): Row {
     r.icon(fit.showRefiningWord ? 18 : 13, (x, cy) => spinner(x + 6.5, cy, 5.5, 'warn', 1.6))
     if (fit.showRefiningWord) r.text('refining your prompt…', { cls: 'muted' })
   }, { padX, stroke: 'line' }).gap(chipGap)
-  if (m.seat && fit.seatMax) R.box(r => { r.icon(14, (x, cy) => `<rect x="${x + 2}" y="${cy - 4}" width="8" height="8" rx="2.5" class="f-accent"/>`).text(cut(m.seat as string, fit.seatMax), { weight: 500 }) }, { padX, stroke: 'line' }).gap(chipGap)
+  if (m.seat && fit.seatMax) R.box(r => { r.icon(14, (x, cy) => `<rect x="${x + 2}" y="${cy - 4}" width="8" height="8" rx="2.5" class="f-accent"/>`).text(seatText(m.seat as string, fit), { weight: 500 }) }, { padX, stroke: 'line' }).gap(chipGap)
   if (m.ctx !== null) {
     const pct = m.ctx
     const tone: Tone = ctxTone(pct, m.role)

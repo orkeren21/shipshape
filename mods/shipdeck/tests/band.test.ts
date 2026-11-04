@@ -236,7 +236,7 @@ describe('a narrow band', () => {
     test(`${style}: evidence unavailable says so at the floor`, () => {
       const d = drawBand(model({ seat: LONG_SEAT, legs: null, refining: true, notices: NOTICES }), style, FLOOR)
       expect(d.width).toBeLessThan(FLOOR + 1)
-      expect(words(d.source).some(w => w.endsWith('unavailable'))).toBe(true)
+      expect(words(d.source)).toContain('unavailable')
     })
 
     test(`${style}: a fourth leg fits at the floor too`, () => {
@@ -249,7 +249,7 @@ describe('a narrow band', () => {
 
     test(`${style}: the order never changes, whatever goes`, () => {
       const m = model({ seat: 'lane F2', refining: true, legs: legsOf('running', 'fail', 'waived'), notices: NOTICES })
-      const rank = (w: string) => (w.startsWith('refining') ? 0 : w.startsWith('lane') ? 1 : w.endsWith('%') ? 2 : w === 'context' ? 3 : LABEL.test(w) ? 4 : 5)
+      const rank = (w: string) => (w.startsWith('refining') ? 0 : w.startsWith('lane') || w === 'F2' ? 1 : w.endsWith('%') ? 2 : w === 'context' ? 3 : LABEL.test(w) ? 4 : 5)
       for (let width = 900; width >= FLOOR; width -= 8) {
         const ranks = words(drawBand(m, style, width).source).map(rank)
         expect(ranks).toEqual([...ranks].sort((a, b) => a - b))
@@ -284,9 +284,14 @@ describe('a narrow band', () => {
     })
 
     test(`${style}: a failed leg outlasts the seat`, () => {
-      const d = drawBand(model({ legs: legsOf('fail', 'fail', 'fail') }), style, FLOOR)
+      const d = drawBand(model({ seat: 'architect', role: 'architect', legs: legsOf('fail', 'fail', 'fail') }), style, FLOOR)
       expect(words(d.source).filter(w => LABEL.test(w))).toEqual(['review', 'CI', 'smoke'])
-      expect(d.source).not.toContain('lane F2')
+      expect(d.source).not.toContain('arch')
+    })
+
+    test(`${style}: a row that just fits gives nothing up`, () => {
+      const full = drawBand(model(), style, 2000)
+      expect(drawBand(model(), style, full.width).source).toContain('>context<')
     })
 
     test(`${style}: a healthy band keeps its seat at the floor`, () => {
@@ -295,6 +300,13 @@ describe('a narrow band', () => {
       expect(words(d.source).filter(w => LABEL.test(w))).toEqual(['R', 'C', 'S'])
     })
   }
+
+  test('linear: the seat shrinks to its own name before it goes', () => {
+    const lane = drawBand(model({ legs: legsOf('running', 'ok', 'missing') }), 'linear', FLOOR)
+    expect(words(lane.source)).toContain('F2')
+    const architect = drawBand(model({ seat: 'architect', role: 'architect', notices: NOTICES, legs: legsOf('missing', 'missing', 'missing') }), 'linear', FLOOR)
+    expect(words(architect.source)).toContain('arch…')
+  })
 
   test('github: the bar becomes the ring, which keeps the tone and the handoff zone', () => {
     const m = model({ ctx: 72 })

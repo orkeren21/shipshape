@@ -208,8 +208,9 @@ last, until it fits. The narrowest band is 240px, and everything fits there:
 6. Legs that passed go to their initial (`R`, `C`, `S`).
 7. Legs that did not pass, but did not fail, do the same.
 8. The spacing tightens: GitHub's gaps and Linear's chips.
-9. The seat goes.
-10. A failed leg goes to its initial, and last of all a reviewer's age goes.
+9. The seat loses the word `lane` and is cut to 5 characters.
+10. The seat goes.
+11. A failed leg goes to its initial, and last of all a reviewer's age goes.
 
 Order never changes, every leg stays drawn at every width, and a failed leg
 keeps its corners to the end. What the row drops stays in the alt text.
@@ -282,9 +283,8 @@ alone.
 
 When the core is missing, or gives no format 1 reading, a mist circle with
 a `?` and `evidence unavailable` take the legs' place (`unavailable`, on a
-narrow band). Before the doctor's
-first answer, and outside a git repo, no legs are drawn at all: nothing is
-not the same as unavailable.
+narrow band). Before the doctor's first answer, and outside a git repo, no
+legs are drawn at all: nothing is not the same as unavailable.
 
 ## Do's and Don'ts
 
