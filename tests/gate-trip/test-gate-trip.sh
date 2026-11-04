@@ -34,54 +34,7 @@ stop() { run_hook done-gate.sh "$(stop_payload lane-g1 "$work/t.jsonl" "$1")" "$
 : > "$work/t.jsonl"
 
 # ===========================================================================
-# Gate 1 — blockedBy ordering. Skip: start the dependent task first.
-# ===========================================================================
-
-fence() { printf 'Work.\n\n```json:metadata\n%s\n```\n' "$1"; }
-create() {
-  run_hook task-capture.sh "$(printf '{"session_id":"lane-g1","hook_event_name":"TaskCreated","task_id":"%s","task_subject":"t","task_description":%s}' \
-    "$1" "$(json_string "$(fence "$2")")")" "$repo" >/dev/null
-}
-
-create 1 '{"id":"g1a","files":["src.txt"],"verifyCommand":"true","blockedBy":[],"strictTDD":true}'
-create 2 '{"id":"g1b","files":["src.txt"],"verifyCommand":"true","blockedBy":["g1a"],"strictTDD":true}'
-
-start2='{"session_id":"lane-g1","hook_event_name":"PreToolUse","tool_name":"TaskUpdate","tool_input":{"taskId":"2","status":"in_progress"}}'
-out="$(run_hook blockedby-gate.sh "$start2" "$repo")"
-assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "TRIPPED: starting g1b while g1a is open is refused"
-
-# ===========================================================================
-# Gate 2 — task completion. Skip: close the task without running its verify.
-# ===========================================================================
-
-close1='{"session_id":"lane-g1","hook_event_name":"TaskCompleted","task_id":"1","task_subject":"t"}'
-out="$(run_hook task-completion-gate.sh "$close1" "$repo")"
-assert_eq "block" "$(hook_field "$out" decision)" \
-  "TRIPPED: closing g1a with no verify record is refused"
-
-# Skip: run the verify command bare, the way a session naturally would, and
-# try again. Bare runs leave no record, so the gate is unmoved.
-(cd "$repo" && true)
-out="$(run_hook task-completion-gate.sh "$close1" "$repo")"
-assert_eq "block" "$(hook_field "$out" decision)" \
-  "TRIPPED: running the command outside the wrapper leaves nothing for the gate to read"
-
-# The honest path: through the wrapper.
-(cd "$repo" && shipshape-verify g1a true >/dev/null 2>&1)
-out="$(run_hook task-completion-gate.sh "$close1" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "PASSES: a real verify record closes the task"
-
-out="$(run_hook blockedby-gate.sh "$start2" "$repo")"
-assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "PASSES: with g1a closed, g1b starts"
-
-(cd "$repo" && shipshape-verify g1b true >/dev/null 2>&1)
-run_hook task-completion-gate.sh \
-  '{"session_id":"lane-g1","hook_event_name":"TaskCompleted","task_id":"2","task_subject":"t"}' "$repo" >/dev/null
-
-# ===========================================================================
-# Gate 3 — the done gate. Skip: declare the branch finished.
+# Gate 1 — the done gate. Skip: declare the branch finished.
 # ===========================================================================
 
 # Before a pull request exists the gate is inert, by design: work in progress
@@ -123,7 +76,7 @@ assert_contains "$(hook_field "$out" systemMessage)" "smoke" \
   "...but it is still told, every turn, what the branch owes"
 
 # ===========================================================================
-# Gate 4 — review capture. Skip: finish without dispatching a reviewer.
+# Gate 2 — review capture. Skip: finish without dispatching a reviewer.
 # ===========================================================================
 
 # An ordinary subagent return is not a review, however useful it was.
@@ -147,7 +100,7 @@ Ready to merge: With fixes")")" "$repo" >/dev/null
   || fail "PASSES: a marked reviewer return is captured"
 
 # ===========================================================================
-# Gate 5 — CI. Skip: hand over a red pull request.
+# Gate 3 — CI. Skip: hand over a red pull request.
 # ===========================================================================
 
 (cd "$repo" && GH_STUB_CHECKS_EXIT=1 GH_STUB_MERGE_STATE=BLOCKED shipshape-ci-watch >/dev/null 2>&1)
@@ -168,7 +121,7 @@ assert_eq "block" "$(hook_field "$out" decision)" \
 assert_contains "$(cat "$scratch/ci-status")" "result=green" "PASSES: a mergeable pull request is green"
 
 # ===========================================================================
-# Gate 6 — the smoke. Skip: finish without exercising anything.
+# Gate 4 — the smoke. Skip: finish without exercising anything.
 # ===========================================================================
 
 out="$(stop "$CLAIM")"
@@ -182,7 +135,7 @@ assert_eq "" "$(hook_field "$out" decision)" "PASSES: with all three artifacts, 
 assert_eq "" "$(hook_field "$out" systemMessage)" "and it is not nagged about anything"
 
 # ===========================================================================
-# Gate 6b — the shortcut class: run the sanctioned wrapper, do no work.
+# Gate 4b — the shortcut class: run the sanctioned wrapper, do no work.
 # ===========================================================================
 #
 # Every gate below reads an artifact that the wrapper already wrote honestly.
@@ -225,30 +178,84 @@ done
 out="$(stop "$CLAIM")"
 assert_eq "" "$(hook_field "$out" decision)" "PASSES: a verdict of with-fixes is an answer of yes"
 
-# A verify record for a command the fence never asked for.
-create 3 '{"id":"g1c","files":[],"verifyCommand":"echo the real suite","blockedBy":[],"strictTDD":true}'
-close3='{"session_id":"lane-g1","hook_event_name":"TaskCompleted","task_id":"3","task_subject":"t"}'
-(cd "$repo" && shipshape-verify g1c true >/dev/null 2>&1)
-out="$(run_hook task-completion-gate.sh "$close3" "$repo")"
-assert_eq "block" "$(hook_field "$out" decision)" \
-  "TRIPPED: verifying with a different command than the fence asks for does not close the task"
-assert_contains "$(hook_field "$out" reason)" "echo the real suite" "and the gate quotes what the fence actually asks for"
+# ===========================================================================
+# Gate 5 — the plan. Skip: build the tasks and never verify them.
+# ===========================================================================
+#
+# The other legs are all current here, so whatever the gate says is the plan's
+# doing. The command fails until the marker exists, which is what makes a red
+# run possible without changing what the fence asks for.
 
-(cd "$repo" && shipshape-verify g1c 'echo the real suite' >/dev/null 2>&1)
-out="$(run_hook task-completion-gate.sh "$close3" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "PASSES: running the command the task is defined by closes it"
+fence() { printf '```json:metadata\n%s\n```\n\n' "$1"; }
+plan="$work/plan.md"
+{
+  fence '{"id":"g1a","files":["src.txt"],"verifyCommand":"test -f suite.passes","blockedBy":[],"strictTDD":true}'
+  fence '{"id":"g1b","files":["src.txt"],"verifyCommand":"test -f suite.passes","blockedBy":["g1a"],"strictTDD":true}'
+} > "$plan"
+(cd "$repo" && shipshape-plan "$plan" >/dev/null 2>&1)
+assert_file "$scratch/plan" "a plan the session binds is a plan the gates read"
 
-# Skipping in_progress does not skip the ordering the plan wrote down.
-create 4 '{"id":"g1d","files":[],"verifyCommand":"true","blockedBy":["never-finished"],"strictTDD":false}'
-(cd "$repo" && shipshape-verify g1d true >/dev/null 2>&1)
-out="$(run_hook task-completion-gate.sh \
-  '{"session_id":"lane-g1","hook_event_name":"TaskCompleted","task_id":"4","task_subject":"t"}' "$repo")"
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" "TRIPPED: a bound plan with its tasks unverified does not satisfy the gate"
+reason="$(hook_field "$out" reason)"
+assert_contains "$reason" "g1a, g1b" "and the refusal names the tasks"
+assert_contains "$reason" "shipshape-verify g1a,g1b 'test -f suite.passes'" "and hands back the line to run"
+
+# Skip: run the verify command bare, the way a session naturally would. Bare
+# runs leave no record, so the gate is unmoved.
+: > "$repo/suite.passes"
+(cd "$repo" && test -f suite.passes)
+rm -f "$repo/suite.passes"
+out="$(stop "$CLAIM")"
 assert_eq "block" "$(hook_field "$out" decision)" \
-  "TRIPPED: going straight to completed does not walk around blockedBy"
-assert_contains "$(hook_field "$out" reason)" "never-finished" "and the refusal names the dependency"
+  "TRIPPED: running the command outside the wrapper leaves nothing for the gate to read"
+
+# Skip: go through the wrapper with a command that cannot fail.
+(cd "$repo" && shipshape-verify g1a,g1b true >/dev/null 2>&1)
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "TRIPPED: verifying with a different command than the fence asks for does not satisfy the gate"
+assert_contains "$(hook_field "$out" reason)" "test -f suite.passes" "and the refusal quotes what the fence actually asks for"
+
+# Skip: let the caller's shell split it, so only the harmless half is recorded.
+(cd "$repo" && shipshape-verify g1a true && test -f suite.passes) >/dev/null 2>&1
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" "TRIPPED: half a command is a different command"
+
+# Skip: the real command, red.
+(cd "$repo" && shipshape-verify g1a,g1b 'test -f suite.passes' >/dev/null 2>&1)
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" "TRIPPED: a red verify does not satisfy the gate"
+assert_contains "$(hook_field "$out" reason)" "failed" "and the refusal says it failed"
+
+# Skip: leave one task out. It takes a scope, and a scope takes a reason.
+(cd "$repo" && shipshape-plan "$plan" --tasks g1a >/dev/null 2>&1)
+assert_eq "1" "$?" "TRIPPED: narrowing the scope with no reason is refused"
+(cd "$repo" && shipshape-plan --clear >/dev/null 2>&1)
+assert_eq "1" "$?" "TRIPPED: dropping the plan with no reason is refused"
+assert_file "$scratch/plan" "and the binding stands"
+
+# The honest path: one run through the wrapper covers both tasks.
+: > "$repo/suite.passes"
+(cd "$repo" && shipshape-verify g1a,g1b 'test -f suite.passes' >/dev/null 2>&1)
+out="$(stop "$CLAIM")"
+assert_eq "" "$(hook_field "$out" decision)" "PASSES: a real, passing record for every task satisfies the gate"
+
+# Skip: fix one more thing after the verify. No commit needed: the record
+# describes the files, and they have moved.
+sleep 1
+printf 'edited after the verify\n' >> "$repo/src.txt"
+out="$(stop "$CLAIM")"
+assert_eq "block" "$(hook_field "$out" decision)" \
+  "TRIPPED: editing a task's file after verifying makes its record stale"
+assert_contains "$(hook_field "$out" reason)" "g1a, g1b" "and the refusal names the tasks"
+
+(cd "$repo" && shipshape-verify g1a,g1b 'test -f suite.passes' >/dev/null 2>&1)
+out="$(stop "$CLAIM")"
+assert_eq "" "$(hook_field "$out" decision)" "PASSES: verifying again clears it"
 
 # ===========================================================================
-# Gate 7 — staleness. Skip: land one more fix after the evidence.
+# Gate 6 — staleness. Skip: land one more fix after the evidence.
 # ===========================================================================
 
 commit_more "$repo"
@@ -270,7 +277,7 @@ assert_contains "$(cat "$scratch/smoke.log")" "$(git -C "$repo" rev-parse HEAD)"
   "the log records the commit it was gathered against"
 
 # ===========================================================================
-# Gate 7b — the merge. Skip: just merge it; the nudge is only a nudge.
+# Gate 6b — the merge. Skip: just merge it; the nudge is only a nudge.
 # ===========================================================================
 #
 # The field incident: in a cascade of fix PRs the session stops saying "done",
@@ -300,6 +307,7 @@ done
 (cd "$repo" && GH_STUB_CHECKS_EXIT=0 GH_STUB_MERGE_STATE=CLEAN shipshape-ci-watch >/dev/null 2>&1)
 rm -f "$scratch/smoke.log"
 (cd "$repo" && shipshape-smoke sh -c 'echo "parsed 3 records, 0 errors"' >/dev/null 2>&1)
+(cd "$repo" && shipshape-verify g1a,g1b 'test -f suite.passes' >/dev/null 2>&1)
 out="$(stop "$CLAIM")"
 assert_eq "" "$(hook_field "$out" decision)" "re-earned evidence satisfies the done gate again"
 out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 7 --auto")" "$repo")"
@@ -307,7 +315,7 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "PASSES: a freshly stamped PR merges"
 
 # ===========================================================================
-# Nudge 8 — context, advisory. It catches nothing; it fires at the handoff
+# Nudge 7 — context, advisory. It catches nothing; it fires at the handoff
 # point so the session writes a handoff there rather than later.
 # ===========================================================================
 
@@ -332,14 +340,6 @@ assert_eq "" "$(hook_field "$out" decision)" "advisory: it does not stop the tur
 out="$(SHIPSHAPE_DONE_GATE=0 stop "$CLAIM")"
 assert_eq "" "$(hook_field "$out" decision)" "SHIPSHAPE_DONE_GATE=0 stands the done gate down"
 
-out="$(SHIPSHAPE_BLOCKEDBY_GATE=0 run_hook blockedby-gate.sh "$start2" "$repo")"
-assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "SHIPSHAPE_BLOCKEDBY_GATE=0 stands the ordering gate down"
-
-rm -f "$scratch/verify/g1a"
-out="$(SHIPSHAPE_TASK_COMPLETION_GATE=0 run_hook task-completion-gate.sh "$close1" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" "SHIPSHAPE_TASK_COMPLETION_GATE=0 stands the completion gate down"
-
 out="$(SHIPSHAPE_MERGE_GATE=0 run_hook merge-gate.sh "$(merge_payload "gh pr merge 999")" "$repo")"
 assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "SHIPSHAPE_MERGE_GATE=0 stands the merge gate down"
@@ -352,7 +352,7 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.additionalContext)" \
 
 # And every decision it made is answerable after the fact.
 trace="$(cat "$scratch/trace.log")"
-for hook in done-gate task-completion-gate blockedby-gate review-capture ci-watch verify smoke; do
+for hook in done-gate review-capture ci-watch verify smoke plan; do
   assert_contains "$trace" "$hook" "the trace records what $hook did"
 done
 

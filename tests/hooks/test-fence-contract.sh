@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# The fence schema and the gates that read it, pinned to each other.
+# The fence schema and the leg that reads it, pinned to each other.
 #
 # The example fence in fence-schema.md is not an illustration here — it is
-# extracted from the document and run through the real hooks. If someone
-# renames a field in the schema, or a gate starts reading a different key, this
-# fails instead of the mismatch turning up months later as a gate that silently
-# stopped checking anything.
+# extracted from the document, bound with the real wrapper and read by the real
+# leg. If someone renames a field in the schema, or the leg starts reading a
+# different key, this fails instead of the mismatch turning up months later as
+# a leg that silently stopped checking anything.
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$here/hook-helpers.sh"
+source "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh"
 
 schema="$SHIPSHAPE_REPO_ROOT/skills/writing-plans/fence-schema.md"
 assert_file "$schema" "the fence schema is documented"
@@ -32,63 +33,53 @@ for field in id files interfaces acceptanceCriteria verifyCommand blockedBy stri
   grep -q "\`$field\`" "$schema" || fail "$field appears in the schema table"
 done
 
+fence_id="$(printf '%s' "$fence" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')"
+verify_command="$(printf '%s' "$fence" | sed -n 's/.*"verifyCommand":"\([^"]*\)".*/\1/p')"
+dep="$(printf '%s' "$fence" | sed -n 's/.*"blockedBy":\["\([^"]*\)".*/\1/p')"
+first_file="$(printf '%s' "$fence" | sed -n 's/.*"files":\["\([^"]*\)".*/\1/p')"
+assert_ne "" "$fence_id" "the example fence has an id the leg can key on"
+assert_ne "" "$verify_command" "the example fence names a verify command"
+assert_ne "" "$dep" "the example fence names a dependency"
+assert_ne "" "$first_file" "the example fence names a file"
+
 work="$(test_workdir)"
 repo="$work/repo"
 make_repo "$repo"
+cd "$repo" || exit 1
 export SHIPSHAPE_SCRATCH_ROOT="$repo"
-session="fence-session"
-scratch="$repo/.shipshape/$session"
+export SHIPSHAPE_SESSION_ID=fence-session
+scratch="$repo/.shipshape/fence-session"
 
-description="$(printf 'Implement it.\n\n```json:metadata\n%s\n```\n' "$fence")"
+plan="$work/plan.md"
+printf '# A plan\n\n```json:metadata\n%s\n```\n' "$fence" > "$plan"
 
-payload="$(printf '{"session_id":"%s","hook_event_name":"TaskCreated","task_id":"41","task_subject":"t","task_description":%s}' \
-  "$session" "$(json_string "$description")")"
-run_hook task-capture.sh "$payload" "$repo" >/dev/null
+# --- shipshape-plan reads the documented fence -----------------------------------
 
-assert_file "$scratch/tasks/41.json" "task-capture reads a schema-conformant fence out of a task description"
+out="$("$SHIPSHAPE_REPO_ROOT/bin/shipshape-plan" "$plan" 2>&1)"
+assert_eq "0" "$?" "a schema-conformant fence binds"
+assert_contains "$out" "$dep" "blockedBy is read: the example names a task this one-task plan does not hold"
 
-fence_id="$(printf '%s' "$fence" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')"
-assert_ne "" "$fence_id" "the example fence has an id the gates can key on"
+# --- the leg reads id and verifyCommand ------------------------------------------
 
-# --- the ordering gate reads blockedBy ---------------------------------------
-
-update="$(printf '{"session_id":"%s","hook_event_name":"PreToolUse","tool_name":"TaskUpdate","tool_input":{"taskId":"41","status":"in_progress"}}' "$session")"
-out="$(run_hook blockedby-gate.sh "$update" "$repo")"
-assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "the ordering gate reads blockedBy out of the documented fence and holds the task"
-
-# Close the dependency the example names, and the same task is released.
-dep="$(printf '%s' "$fence" | sed -n 's/.*"blockedBy":\["\([^"]*\)".*/\1/p')"
-assert_ne "" "$dep" "the example fence names a dependency"
-mkdir -p "$scratch/tasks/completed"
-: > "$scratch/tasks/completed/$dep"
-
-out="$(run_hook blockedby-gate.sh "$update" "$repo")"
-assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "with the dependency closed, the ordering gate releases the task"
-
-# --- the completion gate reads verifyCommand and files -----------------------
-
-completed="$(printf '{"session_id":"%s","hook_event_name":"TaskCompleted","task_id":"41","task_subject":"t"}' "$session")"
-out="$(run_hook task-completion-gate.sh "$completed" "$repo")"
-assert_eq "block" "$(hook_field "$out" decision)" \
-  "the completion gate reads verifyCommand out of the documented fence and holds the task"
-
-verify_command="$(printf '%s' "$fence" | sed -n 's/.*"verifyCommand":"\([^"]*\)".*/\1/p')"
-assert_contains "$(hook_field "$out" reason)" "$verify_command" \
+assert_eq "open|$fence_id" "$(shipshape_leg_plan "$scratch")" \
+  "the leg reads verifyCommand out of the documented fence and holds the task"
+assert_contains "$(shipshape_plan_rerun "$scratch")" "shipshape-verify $fence_id '$verify_command'" \
   "and quotes back the exact command the fence asked for"
 
 mkdir -p "$scratch/verify"
-printf 'task=%s\ncommand=%s\nexit=0\nepoch=%s\n' "$fence_id" "$verify_command" "$(date -u +%s)" \
+printf 'task=%s\ncommand=%s\nexit=0\nepoch=%s\n--- output ---\n' "$fence_id" "$verify_command" "$(date -u +%s)" \
   > "$scratch/verify/$fence_id"
+assert_eq "ok|" "$(shipshape_leg_plan "$scratch")" \
+  "a verify record filed under the fence's own id satisfies the leg"
 
-out="$(run_hook task-completion-gate.sh "$completed" "$repo")"
-assert_eq "" "$(hook_field "$out" decision)" \
-  "a verify record filed under the fence's own id satisfies the gate"
+# --- and files -----------------------------------------------------------------
 
-# The record is keyed by the fence id, which is what shipshape-verify is called
-# with — not by the native task id the event carries.
-assert_file "$scratch/tasks/completed/$fence_id" \
-  "completion is recorded under the fence id, so blockedBy in other tasks resolves"
+sed "s/^epoch=.*/epoch=1/" "$scratch/plan" > "$scratch/plan.new" && mv "$scratch/plan.new" "$scratch/plan"
+printf 'task=%s\ncommand=%s\nexit=0\nepoch=2\n--- output ---\n' "$fence_id" "$verify_command" \
+  > "$scratch/verify/$fence_id"
+mkdir -p "$repo/$(dirname "$first_file")"
+printf 'v1\n' > "$repo/$first_file"
+assert_eq "stale|$fence_id" "$(shipshape_leg_plan "$scratch")" \
+  "the leg reads files out of the documented fence, from the repo root"
 
 finish

@@ -44,8 +44,7 @@ for wrapper in shipshape-pr-open shipshape-ci-watch shipshape-verify shipshape-s
   assert_contains "$detail_body" "$wrapper" "DETAILS.md documents $wrapper"
 done
 
-for hook in done-gate review-capture task-capture task-completion-gate \
-            blockedby-gate context-watch session-start; do
+for hook in done-gate review-capture context-watch session-start; do
   assert_contains "$detail_body" "$hook" "DETAILS.md documents the $hook hook"
   assert_file "$SHIPSHAPE_REPO_ROOT/hooks/$hook.sh" "$hook.sh exists to be documented"
 done

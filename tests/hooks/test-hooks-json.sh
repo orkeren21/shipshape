@@ -4,10 +4,7 @@
 # looks exactly like a gate that never has anything to say.
 #
 # The event names below were checked against the Claude Code hooks reference
-# at implementation time. Two of them are not what the plan assumed: task
-# completion has its own TaskCompleted event rather than being a PostToolUse on
-# TaskUpdate, and the fence has to be captured at TaskCreated because
-# TaskCompleted carries only an id and a title.
+# at implementation time.
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$here/hook-helpers.sh"
@@ -33,16 +30,13 @@ check_registration() { # check_registration <script> <event>
   fi
 }
 
-check_registration "session-start.sh"        SessionStart
-check_registration "done-gate.sh"            Stop
-check_registration "context-watch.sh"        Stop
-check_registration "review-capture.sh"       PostToolUse
-check_registration "review-capture.sh"       SubagentStop
-check_registration "task-capture.sh"         TaskCreated
-check_registration "task-completion-gate.sh" TaskCompleted
-check_registration "blockedby-gate.sh"       PreToolUse
-check_registration "pr-wrapper-gate.sh"      PreToolUse
-check_registration "merge-gate.sh"           PreToolUse
+check_registration "session-start.sh"   SessionStart
+check_registration "done-gate.sh"       Stop
+check_registration "context-watch.sh"   Stop
+check_registration "review-capture.sh"  PostToolUse
+check_registration "review-capture.sh"  SubagentStop
+check_registration "pr-wrapper-gate.sh" PreToolUse
+check_registration "merge-gate.sh"      PreToolUse
 
 # Both directions, so the list above cannot fall behind the directory: every
 # hook script is registered, and every registered script exists.

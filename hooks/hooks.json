@@ -61,41 +61,6 @@
             "async": false
           }
         ]
-      },
-      {
-        "matcher": "TaskUpdate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/blockedby-gate.sh\"",
-            "shell": "bash",
-            "async": false
-          }
-        ]
-      }
-    ],
-    "TaskCreated": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/task-capture.sh\"",
-            "shell": "bash",
-            "async": false
-          }
-        ]
-      }
-    ],
-    "TaskCompleted": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/task-completion-gate.sh\"",
-            "shell": "bash",
-            "async": false
-          }
-        ]
       }
     ],
     "SubagentStop": [
