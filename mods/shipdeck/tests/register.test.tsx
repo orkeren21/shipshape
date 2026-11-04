@@ -51,6 +51,7 @@ type World = {
   // What $.session.root() answers.
   root?: string
   rootThrows?: boolean
+  rootHangs?: boolean
   // How many $.session.id() calls never answer.
   idHangs?: number
   // How many doctor runs fail to start, and how long each one that runs takes.
@@ -84,7 +85,8 @@ function world(on: On, w: World = {}) {
     if (w.cwdThrows) throw new Error('no folder')
     return { value: w.cwd ?? '/repo' } as never
   })
-  on('session.root', () => {
+  on('session.root', async () => {
+    if (w.rootHangs) await new Promise(() => {})
     if (w.rootThrows) throw new Error('no folder')
     return { value: w.root ?? '/repo' } as never
   })
@@ -621,16 +623,27 @@ test('a folder call that never answers holds the reading back two seconds, no mo
   const runs = seen.runs.length
   w.cwdHangs = true
   await $.turn.complete({ reason: 'answer' } as never)
-  await clock.advance(2_000)
+  await clock.advance(1_900)
+  expect(seen.runs.length).toBe(runs)
+  await clock.advance(100)
   expect(seen.runs.length).toBe(runs + 1)
   expect(lastCwd(seen.runs)).toBe('/repo')
 })
 
-test('the doctor is told the project folder, so outside a repo it falls back where the gates do', async ($, on) => {
+test('the doctor is told the session\'s folder, so outside a repo it keeps its own scratch', async ($, on) => {
   const { clock, seen } = world(on, { root: '/project' })
   await start($, clock)
   const run = seen.runs.at(-1) as { init?: { env?: Record<string, string> } }
   expect(run.init?.env?.CLAUDE_PROJECT_DIR).toBe('/project')
+})
+
+test('a session folder that never answers holds the doctor back two seconds, no more', async ($, on) => {
+  const { clock, seen } = world(on, { rootHangs: true })
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true } as never)
+  await clock.advance(2_000)
+  const run = seen.runs.at(-1) as { init?: { env?: Record<string, string> } } | undefined
+  expect(run?.init?.env?.SHIPSHAPE_SESSION_ID).toBe('sess-1')
+  expect(run?.init?.env?.CLAUDE_PROJECT_DIR).toBeUndefined()
 })
 
 test('a project folder the engine will not give still runs the doctor', async ($, on) => {
@@ -793,31 +806,51 @@ test('the trace counts the words beside a reminder inside the prompt', async ($,
   expect(decisions(seen.traces)).toEqual(['skip a reminder inside the prompt (5 words)'])
 })
 
-for (const [name, w, after] of [
-  ['SHIPSHAPE_REFINE=0', { env: { SHIPSHAPE_REFINE: '0' } }, ''],
-  ['/refine off', {}, 'off'],
-] as const) {
-  test(`${name} leaves no trace, since nothing was decided`, async ($, on) => {
-    const { clock, seen } = world(on, w as World)
-    await start($, clock)
-    if (after) await $.command.run({ command: 'refine', args: after, origin: { kind: 'composer' }, presentation: {} } as never)
-    await submit($, DUMP)
-    await submit($, `three words here ${REMINDER} and two`)
-    await submit($, `raw: ${DUMP}`)
-    await clock.settle()
-    expect(seen.traces).toEqual([])
-    expect(seen.entered.at(-1)).toBe(DUMP)
-  })
+async function promptsWhileOff($: Engine, clock: { settle: () => Promise<void> }, seen: { traces: string[]; entered: string[]; model: unknown[] }) {
+  await submit($, DUMP)
+  await submit($, `three words here ${REMINDER} and two`)
+  await submit($, `raw: ${DUMP}`)
+  await clock.settle()
+  expect(seen.model).toEqual([])
+  expect(seen.traces).toEqual([])
+  expect(seen.entered.at(-1)).toBe(DUMP)
 }
+
+test('SHIPSHAPE_REFINE=0 leaves no trace, since nothing was decided', async ($, on) => {
+  const { clock, seen } = world(on, { env: { SHIPSHAPE_REFINE: '0' } })
+  await start($, clock)
+  await promptsWhileOff($, clock, seen)
+})
+
+test('the refine option off leaves no trace', { options: { refine: false } }, async ($, on) => {
+  const { clock, seen } = world(on)
+  await start($, clock)
+  await promptsWhileOff($, clock, seen)
+})
+
+test('/refine off leaves no trace', async ($, on) => {
+  const { clock, seen } = world(on)
+  await start($, clock)
+  await $.command.run({ command: 'refine', args: 'off', origin: { kind: 'composer' }, presentation: {} } as never)
+  await promptsWhileOff($, clock, seen)
+})
+
+test('a refining switch that cannot be read counts as off', async ($, on) => {
+  on('state.get', (_, e, next) => ((e as { key?: string }).key === 'refineOff' ? ({ deny: 'state host down' } as never) : next(e)))
+  const { clock, seen } = world(on)
+  await start($, clock)
+  await promptsWhileOff($, clock, seen)
+})
 
 test('the decisions waiting for a reading are capped', async ($, on) => {
   const w: World = { doctor: 'not json' }
   const { clock, seen } = world(on, w)
   await start($, clock)
-  for (let n = 0; n < 70; n++) await submit($, SHORT)
+  for (let n = 1; n <= 70; n++) await submit($, `raw: ${'word '.repeat(n)}`)
   w.doctor = doctorJson()
   await clock.advance(60_000)
   expect(seen.traces).toHaveLength(50)
+  expect(seen.traces.at(-1)).toContain('skip raw (70 words)')
 })
 
 test('a decision made before the first reading reaches the trace once there is one', async ($, on) => {
@@ -909,13 +942,32 @@ test('a pane that cannot open costs the reading nothing', async ($, on) => {
   await pane.unmount()
 })
 
-test('a seen map stored by 0.1.0 is declined, so a lane already done is not news', async ($, on) => {
-  seed(on, [STORED('seen', { f1: false }, 'seen-1')])
-  const { clock, seen } = world(on, {
-    doctor: doctorJson({ seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }),
-    files: { '/epic/roster/f1.md': 'status: done', '/epic/decisions.md': '' },
-    dirs: { '/epic/roster': ['f1.md'] },
+// Answers one read, so the write that follows it is not refused as a conflict.
+function seedOnce(on: On, stored: { key: string; value: unknown }) {
+  let isRead = false
+  on('state.get', (_, e, next) => {
+    if (isRead || (e as { key?: string }).key !== stored.key) return next(e)
+    isRead = true
+    return { value: stored.value } as never
   })
+}
+const architectInEpic = {
+  doctor: doctorJson({ seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }),
+  files: { '/epic/roster/f1.md': 'status: done', '/epic/decisions.md': '' },
+  dirs: { '/epic/roster': ['f1.md'] },
+}
+const SEEN_BEFORE = { epic: '/epic', done: { f1: false } }
+
+test('a seen map this version stored makes a lane news', async ($, on) => {
+  seedOnce(on, STORED('seen', SEEN_BEFORE, 'seen-2'))
+  const { clock, seen } = world(on, architectInEpic)
+  await start($, clock)
+  expect(seen.toasts.some(t => t.includes('f1 done'))).toBe(true)
+})
+
+test('a seen map stored under the old shape is declined, so a lane already done is not news', async ($, on) => {
+  seedOnce(on, STORED('seen', SEEN_BEFORE, 'seen-1'))
+  const { clock, seen } = world(on, architectInEpic)
   await start($, clock)
   expect(seen.toasts.some(t => t.includes('f1 done'))).toBe(false)
 })

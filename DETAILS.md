@@ -112,12 +112,14 @@ itself. It runs the core's `shipshape-doctor --json`, passing
 `SHIPSHAPE_SESSION_ID` from `$.session.id()`, which is the same id the hooks
 name the scratch folder by. It runs in the main loop's folder, tracked from
 the session's own hooks and the clock, because a shell `cd` moves the gates
-and `$.session.root()` does not. Outside a git repo the gates fall back to the
-project folder, so the doctor is handed it. So the display and the gates read
-the same files through the same evaluators. The mod finds the core by checking
-three places in order: the checkout it sits in, `claude plugin list --json`,
-then the installed-plugins record. With no core found, or one older than
-0.5.0, the legs read `evidence unavailable`, never green.
+and `$.session.root()` does not. So the display and the gates read the same
+files through the same evaluators. Outside a git repo the doctor is handed
+`$.session.root()`, which keeps the session's own scratch folder; in a desktop
+worktree session the gates fall back to the main checkout's instead, and with no
+repo the band draws no legs, so no verdict is affected. The mod finds the core
+by checking three places in order: the checkout it sits in, `claude plugin list
+--json`, then the installed-plugins record. With no core found, or one older
+than 0.5.0, the legs read `evidence unavailable`, never green.
 
 **When the refiner runs.** It skips a slash command, a hidden prompt, a
 prompt from anyone other than the operator (another session's message, a
@@ -143,9 +145,9 @@ raise them before starting. `raw:` skips one prompt; `/refine off`, the
 Operator prompts keep their typed order within a bound: each is refined (or
 not) at once, then waits for every operator prompt ahead of it to enter, for
 at most 8 seconds after its own shaping ends. A hook's own budget is 10
-seconds, and waiting on another prompt counts against it (only `$` calls and
-`next` do not), so a refinement slower than that lets a follow-up through
-first. A session's first dictation may wait up to 5 seconds for the doctor's
+seconds, and waiting on another prompt counts against it (`$` calls and `next`
+do not, except `$.clock.sleep`), so a refinement slower than that lets a
+follow-up through first. A session's first dictation may wait up to 5 seconds for the doctor's
 first reading before it is refined, since the reading names where the original
 is kept. A prompt already queued skips that wait, so the two never share one
 hook's budget.

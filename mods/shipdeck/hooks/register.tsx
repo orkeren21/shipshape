@@ -66,7 +66,8 @@ let hasToldNoScratch = false
 let isReadingEpic = false
 // Operator prompts enter in the order typed: each waits for the one before.
 // The wait is bounded at 8 s because a hook's own budget is 10 s and a wait
-// on another dispatch counts against it (only `$` calls and `next` do not).
+// on another dispatch counts against it (`$` calls and `next` do not, except
+// `$.clock.sleep`).
 // A refinement longer than that lets a follow-up through first.
 let chain: Promise<void> = Promise.resolve()
 let queued = 0
@@ -300,19 +301,19 @@ async function refinePrompt($: EngineInterface, split: Split, scored: Score, isQ
 async function shapePrompt($: EngineInterface, text: string, isRefineOption: boolean, isQueued: boolean, signal: AbortSignal): Promise<string | null> {
   // With refining off nothing is decided, so nothing is traced. A value that
   // cannot be read counts as off.
-  const isOff = isRefineEnvOff || !isRefineOption || (await read($, refineOff).catch(() => true))
+  const isRefineOff = isRefineEnvOff || !isRefineOption || (await read($, refineOff).catch(() => true))
   const split = splitReminders(text)
   if (!split) {
-    if (!isOff) void traceRefiner($, `skip a reminder inside the prompt (${wordsBesideReminders(text)} words)`)
+    if (!isRefineOff) void traceRefiner($, `skip a reminder inside the prompt (${wordsBesideReminders(text)} words)`)
     return null
   }
   // raw: is the operator's word whether or not refining is on.
   const skip = skipPrefix(split.body)
   if (skip.isSkipped) {
-    if (!isOff) void traceRefiner($, `skip raw (${countWords(skip.body)} words)`)
+    if (!isRefineOff) void traceRefiner($, `skip raw (${countWords(skip.body)} words)`)
     return `${split.lead}${skip.body}${split.trail}`
   }
-  if (isOff) return null
+  if (isRefineOff) return null
   const scored = score(split.body)
   if (!scored.isDump) {
     // After command.run a desktop slash command raises prompt.submit with no

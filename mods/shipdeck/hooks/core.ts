@@ -26,8 +26,8 @@ async function isCore($: EngineInterface, root: string): Promise<boolean> {
   }
 }
 
-// What `work` gives, or undefined after `ms`: a session call that never
-// answers must not hold anything open for good.
+// What `work` gives, or undefined after `ms` or once `signal` aborts: a session
+// call that never answers must not hold anything open for good.
 export async function upTo<T>($: EngineInterface, work: Promise<T>, ms: number, signal?: AbortSignal): Promise<T | undefined> {
   if (signal?.aborted) return undefined
   const stop = new AbortController()
@@ -101,14 +101,17 @@ export async function findCore($: EngineInterface, dir: string): Promise<{ root:
 // lasting cd into another repository; a real gate's trace landed in that
 // repository while root() still named the worktree.
 //
-// Outside a git repo the gates fall back to CLAUDE_PROJECT_DIR. A process of
-// ours does not have it (measured on 2.1.309: unset under $.process.run), so
-// the doctor is told it. Without that its scratch would be whatever folder the
-// shell had wandered to.
+// Outside a git repo the doctor falls back to CLAUDE_PROJECT_DIR, which a
+// process of ours does not have (measured on 2.1.309: unset under
+// $.process.run). Handed root(), it keeps the session's scratch, not whatever
+// folder the shell wandered to. The gates' value can differ: in a desktop
+// worktree session a hook has the main checkout (measured on 2.1.309, launched
+// with --project-config-root). The band draws no legs outside a repo, so what
+// that can separate is the seat, the originals and the trace, not a verdict.
 export async function runDoctor($: EngineInterface, root: string, dir: string): Promise<{ doctor: DoctorJson } | { note: string; isTransient: boolean }> {
   try {
     const sid = await $.session.id()
-    const project = await $.session.root().catch(() => null)
+    const project = await upTo($, $.session.root().catch(() => null), 2_000)
     const ran = await $.process.run(['bash', `${root}/bin/shipshape-doctor`, '--json'], {
       cwd: dir,
       env: { SHIPSHAPE_SESSION_ID: sid, ...(project ? { CLAUDE_PROJECT_DIR: project } : {}) },

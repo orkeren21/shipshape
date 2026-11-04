@@ -99,7 +99,9 @@ shipdeck checks three places in order, taking the first that holds a
 It runs the doctor with `SHIPSHAPE_SESSION_ID` set to this session's id, in
 the folder the session's own shell is in, so it reads the same scratch folder
 the gates do, including after a `cd` into another worktree. Outside a git repo
-it falls back to the project folder, as they do.
+it keeps the session's own scratch folder. In a desktop worktree session the
+gates fall back to the main checkout's instead, so the two can differ there;
+the band draws no legs outside a repo, so no verdict is affected.
 
 ## Developing it
 
