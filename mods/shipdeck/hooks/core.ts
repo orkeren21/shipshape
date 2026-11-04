@@ -28,11 +28,15 @@ async function isCore($: EngineInterface, root: string): Promise<boolean> {
 
 // What `work` gives, or undefined after `ms`: a session call that never
 // answers must not hold anything open for good.
-export async function upTo<T>($: EngineInterface, work: Promise<T>, ms: number): Promise<T | undefined> {
+export async function upTo<T>($: EngineInterface, work: Promise<T>, ms: number, signal?: AbortSignal): Promise<T | undefined> {
+  if (signal?.aborted) return undefined
   const stop = new AbortController()
+  const abort = () => stop.abort()
+  signal?.addEventListener('abort', abort)
   try {
     return await Promise.race([work, $.clock.sleep(ms, { signal: stop.signal }).then(() => undefined, () => undefined)])
   } finally {
+    signal?.removeEventListener('abort', abort)
     stop.abort()
   }
 }
@@ -91,17 +95,22 @@ export async function findCore($: EngineInterface, dir: string): Promise<{ root:
 // The doctor finds its scratch from git in the folder it runs in, so `dir` is
 // the folder the gates read: the main loop's, which register.tsx tracks. A
 // run with no cwd lands in the frame's own folder, an isolated agent's
-// worktree in that agent's hooks, and $.session.root() stays where the
-// session started while a shell cd moves the gates. All three measured on
-// 2.1.309 in a desktop worktree session, with a throwaway mod recording every
-// frame through a lasting cd into another repository; a real gate's trace
-// landed in that repository while root() still named the worktree.
+// worktree in that agent's hooks, and $.session.root() stays put through a
+// shell cd that moves the gates. All three measured on 2.1.309 in a desktop
+// worktree session, with a throwaway mod recording every frame through a
+// lasting cd into another repository; a real gate's trace landed in that
+// repository while root() still named the worktree.
+//
+// Outside a git repo the gates fall back to CLAUDE_PROJECT_DIR, which a hook
+// is handed and a process of ours is not, so the doctor is told it. Without
+// that its scratch would be whatever folder the shell had wandered to.
 export async function runDoctor($: EngineInterface, root: string, dir: string): Promise<{ doctor: DoctorJson } | { note: string; isTransient: boolean }> {
   try {
     const sid = await $.session.id()
+    const project = await $.session.root().catch(() => null)
     const ran = await $.process.run(['bash', `${root}/bin/shipshape-doctor`, '--json'], {
       cwd: dir,
-      env: { SHIPSHAPE_SESSION_ID: sid },
+      env: { SHIPSHAPE_SESSION_ID: sid, ...(project ? { CLAUDE_PROJECT_DIR: project } : {}) },
       timeoutMs: 10_000,
     })
     const doctor = parseDoctor(ran.stdout)

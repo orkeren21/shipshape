@@ -16,7 +16,7 @@ import { drawBand } from './draw.ts'
 import { doneMap, newlyDone } from './epic.ts'
 import type { Style } from './model.ts'
 import { paneTree } from './pane.tsx'
-import { assemble, checkReply, countWords, MAX_TOKENS, request, rowKey, rowText, score, skipPrefix, splitReminders } from './refine.ts'
+import { assemble, checkReply, countWords, MAX_TOKENS, request, rowKey, rowText, score, skipPrefix, splitReminders, wordsBesideReminders } from './refine.ts'
 import type { Score, Split } from './refine.ts'
 import { terminalBand } from './terminal.tsx'
 
@@ -27,6 +27,7 @@ const READ_BOUND_MS = 30_000
 // How long a session's first prompt waits for the doctor's first reading,
 // about 0.7 s on the desktop (measured: claude plugin list, then the doctor).
 const FIRST_READING_MS = 5_000
+const MAX_UNWRITTEN = 50
 
 // Change a shape tag when its value's fields change: it declines what an
 // earlier version stored, which outlives a reload.
@@ -70,8 +71,12 @@ let isReadingEpic = false
 let chain: Promise<void> = Promise.resolve()
 let queued = 0
 let instructions: string | null = null
-// Refiner decisions wait here until a reading names the scratch folder.
+// Refiner decisions wait here until a reading names the scratch folder. With
+// no core that never comes, so only the latest are kept.
 let unwritten: string[] = []
+// Beside the paneOpened value, which can be refused: a pane closed by hand must
+// not come back with every reading.
+let hasOpenedPane = false
 
 // The folder the gates read is the main loop's. It is read where it can be
 // seen, the session's own hooks and the clock; a subagent's frame answers
@@ -93,7 +98,7 @@ async function writeTrace($: EngineInterface): Promise<void> {
 async function traceRefiner($: EngineInterface, decision: string): Promise<void> {
   try {
     const at = new Date(await $.clock.now()).toISOString().replace(/\.\d+Z$/, 'Z')
-    unwritten.push(`${at} shipdeck refiner: ${decision}`)
+    unwritten = [...unwritten, `${at} shipdeck refiner: ${decision}`].slice(-MAX_UNWRITTEN)
     await writeTrace($)
   } catch {
     // a trace must never cost what it records
@@ -173,8 +178,9 @@ async function readDoctor($: EngineInterface): Promise<void> {
     void writeTrace($).catch(() => {})
     await update($, doctor, prev => (JSON.stringify(prev) === JSON.stringify(got.doctor) ? prev : got.doctor))
     await update($, note, () => null)
-    if (got.doctor.seat?.role === 'architect' && !(await read($, paneOpened))) {
-      void $.ui.open({ id: PANE, title: 'Epic' })
+    if (got.doctor.seat?.role === 'architect' && !hasOpenedPane && !(await read($, paneOpened))) {
+      hasOpenedPane = true
+      void $.ui.open({ id: PANE, title: 'Epic' }).catch(() => {})
       await update($, paneOpened, () => true).catch(() => {})
     }
     await refreshEpic($)
@@ -218,13 +224,17 @@ async function refinePrompt($: EngineInterface, split: Split, scored: Score, isQ
     // hook's budget.
     if (!lastDoctor && !isQueued) {
       const from = await $.clock.now()
-      await upTo($, firstReading, FIRST_READING_MS)
+      await upTo($, firstReading, FIRST_READING_MS, signal)
       const waited = (await $.clock.now()) - from
       if (waited > 0) void traceRefiner($, `waited ${waited} ms for the first reading`)
     }
     // The original must be kept before anything replaces it: with no scratch
     // folder to keep it in (no core 0.5.0, or no reading yet), nothing is refined.
     if (!lastDoctor) {
+      if (signal.aborted) {
+        void traceRefiner($, `interrupted (${tally})`)
+        return null
+      }
       void traceRefiner($, `no reading (${tally})`)
       if ((await read($, note)) === null) {
         $.ui.toast('shipdeck: the first reading has not landed, so there is nowhere to keep your original yet; your prompt went as typed')
@@ -288,21 +298,25 @@ async function refinePrompt($: EngineInterface, split: Split, scored: Score, isQ
 // What an operator prompt becomes: as typed (null), less a raw: prefix, or
 // refined.
 async function shapePrompt($: EngineInterface, text: string, isRefineOption: boolean, isQueued: boolean, signal: AbortSignal): Promise<string | null> {
+  // With refining off nothing is decided, so nothing is traced. A value that
+  // cannot be read counts as off.
+  const isOff = isRefineEnvOff || !isRefineOption || (await read($, refineOff).catch(() => true))
   const split = splitReminders(text)
   if (!split) {
-    void traceRefiner($, 'skip a reminder inside the prompt')
+    if (!isOff) void traceRefiner($, `skip a reminder inside the prompt (${wordsBesideReminders(text)} words)`)
     return null
   }
   // raw: is the operator's word whether or not refining is on.
   const skip = skipPrefix(split.body)
   if (skip.isSkipped) {
-    void traceRefiner($, `skip raw (${countWords(skip.body)} words)`)
+    if (!isOff) void traceRefiner($, `skip raw (${countWords(skip.body)} words)`)
     return `${split.lead}${skip.body}${split.trail}`
   }
-  if (isRefineEnvOff || !isRefineOption || (await read($, refineOff))) return null
+  if (isOff) return null
   const scored = score(split.body)
   if (!scored.isDump) {
-    // A desktop slash command raises an empty prompt: nothing to decide.
+    // After command.run a desktop slash command raises prompt.submit with no
+    // text and no command field (measured on 2.1.309): nothing to decide.
     if (scored.words > 0) void traceRefiner($, `skip ${scored.skip ?? 'signals'} (${scored.words} words${scored.signals.length > 0 ? `: ${scored.signals.join(', ')}` : ''})`)
     return null
   }
@@ -442,6 +456,8 @@ export const register: Register = (on, options) => {
     let row
     if (e.surface !== 'terminal' && 'Svg' in els) {
       const { Svg } = els
+      // 8px a column is an estimate, not a measurement: the row fits this
+      // figure, and what the app does past its real width is not known.
       const drawing = drawBand(model, style, Math.max(240, (e.props.bodyColumns || 100) * 8 - 16))
       row = <Svg key="shipdeck-band" source={drawing.source} width={drawing.width} height={drawing.height} alt={drawing.alt} />
     } else {
@@ -479,7 +495,9 @@ export const register: Register = (on, options) => {
         ? 'off for this session'
         : lastDoctor
           ? 'on'
-          : 'on, but waiting for a ShipShape core reading (0.5.0 or later) to keep originals, so nothing is refined yet'
+          : (await read($, note)) === null
+            ? 'on, but the first reading has not landed, so nothing is refined yet'
+            : 'on, but waiting for a ShipShape core reading (0.5.0 or later) to keep originals, so nothing is refined yet'
     return { text: `shipdeck: prompt refining is ${why}. /refine on or /refine off switches it for this session; start a prompt with raw: to send one as typed.` }
   })
 

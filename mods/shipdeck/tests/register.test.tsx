@@ -47,6 +47,10 @@ type World = {
   // What $.session.cwd() answers; a test moves it the way the session moves.
   cwd?: string
   cwdThrows?: boolean
+  cwdHangs?: boolean
+  // What $.session.root() answers.
+  root?: string
+  rootThrows?: boolean
   // How many $.session.id() calls never answer.
   idHangs?: number
   // How many doctor runs fail to start, and how long each one that runs takes.
@@ -56,6 +60,8 @@ type World = {
   coreAt?: string
   installed?: unknown[]
   traceThrows?: boolean
+  modelThrows?: boolean
+  openThrows?: boolean
 }
 
 // The engine beneath shipdeck: every $ call it makes, answered from memory.
@@ -73,9 +79,14 @@ function world(on: On, w: World = {}) {
     if (w.idHangs && w.idHangs-- > 0) await new Promise(() => {})
     return { value: 'sess-1' } as never
   })
-  on('session.cwd', () => {
+  on('session.cwd', async () => {
+    if (w.cwdHangs) await new Promise(() => {})
     if (w.cwdThrows) throw new Error('no folder')
     return { value: w.cwd ?? '/repo' } as never
+  })
+  on('session.root', () => {
+    if (w.rootThrows) throw new Error('no folder')
+    return { value: w.root ?? '/repo' } as never
   })
   on('fs.stat', (_, e) => {
     const isDoctor = e.path.endsWith('/bin/shipshape-doctor')
@@ -117,6 +128,7 @@ function world(on: On, w: World = {}) {
   })
   let reply = 0
   on('model.complete', async (_, e) => {
+    if (w.modelThrows) throw new Error('flaky')
     const delay = w.modelDelays?.[seen.model.length] ?? 0
     seen.model.push(e)
     if (delay) await clock.sleep(delay)
@@ -130,7 +142,11 @@ function world(on: On, w: World = {}) {
   })
   on('ui.toast', (_, e) => { seen.toasts.push(String((e as { text?: string }).text ?? '')); return { value: undefined } as never })
   on('ui.notify', () => ({ value: { isSent: false, reason: 'no-surface' } }) as never)
-  on('ui.open', (_, e) => { seen.opened.push(String((e as { id?: string }).id)); return { value: { isPlaced: true } } as never })
+  on('ui.open', (_, e) => {
+    if (w.openThrows) throw new Error('no surface')
+    seen.opened.push(String((e as { id?: string }).id))
+    return { value: { isPlaced: true } } as never
+  })
   on('config.set', (_, e) => ({ value: e.value }) as never)
   on('session.start', (_, e) => ({ cwd: e.cwd }) as never)
   on('tool.call', () => ({ result: {} }) as never)
@@ -561,6 +577,70 @@ test('the clock picks up a folder change no tool call made', async ($, on) => {
   expect(lastCwd(seen.runs)).toBe('/moved')
 })
 
+test("a subagent's end leaves the folder where the main loop left it", async ($, on) => {
+  const w: World = {}
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  await clock.advance(6_000)
+  w.cwd = '/agent-worktree'
+  await $.turn.complete({ reason: 'answer', agentId: 'agent-1' } as never)
+  await clock.settle()
+  w.cwd = undefined
+  expect(lastCwd(seen.runs)).toBe('/repo')
+})
+
+test('the session\'s own turn end moves the reading with the gates', async ($, on) => {
+  const w: World = {}
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  w.cwd = '/moved'
+  await $.turn.complete({ reason: 'answer' } as never)
+  await clock.settle()
+  expect(lastCwd(seen.runs)).toBe('/moved')
+})
+
+test('a call that is not evidence still moves the folder, for the next reading to use', async ($, on) => {
+  const w: World = {}
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  await clock.advance(6_000)
+  const runs = seen.runs.length
+  w.cwd = '/moved'
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a' } as never)
+  await clock.settle()
+  expect(seen.runs.length).toBe(runs)
+  await $.tool.call({ tool: 'Bash', agentId: 'agent-1', command: 'ls' } as never)
+  await clock.settle()
+  expect(lastCwd(seen.runs)).toBe('/moved')
+})
+
+test('a folder call that never answers holds the reading back two seconds, no more', async ($, on) => {
+  const w: World = {}
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  const runs = seen.runs.length
+  w.cwdHangs = true
+  await $.turn.complete({ reason: 'answer' } as never)
+  await clock.advance(2_000)
+  expect(seen.runs.length).toBe(runs + 1)
+  expect(lastCwd(seen.runs)).toBe('/repo')
+})
+
+test('the doctor is told the project folder, so outside a repo it falls back where the gates do', async ($, on) => {
+  const { clock, seen } = world(on, { root: '/project' })
+  await start($, clock)
+  const run = seen.runs.at(-1) as { init?: { env?: Record<string, string> } }
+  expect(run.init?.env?.CLAUDE_PROJECT_DIR).toBe('/project')
+})
+
+test('a project folder the engine will not give still runs the doctor', async ($, on) => {
+  const { clock, seen } = world(on, { rootThrows: true })
+  await start($, clock)
+  const run = seen.runs.at(-1) as { init?: { env?: Record<string, string> } }
+  expect(run.init?.env?.SHIPSHAPE_SESSION_ID).toBe('sess-1')
+  expect(run.init?.env?.CLAUDE_PROJECT_DIR).toBeUndefined()
+})
+
 test('a folder the engine will not give keeps the last one', async ($, on) => {
   const w: World = {}
   const { clock, seen } = world(on, w)
@@ -604,6 +684,23 @@ test('a first prompt that beats the first reading waits for it and is refined', 
   expect(seen.entered.at(-1)).toContain('## Goal')
   expect(seen.toasts.some(t => t.includes('0.5.0'))).toBe(false)
   expect(seen.traces.some(t => t.endsWith('refiner: waited 700 ms for the first reading'))).toBe(true)
+})
+
+test('an interrupted prompt stops waiting for the first reading, with no toast', { plugins: [quitter] }, async ($, on) => {
+  const { clock, seen } = world(on, { doctorDelay: 20_000 })
+  await start($, clock)
+  const sent = submit($, `${DUMP} ABORTME`)
+  await clock.advance(1_000)
+  await clock.settle()
+  expect(seen.traces).toEqual([])
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const [svg] = await band.findAll({ type: 'Svg' })
+  expect((svg as { props: { source: string } }).props.source).not.toContain('refining')
+  await band.unmount()
+  expect(seen.toasts).toEqual([])
+  await clock.advance(25_000)
+  await Promise.allSettled([sent])
+  expect(seen.traces.some(t => t.includes('refiner: interrupted'))).toBe(true)
 })
 
 test('a first reading later than the wait sends the prompt as typed, and the toast does not blame the core', async ($, on) => {
@@ -655,6 +752,72 @@ test('the trace records each refiner decision, in the hooks\' format, and never 
   expect(seen.traces.join('\n')).not.toMatch(/flaky|basically|Sure, here/)
   expect(seen.traces[3]).toContain('words')
   expect(seen.traces[3]).toContain('self-correction')
+})
+
+const decisions = (traces: string[]) => traces.map(t => t.replace(/^\S+ shipdeck refiner: /, ''))
+
+test('the trace says when the model could not run, and never the words', async ($, on) => {
+  const { clock, seen } = world(on, { modelThrows: true })
+  await start($, clock)
+  await submit($, DUMP)
+  await clock.settle()
+  expect(decisions(seen.traces).some(t => t.startsWith('could not run ('))).toBe(true)
+  expect(seen.traces.join('\n')).not.toMatch(/basically/)
+})
+
+test('the trace says when the original could not be saved', async ($, on) => {
+  const { clock, seen } = world(on, { writeThrows: true })
+  await start($, clock)
+  await submit($, DUMP)
+  await clock.settle()
+  expect(decisions(seen.traces).some(t => t.startsWith('original not saved ('))).toBe(true)
+})
+
+test('the trace says when a dictation had no reading, once there is one', async ($, on) => {
+  const w: World = { doctor: 'not json' }
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  await submit($, DUMP)
+  await clock.settle()
+  expect(seen.traces).toEqual([])
+  w.doctor = doctorJson()
+  await clock.advance(60_000)
+  expect(decisions(seen.traces).some(t => t.startsWith('no reading ('))).toBe(true)
+})
+
+test('the trace counts the words beside a reminder inside the prompt', async ($, on) => {
+  const { clock, seen } = world(on)
+  await start($, clock)
+  await submit($, `three words here ${REMINDER} and two`)
+  await clock.settle()
+  expect(decisions(seen.traces)).toEqual(['skip a reminder inside the prompt (5 words)'])
+})
+
+for (const [name, w, after] of [
+  ['SHIPSHAPE_REFINE=0', { env: { SHIPSHAPE_REFINE: '0' } }, ''],
+  ['/refine off', {}, 'off'],
+] as const) {
+  test(`${name} leaves no trace, since nothing was decided`, async ($, on) => {
+    const { clock, seen } = world(on, w as World)
+    await start($, clock)
+    if (after) await $.command.run({ command: 'refine', args: after, origin: { kind: 'composer' }, presentation: {} } as never)
+    await submit($, DUMP)
+    await submit($, `three words here ${REMINDER} and two`)
+    await submit($, `raw: ${DUMP}`)
+    await clock.settle()
+    expect(seen.traces).toEqual([])
+    expect(seen.entered.at(-1)).toBe(DUMP)
+  })
+}
+
+test('the decisions waiting for a reading are capped', async ($, on) => {
+  const w: World = { doctor: 'not json' }
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  for (let n = 0; n < 70; n++) await submit($, SHORT)
+  w.doctor = doctorJson()
+  await clock.advance(60_000)
+  expect(seen.traces).toHaveLength(50)
 })
 
 test('a decision made before the first reading reaches the trace once there is one', async ($, on) => {
@@ -725,6 +888,32 @@ test('a refused write of that flag still opens the pane, and costs the reading n
   const pane = await $.ui.mount({ plugin: 'shipdeck', surface: 'desktop', component: 'Pane', requestId: 'shipdeck-epic', props: { title: 'Epic', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as never })
   expect(await pane.find({ type: 'Text', text: /^f1$/ })).toBeDefined()
   await pane.unmount()
+  // A pane closed by hand must not come back with every reading.
+  await clock.advance(120_000)
+  expect(seen.opened).toEqual(['shipdeck-epic'])
+})
+
+test('a pane that cannot open costs the reading nothing', async ($, on) => {
+  const { clock, seen } = world(on, {
+    openThrows: true,
+    doctor: doctorJson({ seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }),
+    files: { '/epic/roster/f1.md': 'status: done', '/epic/decisions.md': '' },
+    dirs: { '/epic/roster': ['f1.md'] },
+  })
+  await start($, clock)
+  expect(seen.runs.length).toBeGreaterThan(0)
+  expect(await bandSays($, /architect/)).toBe(true)
+})
+
+test('a seen map stored by 0.1.0 is declined, so a lane already done is not news', async ($, on) => {
+  seed(on, [STORED('seen', { f1: false }, 'seen-1')])
+  const { clock, seen } = world(on, {
+    doctor: doctorJson({ seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }),
+    files: { '/epic/roster/f1.md': 'status: done', '/epic/decisions.md': '' },
+    dirs: { '/epic/roster': ['f1.md'] },
+  })
+  await start($, clock)
+  expect(seen.toasts.some(t => t.includes('f1 done'))).toBe(false)
 })
 
 test('a lane done in one epic is not news in the next one', async ($, on) => {
@@ -858,6 +1047,15 @@ test('a core that gives no reading says so once, however many dumps follow', asy
   await submit($, DUMP)
   await submit($, `${DUMP} and again`)
   expect(seen.toasts.filter(t => t.includes('refining waits for a ShipShape core reading'))).toHaveLength(1)
+})
+
+test('/refine says a first reading is on its way, and does not blame the core', async ($, on) => {
+  const { clock } = world(on, { doctorDelay: 20_000 })
+  await start($, clock)
+  const said = await $.command.run({ command: 'refine', args: '', origin: { kind: 'composer' }, presentation: {} } as never)
+  expect(said.text).toContain('first reading')
+  expect(said.text).not.toContain('0.5.0')
+  await clock.advance(25_000)
 })
 
 test('/refine says when refining waits for a reading', async ($, on) => {

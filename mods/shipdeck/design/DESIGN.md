@@ -87,8 +87,7 @@ The band is read the way a helmsman reads a panel: in one glance, left to
 right, with every mark meaning exactly one thing. It sits above the prompt
 in Claude Code, beside work the operator is in the middle of, so it is
 quiet by default and speaks only through state. Seat, context and evidence
-always appear in that order and in the same place, so the eye learns where
-to land.
+always appear in that order, so the eye learns where to land.
 
 Two styles share one grammar. **GitHub** (the default) puts icons beside
 plain labels, with a thin context bar and no chrome. **Linear** puts each
@@ -125,7 +124,8 @@ state lives.
 - **Ink** (`oklch(0.27 0.012 60)` / `oklch(0.93 0.008 60)`): seat, values
   and labels of legs that have run.
 - **Slate** (`oklch(0.50 0.012 60)` / `oklch(0.72 0.008 60)`): secondary
-  words (`context`) and the labels of legs not yet run.
+  words (`context`), the labels of legs not yet run, and the handoff mark on
+  the gauge.
 - **Mist** (`oklch(0.60 0.010 60)` / `oklch(0.60 0.008 60)`): icons for
   missing and waived legs. It is at 3.5:1 in both themes, the floor for
   non-text graphics.
@@ -194,7 +194,7 @@ mocks:
   bar to its value.
 - 14px between GitHub legs and 16px after the GitHub context group; 6px
   between Linear chips.
-- 14px after the seat (GitHub), 12px when it is a chip.
+- 14px after the seat (GitHub), 6px when it is a chip.
 
 On a narrow band the row gives things up one at a time, each on top of the
 last, until it fits. The narrowest band is 240px, and everything fits there:
@@ -205,7 +205,8 @@ last, until it fits. The narrowest band is 240px, and everything fits there:
 4. Notices become a count.
 5. GitHub's bar becomes Linear's ring, which keeps the tone and the handoff
    zone. A percentage on its own would lose both.
-6. Legs that passed go to their initial (`R`, `C`, `S`).
+6. Legs that passed go to their initial (`R`, `C`, `S`), and `evidence
+   unavailable` becomes `unavailable`.
 7. Legs that did not pass, but did not fail, do the same.
 8. The spacing tightens: GitHub's gaps and Linear's chips.
 9. The seat loses the word `lane` and is cut to 5 characters.
@@ -227,10 +228,12 @@ Circles for state: filled ok at 12 to 13px, rings (not run, waived, running,
 Linear's stale) at 10.5 to 12px, so a filled mark reads a touch heavier than
 an open one. Failed is the one mark with corners: an octagon the size of the
 ok disc, so the two differ in outline as well as hue. GitHub's stale is a
-7px dot. A 6px bar (GitHub) or a 13px ring and pie (Linear) for context. Linear chips have a 5px radius; GitHub notices are 10px-radius
-pills with a 1px edge, while Linear notices are tinted 5px chips like every
-other Linear item. Strokes are 1.4 to 1.8px: thinner for marks inside a
-filled circle, heavier for the spinner arc.
+7px dot. A 6px bar (GitHub) or a 13px ring and pie (Linear, and GitHub on a
+narrow band) for context. Linear chips have a 5px radius; GitHub notices are
+10px-radius pills with a 1px edge, while Linear notices are tinted 5px chips
+like every other Linear item. Strokes are 1.4 to 1.8px: thinner for marks
+inside a filled circle, heavier for the spinner arc. The octagon's 0.8px edge
+only rounds its corners.
 
 ## Components
 
@@ -258,8 +261,7 @@ A running reviewer older than 15 minutes shows its age beside the label
 - **Linear:** a 13px `track` ring with a slate zone from the seat's first
   threshold round to the top, like a tachometer's redline, and a pie in the
   state hue inside it, in a chip, then `37% context`. A tick across a ring
-  this small reads as a clock hand. `ring-before-after.png` shows it beside
-  the solid ring it replaced.
+  this small reads as a clock hand.
 
 ### Seat
 

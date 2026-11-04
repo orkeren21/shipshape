@@ -56,6 +56,11 @@ const STRUCTURE = /^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)|```/m
 
 export type Score = { isDump: boolean; words: number; signals: string[]; skip?: string }
 
+// The operator's words in a prompt with a reminder inside it.
+export function wordsBesideReminders(text: string): number {
+  return countWords(text.replace(new RegExp(`${OPEN}[\\s\\S]*?${CLOSE}`, 'g'), ' '))
+}
+
 export function countWords(s: string): number {
   return (s.match(/\S+/g) ?? []).length
 }

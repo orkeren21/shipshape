@@ -190,8 +190,9 @@ const WIDEST: Fit = { showContextWord: true, seatMax: 40, showLaneWord: true, sh
 // What a narrow band gives up, in this order, each step on top of the last.
 // A word goes before the mark beside it, and a passing leg's word before one
 // that needs reading. The seat outlasts all of that, shrinking to its own name
-// before it goes, and only a failed leg's word outlasts it. Every leg stays
-// drawn at every width, and the alt text keeps what the row dropped.
+// before it goes, and only a failed leg's word and a reviewer's age outlast it.
+// Every leg stays drawn at every width, and the alt text keeps what the row
+// dropped.
 const GIVEN_UP: Partial<Fit>[] = [
   { showContextWord: false },
   { seatMax: 12 },
@@ -226,8 +227,7 @@ function legLabel(l: Leg, fit: Fit): string {
 
 const unavailable = (fit: Fit) => (fit.labels === 'all' ? 'evidence unavailable' : 'unavailable')
 
-// The notices themselves, or how many there are. /shipdeck and the alt text
-// still say them.
+// The notices themselves, or how many there are. The alt text still says them.
 const noticeMarks = (m: BandModel, fit: Fit) =>
   fit.showNoticeWords || m.notices.length === 0 ? m.notices : [`${m.notices.length}`]
 
