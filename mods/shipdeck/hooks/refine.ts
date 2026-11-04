@@ -56,6 +56,11 @@ const STRUCTURE = /^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)|```/m
 
 export type Score = { isDump: boolean; words: number; signals: string[]; skip?: string }
 
+// The operator's words in a prompt with a reminder inside it.
+export function wordsBesideReminders(text: string): number {
+  return countWords(text.replace(new RegExp(`${OPEN}[\\s\\S]*?${CLOSE}`, 'g'), ' '))
+}
+
 export function countWords(s: string): number {
   return (s.match(/\S+/g) ?? []).length
 }
@@ -100,7 +105,7 @@ export type Reply = { kind: 'keep' } | { kind: 'refined'; text: string } | { kin
 
 export function checkReply(text: string): Reply {
   let t = text.trim()
-  if (t === 'KEEP') return { kind: 'keep' }
+  if (/^KEEP\.?$/.test(t)) return { kind: 'keep' }
   const fenced = /^```[a-z]*\n([\s\S]*?)\n```$/.exec(t)
   if (fenced) t = (fenced[1] ?? '').trim()
   // The reply opens with its Goal: a preamble ("Sure, here it is:") would

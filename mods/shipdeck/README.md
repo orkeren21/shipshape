@@ -21,7 +21,7 @@ marketplace. To try a checkout instead, run
 
 shipdeck draws the evidence from the core's `shipshape-doctor --json`,
 which arrived in ShipShape 0.5.0. With an older core, or none, the band shows
-the seat and context and reads `evidence unavailable`.
+context only and reads `evidence unavailable`.
 
 ## What it shows
 
@@ -66,6 +66,12 @@ nothing recorded.
 - A prompt you type while one is being refined waits for it to enter, for up
   to 8 seconds (a hook's budget is 10); a refinement slower than that lets
   your follow-up in first.
+- A dictation that arrives before the session's first doctor reading waits
+  for it, for up to 5 seconds, with the band's spinner on. After that it goes
+  as typed, since there is nowhere yet to keep the original.
+- While refining is on, each decision on a prompt of yours goes to the
+  session's trace, `.shipshape/<session>/trace.log`: skipped and why, kept,
+  refined, a bad reply. Counts and reasons only, never your words.
 
 Refining sends the dictated text to Sonnet through the session's own model
 client, the same way the session sends everything else.
@@ -91,7 +97,11 @@ shipdeck checks three places in order, taking the first that holds a
 3. The same plugin in `~/.claude/plugins/installed_plugins.json`.
 
 It runs the doctor with `SHIPSHAPE_SESSION_ID` set to this session's id, in
-the session's folder, so it reads the same scratch folder the hooks write.
+the folder the session's own shell is in, so it reads the same scratch folder
+the gates do, including after a `cd` into another worktree. Outside a git repo
+it keeps the session's own scratch folder. In a desktop worktree session the
+gates fall back to the main checkout's instead, so the two can differ there;
+the band draws no legs outside a repo, so no verdict is affected.
 
 ## Developing it
 

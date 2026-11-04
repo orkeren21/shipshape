@@ -26,13 +26,29 @@ async function isCore($: EngineInterface, root: string): Promise<boolean> {
   }
 }
 
+// What `work` gives, or undefined after `ms` or once `signal` aborts: a session
+// call that never answers must not hold anything open for good.
+export async function upTo<T>($: EngineInterface, work: Promise<T>, ms: number, signal?: AbortSignal): Promise<T | undefined> {
+  if (signal?.aborted) return undefined
+  const stop = new AbortController()
+  const abort = () => stop.abort()
+  signal?.addEventListener('abort', abort)
+  try {
+    return await Promise.race([work, $.clock.sleep(ms, { signal: stop.signal }).then(() => undefined, () => undefined)])
+  } finally {
+    signal?.removeEventListener('abort', abort)
+    stop.abort()
+  }
+}
+
 type InstalledEntry = { id?: string; enabled?: boolean; installPath?: string }
 
 // The mod knows only its own root. In order: the checkout it sits in (a
 // folder marketplace, --plugin-dir, a dev symlink), the installed core as
 // `claude plugin list --json` reports it, and the same record on disk for
-// when `claude` is not on the engine's PATH.
-export async function findCore($: EngineInterface): Promise<{ root: string } | { note: string }> {
+// when `claude` is not on the engine's PATH. `claude` reads the project
+// settings of the folder it runs in, so it runs in the session's.
+export async function findCore($: EngineInterface, dir: string): Promise<{ root: string } | { note: string }> {
   try {
     const real = (await $.fs.stat($.plugin.root, { resolve: true })).realPath ?? $.plugin.root
     const checkout = parent(parent(real))
@@ -41,7 +57,7 @@ export async function findCore($: EngineInterface): Promise<{ root: string } | {
     // fall through to the installed core
   }
   try {
-    const listed = await $.process.run(['claude', 'plugin', 'list', '--json'], { timeoutMs: 15_000 })
+    const listed = await $.process.run(['claude', 'plugin', 'list', '--json'], { cwd: dir, timeoutMs: 15_000 })
     if (listed.exitCode === 0) {
       const entries = JSON.parse(listed.stdout) as InstalledEntry[]
       for (const entry of entries) {
@@ -76,22 +92,29 @@ export async function findCore($: EngineInterface): Promise<{ root: string } | {
 // process error): the last good reading still stands. Output that is not a
 // format 1 reading is a core the mod cannot read, and clears it.
 //
-// The doctor finds its scratch from git in the folder it runs in. In an
-// isolated agent's hook, a run with no cwd lands in that agent's own
-// worktree, while $.session.root() is still the session's: the worktree, in
-// the main loop too. Probed on 2.1.309 in a desktop-launched worktree
-// session (--project-config-root at the main checkout), with a throwaway
-// mod recording both on every Bash call. So every reading runs in the
-// session's root, which /cd, a host's directory change or a worktree move
-// changes, and a shell cd does not. Without a root, the run takes the
-// frame's own folder rather than fail.
-export async function runDoctor($: EngineInterface, root: string): Promise<{ doctor: DoctorJson } | { note: string; isTransient: boolean }> {
+// The doctor finds its scratch from git in the folder it runs in, so `dir` is
+// the folder the gates read: the main loop's, which register.tsx tracks. A
+// run with no cwd lands in the frame's own folder, an isolated agent's
+// worktree in that agent's hooks, and $.session.root() stays put through a
+// shell cd that moves the gates. All three measured on 2.1.309 in a desktop
+// worktree session, with a throwaway mod recording every frame through a
+// lasting cd into another repository; a real gate's trace landed in that
+// repository while root() still named the worktree.
+//
+// Outside a git repo the doctor falls back to CLAUDE_PROJECT_DIR, which a
+// process of ours does not have (measured on 2.1.309: unset under
+// $.process.run). Handed root(), it keeps the session's scratch, not whatever
+// folder the shell wandered to. The gates' value can differ: in a desktop
+// worktree session a hook has the main checkout (measured on 2.1.309, launched
+// with --project-config-root). The band draws no legs outside a repo, so what
+// that can separate is the seat, the originals and the trace, not a verdict.
+export async function runDoctor($: EngineInterface, root: string, dir: string): Promise<{ doctor: DoctorJson } | { note: string; isTransient: boolean }> {
   try {
     const sid = await $.session.id()
-    const dir = await $.session.root().catch(() => undefined)
+    const project = await upTo($, $.session.root().catch(() => null), 2_000)
     const ran = await $.process.run(['bash', `${root}/bin/shipshape-doctor`, '--json'], {
-      ...(dir ? { cwd: dir } : {}),
-      env: { SHIPSHAPE_SESSION_ID: sid },
+      cwd: dir,
+      env: { SHIPSHAPE_SESSION_ID: sid, ...(project ? { CLAUDE_PROJECT_DIR: project } : {}) },
       timeoutMs: 10_000,
     })
     const doctor = parseDoctor(ran.stdout)
@@ -115,6 +138,12 @@ export async function readEpic($: EngineInterface, epic: string): Promise<EpicVi
   } catch {
     return null
   }
+}
+
+// Lines for the session's trace, in the hooks' format. $.fs has no append and
+// the bash hooks write this file too, so the shell's >> adds them.
+export async function appendTrace($: EngineInterface, scratch: string, lines: string[]): Promise<void> {
+  await $.process.run(['bash', '-c', 'mkdir -p "$1" && printf "%s\\n" "$2" >> "$1/trace.log"', 'shipdeck', scratch, lines.join('\n')], { timeoutMs: 5_000 })
 }
 
 // The original prompt and what the session received, kept beside the
