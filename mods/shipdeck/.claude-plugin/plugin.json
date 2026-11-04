@@ -1,6 +1,6 @@
 {
   "name": "shipdeck",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "ShipShape's companion mod: refines dictated prompts before the session reads them, and keeps a band above the prompt with the session's seat, context and evidence. Reads and displays; never gates.",
   "author": {
     "name": "Or Keren",
