@@ -901,8 +901,12 @@ test('a pane that cannot open costs the reading nothing', async ($, on) => {
     dirs: { '/epic/roster': ['f1.md'] },
   })
   await start($, clock)
-  expect(seen.runs.length).toBeGreaterThan(0)
+  expect(seen.opened).toHaveLength(0)
   expect(await bandSays($, /architect/)).toBe(true)
+  // The epic read comes after the open, so this says the reading went on.
+  const pane = await $.ui.mount({ plugin: 'shipdeck', surface: 'desktop', component: 'Pane', requestId: 'shipdeck-epic', props: { title: 'Epic', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as never })
+  expect(await pane.find({ type: 'Text', text: /^f1$/ })).toBeDefined()
+  await pane.unmount()
 })
 
 test('a seen map stored by 0.1.0 is declined, so a lane already done is not news', async ($, on) => {
