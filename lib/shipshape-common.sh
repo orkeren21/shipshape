@@ -62,6 +62,17 @@ shipshape_safe_id() {
   printf '%s\n' "$id"
 }
 
+# shipshape_id_list t1,t2 -> one safe id per line, dropping entries that leave
+# nothing. Safe ids hold no space or glob character, so a caller may word-split
+# this; the comma is what shipshape-verify and --tasks agree a list is.
+shipshape_id_list() {
+  local entry id
+  printf '%s\n' "$1" | tr ',' '\n' | while IFS= read -r entry; do
+    id="$(shipshape_safe_id "$entry" "")"
+    [ -z "$id" ] || printf '%s\n' "$id"
+  done
+}
+
 # Where .shipshape/ lives. The git worktree root comes first so a lane working
 # in its own worktree keeps its artifacts beside the code they describe. It is
 # the worktree of the current directory, which for a hook is the session's —

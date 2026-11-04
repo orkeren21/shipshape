@@ -101,6 +101,27 @@ assert_file "$scratch/pr-armed" "and neither does any other spelling of an off s
 grep -q 'shipshape_enabled' "$pr_open" \
   && fail "shipshape-pr-open still consults a kill switch"
 
+# --- a forgotten binding ---------------------------------------------------------
+#
+# Opening the PR is the last moment a plan nobody bound can be noticed: after
+# this the plan leg says none, and none settles. One line on stderr, so stdout
+# stays gh's, and only after the PR exists.
+
+rm -rf "$scratch"
+out="$("$pr_open" --title "no plan" 2>/dev/null)"
+assert_not_contains "$out" "shipshape-plan" "stdout stays gh's"
+out="$("$pr_open" --title "no plan" 2>&1)"
+assert_contains "$out" "shipshape-plan" "with no plan bound it says so"
+assert_eq "0" "$("$pr_open" --title "no plan" >/dev/null 2>&1; echo $?)" "and that changes nothing about the exit"
+
+printf 'path=/some/plan.md\n' > "$scratch/plan"
+out="$("$pr_open" --title "a plan" 2>&1)"
+assert_not_contains "$out" "shipshape-plan" "with a plan bound it stays quiet"
+
+rm -rf "$scratch"
+out="$(GH_STUB_CREATE_EXIT=1 "$pr_open" --title "doomed" 2>&1)"
+assert_not_contains "$out" "shipshape-plan" "and with no PR there is nothing to say"
+
 # --- gh missing --------------------------------------------------------------
 
 rm -rf "$scratch"

@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# shipshape-plan binds a plan file to the session. The fences in that file then
+# say what verifying each task means, and the plan leg holds the pull request
+# until they are met. A bind that went through has to mean the plan is readable,
+# so everything the leg would call unreadable is refused here first, where it
+# costs a fix to the plan rather than a blocked branch.
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+source "$here/../hooks/hook-helpers.sh"
+source "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh"
+
+plan_bin="$SHIPSHAPE_REPO_ROOT/bin/shipshape-plan"
+
+work="$(cd "$(test_workdir)" && pwd -P)"
+repo="$work/repo"
+make_repo "$repo"
+cd "$repo" || exit 1
+
+export SHIPSHAPE_SCRATCH_ROOT="$repo"
+export SHIPSHAPE_SESSION_ID=plan-session
+scratch="$repo/.shipshape/plan-session"
+file="$scratch/plan"
+branch="$(git rev-parse --abbrev-ref HEAD)"
+
+field() { sed -n "s/^$1=//p" "$file" 2>/dev/null | head -1; }
+
+mkdir -p "$repo/docs"
+plan="$repo/docs/plan.md"
+fence() { printf '```json:metadata\n%s\n```\n\n' "$1"; }
+{
+  printf '# The plan\n\n'
+  fence '{"id":"t1","files":["src.txt"],"verifyCommand":"tests/run.sh","blockedBy":[]}'
+  fence '{"id":"t2","files":[],"verifyCommand":"tests/run.sh","blockedBy":["t1"]}'
+  fence '{"id":"t3","files":[],"blockedBy":["t2"]}'
+} > "$plan"
+
+# --- nothing bound -------------------------------------------------------------
+
+out="$("$plan_bin" 2>&1)"
+assert_eq "0" "$?" "reporting with no plan bound still succeeds"
+assert_contains "$out" "no plan bound" "and says so"
+assert_no_file "$scratch" "looking leaves no footprints"
+
+# --- binding --------------------------------------------------------------------
+
+out="$("$plan_bin" "$plan" 2>&1)"
+assert_eq "0" "$?" "binding a readable plan succeeds"
+assert_file "$file" "the binding is written to the session's scratch dir"
+assert_eq "$plan" "$(field path)" "it records the plan"
+assert_eq "$branch" "$(field branch)" "and the branch it was bound on"
+assert_eq "" "$(field tasks)" "and an empty scope, meaning every task"
+assert_ne "" "$(field epoch)" "and when"
+assert_contains "$out" "t1" "it prints the table"
+assert_contains "$out" "open" "with each task's state"
+assert_contains "$out" "closed" "including the tasks with nothing to verify"
+assert_contains "$out" "shipshape-verify t1,t2 'tests/run.sh'" "and the line that closes the open ones"
+assert_contains "$(cat "$scratch/trace.log")" "$plan" "and the binding is traced"
+assert_no_file "$file.tmp.$$" "and no temporary file is left"
+
+# Relative paths are stored absolute, because hooks do not run from here.
+rm -f "$file"
+(cd "$repo/docs" && "$plan_bin" ../docs/plan.md >/dev/null 2>&1)
+assert_eq "$plan" "$(field path)" "a relative path is stored absolute and without its dots"
+
+# --- binding again keeps the time, a new plan does not -----------------------------
+
+sed "s/^epoch=.*/epoch=1000/" "$file" > "$file.new" && mv "$file.new" "$file"
+"$plan_bin" "$plan" >/dev/null 2>&1
+assert_eq "1000" "$(field epoch)" "binding the same plan again keeps its epoch, so records survive"
+(cd "$repo/docs" && "$plan_bin" plan.md >/dev/null 2>&1)
+assert_eq "1000" "$(field epoch)" "the same plan named another way is the same plan"
+
+other="$repo/docs/other.md"
+cp "$plan" "$other"
+"$plan_bin" "$other" >/dev/null 2>&1
+assert_ne "1000" "$(field epoch)" "a new plan starts a new epoch, so another plan's t1 cannot pass this one"
+
+# --- scope ----------------------------------------------------------------------
+
+out="$("$plan_bin" "$plan" --tasks t2 --reason "t1 shipped in 12" 2>&1)"
+assert_eq "0" "$?" "a scoped bind succeeds"
+assert_eq "t2" "$(field tasks)" "it records the scope"
+assert_eq "t1 shipped in 12" "$(field reason)" "and the reason"
+assert_contains "$out" "left-out" "the table shows what is left out"
+assert_contains "$out" "t1 shipped in 12" "and why"
+
+"$plan_bin" --tasks "t1, t2" --reason "both" "$plan" >/dev/null 2>&1
+assert_eq "t1,t2" "$(field tasks)" "options may come first, and spaces in the list do not matter"
+
+# --- refusals: exit 1, and the binding that was there stands -----------------------
+
+"$plan_bin" "$plan" >/dev/null 2>&1
+before="$(cat "$file")"
+
+refused() { # <what it proves> <expected text> -- <args...>
+  local proves="$1" text="$2" out status
+  shift 3
+  out="$("$plan_bin" "$@" 2>&1)"
+  status=$?
+  assert_eq "1" "$status" "$proves"
+  assert_contains "$out" "$text" "the refusal says why: $proves"
+  assert_eq "$before" "$(cat "$file")" "and the binding stands: $proves"
+}
+
+refused "a path that is not there" "no such file" -- "$repo/docs/missing.md"
+refused "a directory" "no such file" -- "$repo/docs"
+
+printf 'Prose, no fences.\n' > "$repo/docs/empty.md"
+refused "a plan with no fences" "no fences" -- "$repo/docs/empty.md"
+
+{ fence '{"id":"t1"}'; fence '{"id":"t2",'; } > "$repo/docs/broken.md"
+refused "a fence that does not parse" "fence 2" -- "$repo/docs/broken.md"
+
+{ fence '{"files":[]}'; } > "$repo/docs/no-id.md"
+refused "a fence with no id" "fence 1" -- "$repo/docs/no-id.md"
+
+{ fence '{"id":"a/b"}'; fence '{"id":"a-b"}'; } > "$repo/docs/twins.md"
+refused "two ids that sanitise alike" "a-b" -- "$repo/docs/twins.md"
+
+refused "a --tasks id not in the plan" "t9" -- "$plan" --tasks t1,t9 --reason "slice"
+refused "--tasks with no reason" "reason" -- "$plan" --tasks t1
+refused "--tasks naming nothing" "--tasks" -- "$plan" --tasks "," --reason "slice"
+refused "a blank reason" "reason" -- "$plan" --tasks t1 --reason "   "
+refused "--clear with no reason" "reason" -- --clear
+refused "a newline in a reason" "line" -- "$plan" --tasks t1 --reason "$(printf 'slice\nepoch=1')"
+refused "a newline in the scope" "line" -- "$plan" --tasks "$(printf 't1\nepoch=1')" --reason "slice"
+refused "a newline in the path" "line" -- "$(printf '%s\nepoch=1' "$plan")"
+
+# With no JSON reader the fences cannot be checked, so the bind cannot promise
+# anything. The leg would stand down; a bind that claimed to work would mislead.
+no_json="$work/no-json"
+mkdir -p "$no_json"
+printf '#!/bin/sh\nexit 127\n' > "$no_json/jq"
+cp "$no_json/jq" "$no_json/python3"
+chmod +x "$no_json/jq" "$no_json/python3"
+out="$(PATH="$no_json:$PATH" "$plan_bin" "$other" 2>&1)"
+assert_eq "1" "$?" "with no JSON reader a bind is refused"
+assert_contains "$out" "JSON" "and says what is missing"
+assert_eq "$before" "$(cat "$file")" "and the binding stands"
+
+# A write that failed is reported as one, as the seat's is.
+chmod a-w "$scratch"
+out="$("$plan_bin" "$other" 2>&1)"
+status=$?
+chmod u+w "$scratch"
+if [ "$(id -u)" != "0" ]; then
+  assert_ne "0" "$status" "a failed write exits non-zero"
+  assert_contains "$out" "could not write" "and says so"
+  assert_eq "$before" "$(cat "$file")" "and the binding stands"
+fi
+
+# --- usage ------------------------------------------------------------------------
+
+assert_status 64 "an unknown option is a usage error" -- "$plan_bin" "$plan" --bogus x
+assert_status 64 "--tasks needs a value" -- "$plan_bin" "$plan" --tasks
+assert_status 64 "--reason needs a value" -- "$plan_bin" "$plan" --tasks t1 --reason
+assert_status 64 "a reason with no scope has nothing to explain" -- "$plan_bin" "$plan" --reason why
+assert_status 64 "--tasks needs a plan" -- "$plan_bin" --tasks t1 --reason why
+assert_status 64 "--clear takes no path" -- "$plan_bin" --clear "$plan" --reason why
+assert_status 64 "--clear takes no scope" -- "$plan_bin" --clear --tasks t1 --reason why
+assert_status 64 "one plan at a time" -- "$plan_bin" "$plan" "$other"
+assert_eq "$before" "$(cat "$file")" "a usage error writes nothing"
+
+# --- an unknown blockedBy warns ----------------------------------------------------
+
+{ fence '{"id":"t1","blockedBy":["F1","t2"]}'; fence '{"id":"t2"}'; } > "$repo/docs/ordered.md"
+out="$("$plan_bin" "$repo/docs/ordered.md" 2>&1)"
+assert_eq "0" "$?" "a blockedBy naming an unknown id does not refuse: no gate reads it now"
+assert_contains "$out" "F1" "but it warns, because it is usually a typo"
+assert_not_contains "$out" "names t2" "and only about the unknown one"
+assert_eq "$repo/docs/ordered.md" "$(field path)" "and the plan is bound"
+
+# --- the report --------------------------------------------------------------------
+
+"$plan_bin" "$plan" >/dev/null 2>&1
+out="$("$plan_bin" 2>&1)"
+assert_eq "0" "$?" "with no arguments it reports the binding"
+assert_contains "$out" "$plan" "and names the plan"
+assert_contains "$out" "open" "with the leg's state"
+
+mkdir -p "$scratch/verify"
+printf 'task=t1\ncommand=tests/run.sh\nexit=0\nepoch=%s\n--- output ---\n' "$(date -u +%s)" > "$scratch/verify/t1"
+printf 'task=t2\ncommand=tests/run.sh\nexit=0\nepoch=%s\n--- output ---\n' "$(date -u +%s)" > "$scratch/verify/t2"
+out="$("$plan_bin" 2>&1)"
+assert_contains "$out" "ok" "the report follows the records"
+assert_not_contains "$out" "shipshape-verify" "and with nothing to run it offers nothing"
+assert_eq "ok|" "$(shipshape_leg_plan "$scratch")" "and it agrees with the leg"
+
+git checkout -q -b elsewhere
+out="$("$plan_bin" 2>&1)"
+assert_eq "0" "$?" "a report on another branch still succeeds"
+assert_contains "$out" "elsewhere" "and says the binding is not for this branch"
+assert_contains "$out" "--clear" "and names the ways out"
+git checkout -q "$branch"
+
+mv "$plan" "$plan.moved"
+out="$("$plan_bin" 2>&1)"
+assert_eq "0" "$?" "a report on a vanished plan still succeeds"
+assert_contains "$out" "unreadable" "and says what the leg says"
+mv "$plan.moved" "$plan"
+
+# --- clearing ----------------------------------------------------------------------
+
+out="$("$plan_bin" --clear --reason "this branch is prose only" 2>&1)"
+assert_eq "0" "$?" "clearing with a reason succeeds"
+assert_no_file "$file" "the binding is gone"
+assert_contains "$(cat "$scratch/trace.log")" "this branch is prose only" "and the reason stays in the trace"
+assert_eq "none|" "$(shipshape_leg_plan "$scratch")" "the leg has nothing to say"
+
+out="$("$plan_bin" --clear --reason "again" 2>&1)"
+assert_eq "0" "$?" "clearing nothing is not an error"
+
+finish

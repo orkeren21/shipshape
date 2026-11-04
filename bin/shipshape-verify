@@ -3,17 +3,23 @@
 #
 #   shipshape-verify <task-id> <command> [args...]
 #   shipshape-verify <task-id> "cmd one && cmd two"
+#   shipshape-verify t1,t2,t3 "tests/run.sh"
 #
 # A single argument is run through the shell, because a verifyCommand in a plan
 # fence is written as a shell line and often contains && or a pipe. Several
 # arguments are executed directly, with no shell involved. Getting this wrong
 # is quiet and bad: the caller's shell would split at the &&, the wrapper would
-# record only the first half, and the gate would close the task on a record
-# describing half the verification.
+# record only the first half, and the task would read as verified by half its
+# command.
+#
+# A comma-separated list of ids runs the command once and writes one record per
+# id. Most plans verify with the whole suite, and a record goes stale when a
+# task's files change, so without this the end of a branch is one full run per
+# task to say the same thing each time.
 #
 # Transparent: output and exit code are the command's. The record at
-# .shipshape/<session>/verify/<task-id> is what the task-completion gate reads,
-# and it exists only because the command actually ran.
+# .shipshape/<session>/verify/<task-id> is what the plan leg reads, and it
+# exists only because the command actually ran.
 #
 # A failing command still writes a record. Red is evidence; absence is not.
 
@@ -30,15 +36,18 @@ MAX_LINES="${SHIPSHAPE_VERIFY_MAX_LINES:-200}"
 if [ "$#" -lt 2 ]; then
   echo "usage: shipshape-verify <task-id> <command> [args...]" >&2
   echo "       shipshape-verify <task-id> \"cmd one && cmd two\"" >&2
+  echo "       shipshape-verify t1,t2,t3 \"cmd\"" >&2
   exit 64
 fi
 
 task_id="$1"
 shift
 
-# The id becomes a filename. Sanitised through the shared helper, which is the
-# same one the completion gate uses to find this record again.
-safe_id="$(shipshape_safe_id "$task_id")"
+# An id becomes a filename. Sanitised through the shared helper, which is the
+# same one the plan leg uses to find this record again.
+safe_ids="$(shipshape_id_list "$task_id")"
+[ -n "$safe_ids" ] || safe_ids="$(shipshape_safe_id "$task_id")"
+label="$(printf '%s' "$safe_ids" | tr '\n' ',')"
 
 if [ "$#" -eq 1 ]; then
   recorded="$1"
@@ -49,10 +58,15 @@ else
 fi
 status=$?
 
+# The record's header is one field per line, and this field is the only one
+# holding what a plan wrote. Left multi-line, a line of the command reading
+# exit=0 would read as the record's own exit.
+recorded="$(printf '%s' "$recorded" | tr '\r\n' '  ')"
+
 printf '%s\n' "$out"
 
 if ! shipshape_enabled VERIFY; then
-  shipshape_trace verify "kill switch set; $safe_id ran but nothing recorded"
+  shipshape_trace verify "kill switch set; $label ran but nothing recorded"
   exit "$status"
 fi
 
@@ -63,19 +77,23 @@ line_count="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
 truncated=""
 if [ "$line_count" -gt "$MAX_LINES" ]; then
   truncated="(output truncated to the last $MAX_LINES of $line_count lines)"
-  shipshape_trace verify "$safe_id output truncated at $MAX_LINES lines"
+  shipshape_trace verify "$label output truncated at $MAX_LINES lines"
 fi
 
-{
-  printf 'task=%s\n' "$safe_id"
-  printf 'command=%s\n' "$recorded"
-  printf 'exit=%s\n' "$status"
-  printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf 'epoch=%s\n' "$(date -u +%s)"
-  printf -- '--- output ---\n'
-  [ -n "$truncated" ] && printf '%s\n' "$truncated"
-  printf '%s\n' "$out" | tail -n "$MAX_LINES"
-} > "$scratch/verify/$safe_id"
+timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+epoch="$(date -u +%s)"
+for safe_id in $safe_ids; do
+  {
+    printf 'task=%s\n' "$safe_id"
+    printf 'command=%s\n' "$recorded"
+    printf 'exit=%s\n' "$status"
+    printf 'timestamp=%s\n' "$timestamp"
+    printf 'epoch=%s\n' "$epoch"
+    printf -- '--- output ---\n'
+    [ -n "$truncated" ] && printf '%s\n' "$truncated"
+    printf '%s\n' "$out" | tail -n "$MAX_LINES"
+  } > "$scratch/verify/$safe_id"
+done
 
-shipshape_trace verify "$safe_id exited $status"
+shipshape_trace verify "$label exited $status"
 exit "$status"
