@@ -143,11 +143,50 @@ describe('drawing', () => {
       expect(cut.source).toContain('lane auth-u…')
     })
 
+    test(`${style}: failed has corners, so it differs from passed in outline as well as hue`, () => {
+      const run = bandModel({ doctor: doctor({ legs: { review: { state: 'ok', detail: null }, ci: { state: 'not-green', detail: null }, smoke: { state: 'missing', detail: null } } }), isUnavailable: false, percent: 37, notices: [], refining: false, now: NOW })
+      const { source } = drawBand(run, style, 2000)
+      expect(source).toMatch(/<polygon[^>]*class="f-bad/)
+      expect(source).not.toMatch(/<circle[^>]*class="f-bad/)
+      expect(source).toMatch(/<circle[^>]*class="f-ok/)
+    })
+
+    test(`${style}: the gauge draws no tick without a context figure`, () => {
+      const none = bandModel({ doctor: doctor(), isUnavailable: false, percent: null, notices: [], refining: false, now: NOW })
+      expect(drawBand(none, style, 2000).source).not.toContain(' tick"')
+    })
+
     test(`${style}: evidence unavailable says so`, () => {
       const none = bandModel({ doctor: null, isUnavailable: true, percent: 12, notices: [], refining: false, now: NOW })
       expect(drawBand(none, style, 2000).source).toContain('evidence unavailable')
     })
   }
+
+  const seated = (role: string) => bandModel({ doctor: doctor({ seat: { role, lane: null, epic: null, handoff: null } }), isUnavailable: false, percent: 37, notices: [], refining: false, now: NOW })
+
+  test('github: the bar marks the seat\'s first handoff point', () => {
+    const tickAt = (role: string) => {
+      const { source } = drawBand(seated(role), 'github', 2000)
+      const track = Number(/<rect x="([\d.]+)"[^>]*class="f-track"/.exec(source)?.[1])
+      const tick = /<rect x="([\d.]+)"[^>]*width="([\d.]+)"[^>]*class="f-muted tick"/.exec(source)
+      return Number(tick?.[1]) + Number(tick?.[2]) / 2 - track
+    }
+    expect(Math.abs(tickAt('solo') - 56 * 0.7)).toBeLessThan(0.1)
+    expect(Math.abs(tickAt('lane') - 56 * 0.7)).toBeLessThan(0.1)
+    expect(Math.abs(tickAt('architect') - 56 * 0.85)).toBeLessThan(0.1)
+  })
+
+  test('linear: the ring is neutral, with a zone from the seat\'s first handoff point to the top', () => {
+    const turnAt = (role: string) => {
+      const { source } = drawBand(seated(role), 'linear', 2000)
+      const ring = /<circle cx="([\d.]+)" cy="([\d.]+)" r="5\.75"[^>]*class="s-track"/.exec(source)
+      const zone = /d="M([\d.]+) ([\d.]+)A5\.75 5\.75 0 0 1 [\d.]+ [\d.]+"[^>]*class="s-muted tick"/.exec(source)
+      const a = Math.atan2(Number(zone?.[1]) - Number(ring?.[1]), Number(ring?.[2]) - Number(zone?.[2]))
+      return ((a + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI)
+    }
+    expect(Math.abs(turnAt('solo') - 0.7)).toBeLessThan(0.01)
+    expect(Math.abs(turnAt('architect') - 0.85)).toBeLessThan(0.01)
+  })
 
   test('the width table is in the right range for 12px system text', () => {
     expect(measure('review', 12)).toBeGreaterThan(30)

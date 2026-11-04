@@ -5,7 +5,7 @@
 // wrong estimate moves letter spacing by a hair instead of colliding or
 // clipping. Pure: a model in, an SVG string out.
 
-import { ctxTone, describe } from './band.ts'
+import { ctxTone, describe, handoffPoints } from './band.ts'
 import type { BandModel, Leg, LegState, Style, Tone } from './model.ts'
 
 const FONT = "-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',system-ui,sans-serif"
@@ -100,8 +100,29 @@ const check = (cx: number, cy: number, r: number, cls: string, sw = 1.5) =>
   `<path d="M${cx - r * 0.46} ${cy + 0.1}l${r * 0.32} ${r * 0.33}l${r * 0.62} -${r * 0.7}" fill="none" class="s-${cls}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`
 const cross = (cx: number, cy: number, r: number, cls: string, sw = 1.5) =>
   `<path d="M${cx - r * 0.36} ${cy - r * 0.36}l${r * 0.72} ${r * 0.72}M${cx + r * 0.36} ${cy - r * 0.36}l-${r * 0.72} ${r * 0.72}" class="s-${cls}" stroke-width="${sw}" stroke-linecap="round"/>`
+// Failed is the one mark with corners: at this size a red disc and a green
+// disc differ only in hue and a thin inner stroke.
+function octagon(cx: number, cy: number, r: number, cls: string): string {
+  const points = Array.from({ length: 8 }, (_, i) => {
+    const a = Math.PI / 8 + (i * Math.PI) / 4
+    return `${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`
+  })
+  return `<polygon points="${points.join(' ')}" class="f-${cls} s-${cls}" stroke-width="0.8" stroke-linejoin="round"/>`
+}
 const slash = (cx: number, cy: number, d: number, cls: string, sw = 1.4) =>
   `<path d="M${cx - d} ${cy + d}L${cx + d} ${cy - d}" class="s-${cls}" stroke-width="${sw}" stroke-linecap="round"/>`
+// The seat's first handoff point on the gauge, in a neutral: the mark is the
+// same whether the fill is short of it or past it, so the fill's position
+// says what its hue says.
+const barTick = (x: number, cy: number) =>
+  `<rect x="${(x - 0.75).toFixed(2)}" y="${cy - 5}" width="1.5" height="10" rx="0.75" class="f-muted tick"/>`
+// A tick across a 13px ring reads as a clock hand, so the ring carries a zone
+// instead, like a tachometer's redline: from the handoff point to the top.
+function ringZone(cx: number, cy: number, r: number, frac: number): string {
+  const a = frac * 2 * Math.PI
+  const start = `${(cx + r * Math.sin(a)).toFixed(2)} ${(cy - r * Math.cos(a)).toFixed(2)}`
+  return `<path d="M${start}A${r} ${r} 0 0 1 ${cx} ${cy - r}" fill="none" class="s-muted tick" stroke-width="1.5"/>`
+}
 function pie(cx: number, cy: number, r: number, frac: number, cls: string): string {
   if (frac <= 0) return ''
   if (frac >= 1) return circle(cx, cy, r, cls)
@@ -122,7 +143,7 @@ function githubIcon(state: LegState, x: number, cy: number): string {
   const cx = x + 7
   const r = 6.5
   if (state === 'ok') return circle(cx, cy, r, 'ok') + check(cx, cy, r, 'onFill', 1.6)
-  if (state === 'fail') return circle(cx, cy, r, 'bad') + cross(cx, cy, r, 'onFill', 1.6)
+  if (state === 'fail') return octagon(cx, cy, r + 0.2, 'bad') + cross(cx, cy, r, 'onFill', 1.6)
   if (state === 'stale') return circle(cx, cy, 3.6, 'warn')
   if (state === 'running') return spinner(cx, cy, 5.2, 'warn', 1.8)
   if (state === 'waived') return circle(cx, cy, 5.6, 'faint', 1.4) + slash(cx, cy, 3.9, 'faint')
@@ -133,7 +154,7 @@ function linearIcon(state: LegState, x: number, cy: number): string {
   const cx = x + 6.5
   const r = 5.5
   if (state === 'ok') return circle(cx, cy, r + 0.5, 'ok') + check(cx, cy, r, 'onFill', 1.4)
-  if (state === 'fail') return circle(cx, cy, r + 0.5, 'bad') + cross(cx, cy, r, 'onFill', 1.4)
+  if (state === 'fail') return octagon(cx, cy, r + 0.7, 'bad') + cross(cx, cy, r, 'onFill', 1.4)
   if (state === 'stale') return circle(cx, cy, r, 'warn', 1.5) + pie(cx, cy, r - 2.2, 0.5, 'warn')
   if (state === 'running') return spinner(cx, cy, r, 'warn', 1.6)
   if (state === 'waived') return circle(cx, cy, r, 'faint', 1.5) + slash(cx, cy, 3.2, 'faint', 1.5)
@@ -157,8 +178,9 @@ function github(m: BandModel, fit: Fit): Row {
   if (m.ctx !== null) {
     const pct = m.ctx
     const tone: Tone = ctxTone(pct, m.role)
+    const [first] = handoffPoints(m.role)
     const bw = 56
-    R.icon(bw, (x, cy) => `<rect x="${x}" y="${cy - 3}" width="${bw}" height="6" rx="3" class="f-track"/><rect x="${x}" y="${cy - 3}" width="${Math.max(6, (bw * pct) / 100).toFixed(1)}" height="6" rx="3" class="f-${tone}"/>`).gap(7)
+    R.icon(bw, (x, cy) => `<rect x="${x}" y="${cy - 3}" width="${bw}" height="6" rx="3" class="f-track"/><rect x="${x}" y="${cy - 3}" width="${Math.max(6, (bw * pct) / 100).toFixed(1)}" height="6" rx="3" class="f-${tone}"/>${barTick(x + (bw * first) / 100, cy)}`).gap(7)
     R.text(`${pct}%`, { weight: 500 })
     if (fit.showContextWord) R.gap(4).text('context', { cls: 'muted' })
     R.gap(16)
@@ -176,8 +198,9 @@ function linear(m: BandModel, fit: Fit): Row {
   if (m.ctx !== null) {
     const pct = m.ctx
     const tone: Tone = ctxTone(pct, m.role)
+    const [first] = handoffPoints(m.role)
     R.box(r => {
-      r.icon(18, (x, cy) => circle(x + 6.5, cy, 5.75, tone, 1.5) + pie(x + 6.5, cy, 3.9, pct / 100, tone)).text(`${pct}%`, { weight: 500 })
+      r.icon(18, (x, cy) => circle(x + 6.5, cy, 5.75, 'track', 1.5) + ringZone(x + 6.5, cy, 5.75, first / 100) + pie(x + 6.5, cy, 3.9, pct / 100, tone)).text(`${pct}%`, { weight: 500 })
       if (fit.showContextWord) r.gap(4).text('context', { cls: 'muted' })
     }, { stroke: 'line' }).gap(6)
   }

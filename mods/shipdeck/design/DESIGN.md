@@ -151,9 +151,10 @@ that is not a notice.
 
 **The Seat Threshold Rule.** The context fill turns brass at the seat's
 first handoff threshold and red at its second: 70 and 85 for lanes and solo
-sessions, 85 and 92 for an Architect (context-watch's defaults). The colour
-repeats what the number already says; the alt text puts it in words ("at the
-handoff point", "past the handoff point"), so it is never colour alone.
+sessions, 85 and 92 for an Architect (context-watch's defaults). The gauge
+also marks the first threshold in a neutral, so the fill's position says what
+its hue says; the alt text puts it in words ("at the handoff point", "past
+the handoff point"). It is never colour alone.
 
 **The Terminal Exception.** The terminal has no gauge to fill, so there the
 percentage itself carries the context tone, and state glyphs stand in for
@@ -206,10 +207,11 @@ hairline and a 4.5% tint, not by lift.
 
 ## Shapes
 
-Circles for state: filled states (ok, failed) at 12 to 13px, rings (not run,
-waived, running, stale) at 10.5 to 12px, so a filled mark reads a touch
-heavier than an open one. A 6px bar (GitHub) or a 13px ring and pie (Linear)
-for context. Linear chips have a 5px radius; GitHub notices are 10px-radius
+Circles for state: filled ok at 12 to 13px, rings (not run, waived, running,
+Linear's stale) at 10.5 to 12px, so a filled mark reads a touch heavier than
+an open one. Failed is the one mark with corners: an octagon the size of the
+ok disc, so the two differ in outline as well as hue. GitHub's stale is a
+7px dot. A 6px bar (GitHub) or a 13px ring and pie (Linear) for context. Linear chips have a 5px radius; GitHub notices are 10px-radius
 pills with a 1px edge, while Linear notices are tinted 5px chips like every
 other Linear item. Strokes are 1.4 to 1.8px: thinner for marks inside a
 filled circle, heavier for the spinner arc.
@@ -225,7 +227,7 @@ One shape per state, in both styles:
 | ok | filled green circle, check | filled green circle, check |
 | running | brass spinner arc | brass spinner arc |
 | stale | brass dot | brass ring with a half pie |
-| failed | filled red circle, cross | filled red circle, cross |
+| failed | filled red octagon, cross | filled red octagon, cross |
 | missing | mist hollow circle | mist dashed circle |
 | waived | mist circle with a slash | mist circle with a slash |
 
@@ -234,10 +236,13 @@ A running reviewer older than 15 minutes shows its age beside the label
 
 ### Context gauge
 
-- **GitHub:** a 56×6px bar, `track` behind and the state hue in front, then
-  `37%` (value) and `context` (label).
-- **Linear:** a 13px ring and pie in the state hue, inside a chip, then
-  `37% context`.
+- **GitHub:** a 56×6px bar, `track` behind and the state hue in front, a
+  10px slate tick at the seat's first threshold, then `37%` (value) and
+  `context` (label).
+- **Linear:** a 13px `track` ring with a slate zone from the seat's first
+  threshold round to the top, like a tachometer's redline, and a pie in the
+  state hue inside it, in a chip, then `37% context`. A tick across a ring
+  this small reads as a clock hand.
 
 ### Seat
 

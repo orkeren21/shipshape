@@ -58,7 +58,7 @@ native to Claude Code, not like a widget bolted onto it.
 
 - Text meets WCAG AA contrast in the light and dark palettes.
 - State is never conveyed by colour alone: each state has its own icon
-  shape (filled check, clock or dot, spinner, crossed circle, slashed or
-  dashed circle).
+  shape (filled check, clock or dot, spinner, crossed octagon, slashed or
+  dashed circle), and the context gauge marks the handoff point.
 - All motion stops under `prefers-reduced-motion`.
 - Every drawing carries alt text naming each state in words.

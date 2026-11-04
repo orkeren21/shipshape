@@ -52,11 +52,16 @@ export function legs(doctor: DoctorJson, now: number): Leg[] {
   ]
 }
 
-// Green below the seat's first handoff threshold, amber to its second, red
-// past it. These are context-watch's defaults; a session that overrides them
-// with SHIPSHAPE_CONTEXT_THRESHOLDS* is coloured by the defaults still.
+// The seat's two handoff thresholds. These are context-watch's defaults; a
+// session that overrides them with SHIPSHAPE_CONTEXT_THRESHOLDS* is drawn by
+// the defaults still.
+export function handoffPoints(role: string | null): readonly [number, number] {
+  return role === 'architect' ? [85, 92] : [70, 85]
+}
+
+// Green below the first threshold, amber to the second, red past it.
 export function ctxTone(pct: number, role: string | null): Tone {
-  const [first, second] = role === 'architect' ? [85, 92] : [70, 85]
+  const [first, second] = handoffPoints(role)
   if (pct >= second) return 'bad'
   if (pct >= first) return 'warn'
   return 'ok'
