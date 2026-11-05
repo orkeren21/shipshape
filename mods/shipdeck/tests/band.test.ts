@@ -260,6 +260,15 @@ describe('which PR the legs mean', () => {
     const planned = doctor({ prs: [at('10', 'feature')], legs: { review: { state: 'ok', detail: null }, ci: { state: 'ok', detail: null }, smoke: { state: 'ok', detail: null }, plan: { state: 'open', detail: null } } })
     expect(finished(planned, ['https://x/pull/10']).legs?.map(l => l.name)).toContain('plan')
   })
+  test('a reviewer still out keeps the legs after a merge', () => {
+    const d = doctor({ prs: [at('10', 'feature')], pending: [{ agent: 'a', kind: 'review', since: null }] })
+    expect(finished(d, ['https://x/pull/10']).legs?.length).toBeGreaterThan(0)
+  })
+  test('a PR finished on another branch says nothing about this branch\'s evidence', () => {
+    const m = finished(doctor({ prs: [at('10', 'old')] }), ['https://x/pull/10'])
+    expect(m.pr).toBeNull()
+    expect(m.legs?.length).toBeGreaterThan(0)
+  })
   test('a finished PR on another branch only leaves the count, and its stale record owes nothing', () => {
     const m = finished(doctor({ prs: [at('15', 'feature', 'owing'), at('10', 'old', 'stale')] }), ['https://x/pull/10'])
     expect(m.pr).toEqual({ label: '#15', others: 0, isOwing: false })

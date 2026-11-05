@@ -117,13 +117,14 @@ function section(key: string, title: string, children: unknown, els: Table) {
 }
 
 // A hairline between sections, the one rule the pane draws. The terminal's rows
-// are spaced by their headings and get none. A Box can't draw one: its height
+// are spaced by their headings and get none, and the other surfaces are
+// unmeasured. A Box can't draw one: its height
 // is in text rows, about 20px on the desktop, and a length is refused. The app
 // scales a too-wide Svg down to fit, so this is drawn wider than any pane
 // and lands full width.
 function divider(key: string, els: Table, surface: string, columns: number) {
   const drawing = drawnOn(surface, els)
-  if (!drawing) return null
+  if (!drawing || surface !== 'desktop') return null
   const { Svg } = drawing
   const drawn = sectionRule(columns * 12)
   return <Svg key={key} source={drawn.source} width={drawn.width} height={drawn.height} alt={drawn.alt} />

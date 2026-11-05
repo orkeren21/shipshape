@@ -1,5 +1,6 @@
 // Everything shipdeck reads from outside its own environment: where the core
-// plugin is, what its doctor says, what an epic folder holds, and where an
+// plugin is, what its doctor says, what GitHub says of a PR, what an epic folder
+// holds, and where an
 // original prompt is kept. Each call fails soft into a note, because a
 // display that throws helps nobody, and the gates are bash's anyway.
 

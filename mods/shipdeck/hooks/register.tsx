@@ -27,7 +27,8 @@ const PANE_TITLE = 'Sessions'
 // at 60 rows and a get 110 ms (measured on 2.1.317 and 2.1.309), and it only runs
 // while the pane can be seen.
 const SESSIONS_MS = 15_000
-// How often an open PR is asked about. Each turn's end asks too.
+// How often a PR not known to be merged is asked about, while a surface is
+// attached. Each turn's end asks too.
 const PRS_MS = 120_000
 // Long enough for the slowest honest reading: the core lookup's 15 s, then
 // the doctor's 10 s.
@@ -176,6 +177,12 @@ async function refreshPrs($: EngineInterface): Promise<void> {
   } finally {
     isReadingPrs = false
   }
+}
+
+// The clock's ask: a session nobody has open draws nothing, and its turn's end
+// asks anyway.
+async function askWhileSeen($: EngineInterface): Promise<void> {
+  if ((await $.session.surfaces()).length > 0) await refreshPrs($)
 }
 
 // The list is read only while the pane can be seen: a session nobody has open
@@ -460,7 +467,7 @@ export const register: Register = (on, options) => {
     firstReading = refreshDoctor($, true).catch(() => {})
     $.clock.every(60_000, () => void readFromMainLoop($, true).catch(() => {}))
     $.clock.every(30_000, () => void refreshEpic($).catch(() => {}))
-    $.clock.every(PRS_MS, () => void refreshPrs($).catch(() => {}))
+    $.clock.every(PRS_MS, () => void askWhileSeen($).catch(() => {}))
     void firstReading.then(() => refreshPrs($)).catch(() => {})
     $.clock.every(SESSIONS_MS, () => void refreshSessions($).catch(() => {}))
     await $.command.register({ name: 'refine', description: 'shipdeck: turn prompt refining on or off for this session', argumentHint: 'on | off' }).catch(() => {})
@@ -528,8 +535,8 @@ export const register: Register = (on, options) => {
         void refreshDoctor($, false).catch(() => {})
       } else {
         void refreshUsage($).catch(() => {})
-        void readFromMainLoop($, true).catch(() => {})
-        void refreshPrs($).catch(() => {})
+        // After the reading: it may be what brings a new PR.
+        void readFromMainLoop($, true).then(() => refreshPrs($)).catch(() => {})
       }
     }
     return next(e)

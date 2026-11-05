@@ -49,8 +49,7 @@ context only and reads `evidence unavailable`.
   then the epic's latest rulings. Idle sessions older than a day drop off unless
   they hold a seat, a question, or an open PR and were active in the last week,
   and twelve rows show at most. Needs you covers only sessions running shipdeck.
-  It opens
-  by itself for an Architect, and `/shipdeck` opens it for any seat. The list
+  It opens by itself for an Architect, and `/shipdeck` opens it for any seat. The list
   refreshes every 15 seconds while the pane can be seen.
 
   Four limits, stated plainly. It sits on the right, since a mod cannot draw
@@ -102,7 +101,10 @@ nothing recorded.
   refined, a bad reply. Counts and reasons only, never your words.
 
 Refining sends the dictated text to Sonnet through the session's own model
-client, the same way the session sends everything else.
+client, the same way the session sends everything else. To see whether a PR has
+finished, shipdeck runs `gh pr view` for each PR this session opened, every two
+minutes while the session is open and at each turn's end, and stops once one
+has merged.
 
 ## Settings
 

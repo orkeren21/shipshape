@@ -36,7 +36,9 @@ function doctorJson(over: Partial<DoctorJson> = {}): DoctorJson {
 type World = {
   doctor?: DoctorJson | string
   prState?: string
+  prByUrl?: Record<string, string>
   ghFails?: boolean
+  ghThrows?: boolean
   reply?: unknown
   replies?: unknown[]
   answer?: (prompt: string) => string
@@ -134,9 +136,11 @@ function world(on: On, w: World = {}) {
   })
   on('process.run', async (_, e) => {
     if (e.argv[0] === 'gh') {
-      seen.gh.push(String(e.argv[3]))
+      const url = String(e.argv[3])
+      seen.gh.push(url)
+      if (w.ghThrows) throw new Error('spawn gh ENOENT')
       if (w.ghFails) return { value: { exitCode: 1, stdout: '', stderr: 'not signed in' } } as never
-      return { value: { exitCode: 0, stdout: `${w.prState ?? 'OPEN'}\n`, stderr: '' } } as never
+      return { value: { exitCode: 0, stdout: `${w.prByUrl?.[url] ?? w.prState ?? 'OPEN'}\n`, stderr: '' } } as never
     }
     if (e.argv[0] === 'claude') {
       seen.lookups.push(e)
@@ -424,20 +428,64 @@ test('an open PR stays on the band, and is asked about again', async ($, on) => 
   await band.unmount()
 })
 
-test('gh failing keeps the PR: not knowing is not finished', async ($, on) => {
-  const { clock } = world(on, { doctor: BRANCHED(), ghFails: true })
+test('gh failing or missing keeps the PR: not knowing is not finished', async ($, on) => {
+  const failing = world(on, { doctor: BRANCHED(), ghFails: true })
+  await start($, failing.clock)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).toContain('PR #10')
+  await band.unmount()
+})
+
+test('a gh that will not run keeps the PR too', async ($, on) => {
+  const { clock } = world(on, { doctor: BRANCHED(), ghThrows: true })
   await start($, clock)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(String((await band.find({ type: 'Svg' }))?.props.alt)).toContain('PR #10')
   await band.unmount()
 })
 
-test('the pane\'s PR detail leaves out a finished one', async ($, on) => {
-  const prs = [{ ...OWN_PR, number: '15', url: 'https://github.com/o/r/pull/15', state: 'owing' }, { ...OWN_PR, number: '12', url: 'https://github.com/o/r/pull/12', branch: 'old', state: 'owing' }]
-  const { clock } = world(on, { ...paneWorld(), doctor: doctorJson({ branch: 'feature', prs, seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }), prState: 'OPEN' })
+test('a reopened PR comes back, because a closed one is still asked about', async ($, on) => {
+  const w: World = { doctor: BRANCHED(), prState: 'CLOSED' }
+  const { clock } = world(on, w)
   await start($, clock)
-  const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /#15 owed · #12 owed/ })).toBeDefined()
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).not.toContain('PR #10')
+  w.prState = 'OPEN'
+  await clock.advance(120_000)
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).toContain('PR #10')
+  await band.unmount()
+})
+
+test('a turn\'s end asks at once, after its reading, so a merge lands with no wait', async ($, on) => {
+  const w: World = { doctor: BRANCHED(), prState: 'OPEN' }
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  const before = seen.gh.length
+  w.prState = 'MERGED'
+  await $.turn.complete({ reason: 'answer' } as never)
+  await clock.settle()
+  expect(seen.gh.length).toBe(before + 1)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).not.toContain('PR #10')
+  await band.unmount()
+})
+
+test('the clock stays quiet with nobody attached', async ($, on) => {
+  const { clock, seen } = world(on, { doctor: BRANCHED(), prState: 'OPEN', surfaces: [] })
+  await start($, clock)
+  const before = seen.gh.length
+  await clock.advance(600_000)
+  expect(seen.gh.length).toBe(before)
+})
+
+test('the pane\'s PR detail leaves out a finished one', async ($, on) => {
+  const url = (n: string) => `https://github.com/o/r/pull/${n}`
+  const prs = [{ ...OWN_PR, number: '15', url: url('15'), state: 'owing' }, { ...OWN_PR, number: '12', url: url('12'), branch: 'old', state: 'owing' }, { ...OWN_PR, number: '9', url: url('9'), branch: 'older', state: 'owing' }]
+  const { clock } = world(on, { ...paneWorld(), doctor: doctorJson({ branch: 'feature', prs, seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }), prByUrl: { [url('12')]: 'MERGED' } })
+  await start($, clock)
+  const { pane, texts } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /#15 owed · #9 owed/ })).toBeDefined()
+  expect(texts.some(t => t.includes('#12'))).toBe(false)
   await pane.unmount()
 })
 
@@ -1570,7 +1618,7 @@ test('a finished PR leaves an idle row; only an open one is named', async ($, on
   await pane.unmount()
 })
 
-test('this session is in the list, with no words saying so', async ($, on) => {
+test('this session is in the list', async ($, on) => {
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const { pane } = await paneTexts($, clock)
@@ -1784,7 +1832,7 @@ test('a working pane carries no footnote', async ($, on) => {
   await pane.unmount()
 })
 
-test('every section is ruled off on a drawn surface, Rulings too, and the terminal draws no rule', async ($, on) => {
+test('every section is ruled off on the desktop, Rulings too', async ($, on) => {
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const { pane } = await paneTexts($, clock)

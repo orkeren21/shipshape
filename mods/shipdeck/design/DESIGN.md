@@ -292,10 +292,12 @@ type just before them. GitHub sets it bare; Linear in a hairline chip.
 - **No PR, nothing at this commit:** no PR and no legs. Hollow marks would read
   as owed, and stale ones are another commit's.
 - **No PR, evidence at this commit or a bound plan:** the legs, with no PR.
-- **This branch's PR has finished:** no PR, and no legs unless something is
-  still moving: a reviewer out, a failure, a bound plan. GitHub says so, asked
-  by URL every two minutes and at each turn's end, and once for a merged PR.
-  The doctor can't tell, working offline, and not knowing keeps the PR.
+- **This branch's PR has finished:** this PR leaves, and the legs go unless
+  something is still moving: a reviewer out, a failure, a bound plan. Evidence
+  for new work on the same branch waits for its PR. GitHub says so, asked by URL
+  every two minutes while a surface is attached and at each turn's end, and once
+  for a merged PR. The doctor can't tell, working offline, and not knowing keeps
+  the PR. A merged PR leaves even if the done gate still nudges about it.
 - **One PR on this branch:** `#15`, and its legs even if all hollow.
 - **Several:** `#15 +2`. The count is slate, and a 6px brass dot beside it says
   one of the others still owes evidence. Colour never goes on the digits, and
@@ -325,7 +327,7 @@ legs are drawn at all: nothing is not the same as unavailable.
 ### The pane
 
 Built from the host's own elements, so it takes the app's type, theme and
-spacing, with only the state marks drawn. Top to bottom:
+spacing, with only the state marks and the section rule drawn. Top to bottom:
 
 1. **This session:** the band's own row, drawn to the pane's width, then the
    PR detail when the band is only counting some of them.
@@ -333,11 +335,11 @@ spacing, with only the state marks drawn. Top to bottom:
    `Done`, in that order. Each group shows only when it has rows. Past twelve
    rows the quietest become a tabular `N more`.
 3. **Rulings:** the last five, the ID in its own column.
-4. A caption only when a read failed. `Needs you` covering only sessions that
-   run shipdeck is in the README.
+4. A caption only while reading or when a read failed. `Needs you` covering
+   only sessions that run shipdeck is in the README.
 
-Sections are parted by a hairline, the one rule the pane draws, on drawn
-surfaces only. It's an `Svg` drawn wider than any pane, because a `Box` height is
+Sections are parted by a hairline, the one rule the pane draws, on the desktop
+only, the one surface measured. It's an `Svg` drawn wider than any pane, because a `Box` height is
 in text rows and the app scales a too-wide `Svg` down to fit. Empty sections take
 their rule with them.
 

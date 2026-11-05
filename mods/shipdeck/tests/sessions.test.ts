@@ -123,7 +123,7 @@ describe('a question that has lapsed', () => {
     expect(view([raw('a', { prNumber: 15, prState: 'QUEUED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('needs')
     expect(view([raw('a', { prNumber: 15, prState: 'CLOSED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('idle')
   })
-  test('an idle session holding a question stays past a day', () => {
+  test('an idle session with an open PR stays past a day', () => {
     expect(view([raw('a', { prNumber: 15, prState: 'DRAFT', lastActivityAt: minutes(25 * 60) })]).rows.map(r => r.key)).toEqual(['a'])
   })
   test('one asked with no PR open stands, whatever the PR says now', () => {
