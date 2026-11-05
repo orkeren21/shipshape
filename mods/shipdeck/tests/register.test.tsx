@@ -70,6 +70,8 @@ type World = {
   // What the plugin store holds, and whether it refuses.
   store?: Record<string, unknown>
   storeThrows?: boolean
+  // Files that exist but will not open: read throws, stat answers.
+  sealed?: string[]
   // The panes open, and the surfaces attached.
   panes?: string[]
   surfaces?: string[]
@@ -79,7 +81,7 @@ type World = {
 
 // The engine beneath shipdeck: every $ call it makes, answered from memory.
 function world(on: On, w: World = {}) {
-  const seen = { model: [] as unknown[], runs: [] as unknown[], lookups: [] as unknown[], traces: [] as string[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[], mcp: [] as string[], usage: 0 }
+  const seen = { model: [] as unknown[], runs: [] as unknown[], lookups: [] as unknown[], traces: [] as string[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[], mcp: [] as string[], storeReads: [] as string[], usage: 0 }
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, w.env ?? {})
   on('command.register', (_, e) => {
@@ -103,7 +105,7 @@ function world(on: On, w: World = {}) {
     return { value: w.root ?? '/repo' } as never
   })
   on('fs.stat', (_, e) => {
-    const isDoctor = e.path.endsWith('/bin/shipshape-doctor')
+    const isDoctor = e.path.endsWith('/bin/shipshape-doctor') || w.sealed?.includes(e.path)
     if (!isDoctor && !e.resolve) throw new Error(`ENOENT ${e.path}`)
     return { value: { kind: 'file', size: 1, mtimeMs: 0, isLink: false, realPath: e.path } } as never
   })
@@ -174,6 +176,7 @@ function world(on: On, w: World = {}) {
   })
   on('store.get', (_, e) => {
     if (w.storeThrows) throw new Error('refused')
+    seen.storeReads.push(e.key)
     return { value: w.store?.[e.key] } as never
   })
   on('store.set', (_, e) => {
@@ -1437,7 +1440,6 @@ test('the band in the pane fits the pane, even a narrow one', async ($, on) => {
 })
 
 test('several PRs: the pane spells out what the band only counts', async ($, on) => {
-  const pr = (number: string, branch: string, state: string) => ({ number, url: null, branch, state })
   const { clock } = world(on, paneWorld({ doctor: doctorJson({ seat: LANE.seat, prs: [pr('15', 'feature', 'owing'), pr('12', 'old', 'satisfied'), pr('9', 'older', 'stale')] }) }))
   await start($, clock)
   const { pane } = await paneTexts($, clock)
@@ -1472,7 +1474,7 @@ test('a pane that reads the wrong shape says so, and never that there are no rul
   await pane.unmount()
 })
 
-test('a decisions file that will not open says so, and one not there yet says no rulings', async ($, on) => {
+test('a decisions file not there yet says no rulings', async ($, on) => {
   const files: Record<string, string> = { ...ROSTER }
   delete files['/epic/decisions.md']
   const { clock } = world(on, paneWorld({ files }))
@@ -1480,6 +1482,68 @@ test('a decisions file that will not open says so, and one not there yet says no
   const { pane } = await paneTexts($, clock)
   expect(await pane.find({ type: 'Text', text: /No rulings yet/ })).toBeDefined()
   await pane.unmount()
+})
+
+test('a decisions file that is there and will not open says so, not that there are none', async ($, on) => {
+  const files: Record<string, string> = { ...ROSTER }
+  delete files['/epic/decisions.md']
+  const { clock } = world(on, paneWorld({ files, sealed: ['/epic/decisions.md'] }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /Could not read the rulings/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /No rulings yet/ })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('a seat file that will not open says so in its row', async ($, on) => {
+  const files: Record<string, string> = { ...ROSTER }
+  delete files['/epic/roster/F5.md']
+  const { clock } = world(on, paneWorld({ files }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /F5\s+unreadable/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('a session that has only just stopped reads now, and a finished one carries no age', async ($, on) => {
+  const { clock } = world(on, paneWorld({
+    listed: [{ ...OTHER, isRunning: false, lastActivityAt: at(NOW) }, { ...ASKING, sessionId: 'local_gone', prNumber: 14, prState: 'MERGED' }],
+    files: { ...ROSTER, '/epic/roster/F1.md': 'role: lane F1\nsession id: local_gone\nstatus: done' },
+  }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /^#16 · now$/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^#14 merged$/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('the store is read only for what sessions published', async ($, on) => {
+  const { clock, seen } = world(on, paneWorld({ store: { 'ask/local_ask': { text: 'Merge PR 15?', at: NOW }, 'something-else': { text: 'not an ask' } } }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(seen.storeReads.every(k => k.startsWith('ask/'))).toBe(true)
+  await pane.unmount()
+})
+
+const pr = (number: string, branch: string, state: string) => ({ number, url: null, branch, state })
+
+test('the terminal band names the PR, the count and what is owed, and the desktop band says them in its alt text', async ($, on) => {
+  const { clock } = world(on, { doctor: doctorJson({ prs: [pr('15', 'feature', 'satisfied'), pr('12', 'old', 'owing'), pr('9', 'older', 'satisfied')] }) })
+  await start($, clock)
+  const term = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await term.find({ type: 'Text', text: /^#15 \+2 ●$/ })).toBeDefined()
+  await term.unmount()
+  const desk = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await desk.find({ type: 'Svg' }))?.props.alt)).toContain('PR #15, 2 others, evidence owed')
+  await desk.unmount()
+})
+
+test('the terminal band with PRs elsewhere counts them, and no mark when nothing is owed', async ($, on) => {
+  const { clock } = world(on, { doctor: doctorJson({ prs: [pr('12', 'old', 'satisfied'), pr('9', 'older', 'satisfied')] }) })
+  await start($, clock)
+  const term = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await term.find({ type: 'Text', text: /^2 PRs$/ })).toBeDefined()
+  await term.unmount()
 })
 
 test('a roster that cannot be listed says so, and is not an empty epic', async ($, on) => {
@@ -1577,4 +1641,34 @@ test('the pane before its first reading says it is reading, and is not empty', a
   const pane = await $.ui.mount(PANE('desktop'))
   expect(await pane.find({ type: 'Text', text: /Reading sessions/ })).toBeDefined()
   await pane.unmount()
+})
+
+test('seats read after the list still name their rows, with no wait for the next clock', async ($, on) => {
+  const { clock } = world(on, paneWorld())
+  await start($, clock)
+  const pane = await $.ui.mount(PANE('desktop'))
+  expect(await pane.find({ type: 'Text', text: /F4\s+epic skills/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('a seat changing hands renames its row at the next epic read', async ($, on) => {
+  const w = paneWorld()
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  const pane = await $.ui.mount(PANE('desktop'))
+  w.files!['/epic/roster/F4.md'] = 'role: lane F4\nsession id: local_ask\nstatus: active'
+  seen.mcp.length = 0
+  await clock.advance(14_999)
+  await clock.advance(15_001)
+  expect(await pane.find({ type: 'Text', text: /F4\s+Merge PR 15/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('an epic read that finds nothing new redraws nothing and reads no list', async ($, on) => {
+  const { clock, seen } = world(on, paneWorld())
+  await start($, clock)
+  seen.mcp.length = 0
+  await clock.advance(30_000)
+  // The list's own clock reads twice in 30 s, and the epic read adds none.
+  expect(seen.mcp.filter(c => c.endsWith('list_sessions'))).toHaveLength(2)
 })

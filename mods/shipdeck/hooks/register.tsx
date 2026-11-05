@@ -131,7 +131,10 @@ async function refreshEpic($: EngineInterface): Promise<void> {
       await update($, seen, () => ({ epic: dir, done: doneMap(view.rows) }))
       for (const lane of newlyDone(before?.epic === dir ? before.done : null, view.rows)) await addNotice($, `${lane} done`)
     }
-    await update($, epic, () => view)
+    const before = await read($, epic)
+    await update($, epic, prev => (JSON.stringify(prev) === JSON.stringify(view) ? prev : view))
+    // The rows name their seats, so a roster that moved is read through at once.
+    if (JSON.stringify(before?.rows) !== JSON.stringify(view.rows)) void refreshSessions($).catch(() => {})
   } finally {
     isReadingEpic = false
   }

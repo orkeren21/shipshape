@@ -55,6 +55,11 @@ describe('which sessions show', () => {
     ).rows
     expect(rows.map(r => r.key).sort()).toEqual(['asks', 'pr'])
   })
+  test('this session and a seat stay however long they have been idle', () => {
+    const old = minutes(25 * 60)
+    const self = list([raw('me', { lastActivityAt: old })])[0] ?? null
+    expect(view([raw('seated', { lastActivityAt: old })], { self, roster: [seat('F3', 'seated')] }).rows.map(r => r.key).sort()).toEqual(['me', 'seated'])
+  })
   test('a session whose age cannot be read stays: unknown is not old', () => {
     expect(view([raw('a', { lastActivityAt: undefined })]).rows.map(r => r.key)).toEqual(['a'])
   })
@@ -144,6 +149,7 @@ describe('the title as a row shows it', () => {
   })
   test('a title that only mentions the seat, or another one, is left alone', () => {
     expect(stripSeat('Fix what F3 broke', 'F3')).toBe('Fix what F3 broke')
+    expect(stripSeat('TF3: other', 'F3')).toBe('TF3: other')
     expect(stripSeat('post-0.5 · F13: other', 'F3')).toBe('post-0.5 · F13: other')
     expect(stripSeat('F3:', 'F3')).toBe('F3:')
   })
