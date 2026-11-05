@@ -35,7 +35,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `shipshape-pr-open` | `gh pr create` | `pr-armed` — arms the done gate |
 | `shipshape-ci-watch` | `gh pr checks --watch` | `ci-status` — green means *mergeable*, not "the checks that ran passed". A pull request blocked only on a human approval, with a clean check rollup, is recorded `green-pending-review` and accepted. |
 | `shipshape-verify` | a task's verify command | `verify/<task-id>`, one for each id in a comma-separated list, from a single run |
-| `shipshape-plan` | nothing — records a fact | `plan` — the file whose fences the plan leg reads, the branch it was bound on, and any `--tasks` scope with its required reason. Refuses a plan the leg could not read. A record counts only from the binding on, so another plan's `t1` cannot pass this one's. `--clear` leaves a `plan-cleared` record naming what was dropped, why, and the branch it was bound on, and says where it put it. There is one for the session in each checkout, the doctor, `shipshape-plan` and `shipshape-pr-open` show it on any branch, and a second `--clear` replaces the first. It stands until that same plan is bound again. Binding another plan prints the one it replaced. |
+| `shipshape-plan` | nothing — records a fact | `plan` — the file whose fences the plan leg reads, the branch it was bound on, and any `--tasks` scope with its required reason. Refuses a plan the leg could not read. A record counts only from the binding on, so another plan's `t1` cannot pass this one's. `--clear` leaves a `plan-cleared` record naming what was dropped, why, and the branch it was bound on, and says where it put it. There is one for the session in each checkout, and a later `--clear` replaces it; the doctor, `shipshape-plan` and `shipshape-pr-open` show it on any branch. It stands until that same plan is bound again. Binding another plan prints the one it replaced. |
 | `shipshape-smoke` | any command | `smoke.log` |
 | `shipshape-seat` | nothing — records a fact | `seat` — whether the session is an Architect, a lane or solo, its epic folder and its handoff. context-watch picks thresholds from it; session-start re-orients a compacted session from it. Also prints the session id a roster file needs. |
 | `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Names any other checkout's folder for the same session: where older hooks in a desktop-app worktree session left their half of the evidence, or what a subagent working in its own worktree left there. Always exits 0; diagnosis is not enforcement. `--json` prints the same evaluation as one object (format 1): each leg's state in the evaluator's own word, the seat, the scratch path, reviewers still running, and the armed PRs. shipdeck draws its band from it. |
@@ -75,12 +75,11 @@ a `verifyCommand` spans lines, or a `--tasks` id left the plan. With no
 plan bound it reads `none`, which settles it. A reasoned `skip_plan` line in
 `.shipshape.yaml` waives it. Tasks a `--tasks` scope leaves out, and a plan
 dropped with `--clear`, show in the doctor and from the done gate with the reason, in
-a note once per pull request if the branch is otherwise satisfied. That note is held
-to a pull request on the current branch, and the nudge also carries narrowing while any
-pull request from the session owes evidence, so a branch with no pull request of its own
-and nothing owing hears nothing from the gate. The doctor, `shipshape-plan` and
-`shipshape-pr-open` show a clearing on any branch, labelled with its own. Over-reporting
-a note is harmless, and losing one is the failure it exists to prevent. `--json` carries
+a note once per pull request if the branch is otherwise satisfied. Not every answer from
+the gate carries this, and a branch with no pull request of its own and nothing owing
+hears nothing from it, so the doctor is the place to read it. It shows a clearing on any
+branch, labelled with its own, as `shipshape-plan` and `shipshape-pr-open` do.
+Over-reporting a note is harmless, and losing one is the failure it exists to prevent. `--json` carries
 a clearing in `plan_cleared`, beside the legs. A `verifyCommand` is one shell line,
 and one spanning lines is refused at the bind and reads `unreadable`: a line break
 changes what a shell runs. `requesting-code-review` tells the session to hand the
@@ -228,8 +227,8 @@ choice too: `shipshape-pr-open` names a missing binding on stderr, and nothing
 more. Narrowing a bound plan is reported, not refused, and the done gate's report comes
 at a stop, not at the merge: a plan cleared and merged in one turn may be read after the
 merge, or by nobody. Replacing a bound plan is not recorded, the same
-as editing one: `shipshape-plan` prints what it replaced and keeps nothing. A second
-`--clear` replaces the first, and a plan file overwritten and bound again counts as
+as editing one: `shipshape-plan` prints what it replaced and keeps nothing. A later
+`--clear` replaces an earlier one, and a plan file overwritten and bound again counts as
 that same plan. And `files` is
 only as good as what it lists: a file deleted after its record does not make the
 record stale, and a glob there is a name, not a pattern.

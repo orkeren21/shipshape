@@ -972,8 +972,8 @@ shipshape_plan_rebind() { # <scratch>
 
 # Dropping a plan leaves a record, so it is something a reader meets rather than
 # a binding that quietly stopped existing. One for the session in this checkout,
-# and the doctor, shipshape-plan and shipshape-pr-open show it wherever they run:
-# the branch is a label to print, not a key that can stop matching. A session
+# and the doctor, shipshape-plan and shipshape-pr-open show it on any branch: the
+# branch is a label to print, not a key that can stop matching. A session
 # shipping two branches sees the other's clearing, which over-reports a note and
 # loses nothing.
 shipshape_plan_cleared() { # <scratch> -> "<plan> — <reason> (on <branch>)", if one was cleared
