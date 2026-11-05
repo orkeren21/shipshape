@@ -38,8 +38,9 @@ attempts, then a human.
 
 The priming names the epic folder; the folder's `roster/` directory is how
 sessions find each other. On start, learn both halves of your own identity —
-the session id (`shipshape-seat lane <ID> --epic "<absolute path>"` prints it,
-and records the seat so the hooks apply a lane's handoff point; elsewhere
+the session id (`shipshape-seat lane <feature ID> --epic "<absolute path>"`
+prints it, and records the seat so the hooks apply a lane's handoff point;
+elsewhere
 `get_session("self")` gives it), and the `ListAgents` header for the current
 harness name — and write them to your own file, `roster/<lane>.md`:
 
