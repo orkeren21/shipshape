@@ -137,7 +137,7 @@ async function readDecisions($: EngineInterface, path: string): Promise<string |
   }
 }
 
-export async function readEpic($: EngineInterface, epic: string): Promise<EpicView | null> {
+export async function readEpic($: EngineInterface, epic: string): Promise<EpicView> {
   try {
     const entries = await $.fs.list(`${epic}/roster`).catch(() => null)
     const roster: { name: string; text: string | null }[] | null = entries && []
@@ -147,7 +147,7 @@ export async function readEpic($: EngineInterface, epic: string): Promise<EpicVi
     }
     return epicView(roster, await readDecisions($, `${epic}/decisions.md`))
   } catch {
-    return null
+    return epicView(null, { unreadable: true })
   }
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { askFromTool, listedFrom, sessionsView, stripSeat } from '../hooks/sessions.ts'
+import { askFromTool, listedFrom, rowsFor, sessionsView, stripSeat } from '../hooks/sessions.ts'
 import type { RosterRow } from '../types'
 
 const NOW = Date.parse('2026-11-05T12:00:00Z')
@@ -8,7 +8,7 @@ const minutes = (n: number) => new Date(NOW - n * 60_000).toISOString()
 
 const raw = (id: string, over: Record<string, unknown> = {}) => ({ sessionId: id, title: `Session ${id}`, isRunning: false, isArchived: false, lastActivityAt: minutes(5), ...over })
 const reply = (value: unknown, over = {}) => ({ content: [{ type: 'text', text: JSON.stringify(value) }], ...over })
-const seat = (name: string, sessionId: string | null, over: Partial<RosterRow> = {}): RosterRow => ({ seat: name, status: 'active', sessionId, isDone: false, isArchitect: false, isUnreadable: false, ...over })
+const seat = (name: string, sessionId: string | null, over: Partial<RosterRow> = {}): RosterRow => ({ seat: name, status: 'active', sessionId, isDone: false, isArchitect: false, ...over })
 
 const list = (rows: Record<string, unknown>[]) => listedFrom(reply(rows)) ?? []
 const view = (rows: Record<string, unknown>[], over: Partial<Parameters<typeof sessionsView>[0]> = {}) =>
@@ -120,7 +120,19 @@ describe('seats', () => {
     expect(view([], { roster: [seat('F1', 'gone', { isDone: true, status: 'done' })] }).rows.map(r => r.state)).toEqual(['done'])
   })
   test('a seat file that could not be read says so', () => {
-    expect(view([], { roster: [seat('F2', null, { status: 'unreadable', isUnreadable: true })] }).rows[0]).toMatchObject({ state: 'unknown', title: 'unreadable' })
+    expect(view([], { roster: [seat('F2', null, { status: 'unreadable' })] }).rows[0]).toMatchObject({ state: 'unknown', title: 'unreadable' })
+  })
+})
+
+describe('what the pane lists', () => {
+  test('a reading is used as it stands', () => {
+    const got = view([raw('a')])
+    expect(rowsFor({ state: 'ok', asks: 'ok', ...got }, [seat('F9', 'x')], NOW).rows.map(r => r.key)).toEqual(['a'])
+  })
+  test('with no reading, or none yet, the seats on file still draw', () => {
+    for (const reading of [{ state: 'unavailable' } as const, null]) {
+      expect(rowsFor(reading, [seat('F9', 'x', { status: 'active' })], NOW).rows.map(r => [r.seat, r.state])).toEqual([['F9', 'unknown']])
+    }
   })
 })
 

@@ -126,7 +126,6 @@ async function refreshEpic($: EngineInterface): Promise<void> {
   isReadingEpic = true
   try {
     const view = await readEpic($, dir)
-    if (!view) return
     if (lastDoctor?.seat?.role === 'architect') {
       const before = await read($, seen)
       await update($, seen, () => ({ epic: dir, done: doneMap(view.rows) }))
@@ -167,6 +166,19 @@ async function publish($: EngineInterface, ask: { text: string } | null): Promis
   if (!hostId) return
   await publishAsk($, hostId, ask && { text: ask.text, at: await $.clock.now() })
   void refreshSessions($).catch(() => {})
+}
+
+// What the band shows now. The pane draws the same, since the app can take the
+// band away.
+async function bandNow($: EngineInterface) {
+  return bandModel({
+    doctor: await read($, doctor),
+    isUnavailable: (await read($, note)) !== null,
+    percent: await read($, percent),
+    notices: await read($, notices),
+    refining: (await read($, refining)) > 0,
+    now: await $.clock.now(),
+  })
 }
 
 // The doctor runs after tool calls that can change evidence, at most once
@@ -494,14 +506,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (isOff || e.props.hasSurvey) return next(e)
-    const model = bandModel({
-      doctor: await read($, doctor),
-      isUnavailable: (await read($, note)) !== null,
-      percent: await read($, percent),
-      notices: await read($, notices),
-      refining: (await read($, refining)) > 0,
-      now: await $.clock.now(),
-    })
+    const model = await bandNow($)
     // Other mods' bands draw beneath shipdeck's row. The engine's own
     // placeholder is never nested: the desktop drops a band that nests it.
     let drawn: unknown = null
@@ -538,9 +543,18 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const view = await read($, epic)
-    const seat = (await read($, doctor))?.seat
-    return paneTree(view, seat?.epic ?? null, await $.clock.now(), $.ui.resolve(e), e.props.bodyColumns || 60)
+    const d = await read($, doctor)
+    const view = {
+      band: await bandNow($),
+      style,
+      prs: d?.prs ?? [],
+      sessions: await read($, sessions),
+      epic: await read($, epic),
+      epicDir: d?.seat?.epic ?? null,
+      isArchitect: d?.seat?.role === 'architect',
+      now: await $.clock.now(),
+    }
+    return paneTree(view, $.ui.resolve(e), e.props.bodyColumns || 60, e.surface)
   })
 
   on('command.run', { command: 'refine' }, async ($, e) => {

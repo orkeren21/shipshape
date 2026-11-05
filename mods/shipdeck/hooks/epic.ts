@@ -1,5 +1,5 @@
-// An epic folder as the Architect pane shows it: the roster's seats, the
-// latest rulings, and which lanes reported done. Roster and decision files
+// An epic folder as the pane shows it: the roster's seats, the latest rulings,
+// and which lanes reported done. Roster and decision files
 // are written by sessions in prose, so the parsing takes every shape seen in
 // the field (key: value lines or bulleted **Key:** value; rulings as
 // **D1. Title.**, **D-067** · date · *title*, - **O49. title**, or ## headings).
@@ -23,13 +23,6 @@ function fields(text: string): Record<string, string> {
   return out
 }
 
-export function parseChecked(s: string | undefined): number | null {
-  const m = /(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(s ?? '')
-  if (!m) return null
-  const n = (i: number) => Number(m[i] ?? 0)
-  return Date.UTC(n(1), n(2) - 1, n(3), n(4), n(5), n(6))
-}
-
 export function firstClause(s: string, max = 28): string {
   const head = (s.split(/\s[(—–]|;|\.\s/)[0] ?? s).trim()
   return head.length > max ? `${head.slice(0, max - 1)}…` : head
@@ -48,7 +41,7 @@ export function parseRoster(files: { name: string; text: string | null }[]): Ros
     .flatMap((f): RosterRow[] => {
       const seat = f.name.replace(/\.md$/, '')
       if (f.text === null) {
-        return [{ seat, status: 'unreadable', sessionId: null, isDone: false, isArchitect: seat === 'architect', isUnreadable: true, checkedAt: null }]
+        return [{ seat, status: 'unreadable', sessionId: null, isDone: false, isArchitect: seat === 'architect' }]
       }
       const kv = fields(f.text)
       if (kv.role === undefined && kv['session id'] === undefined) return []
@@ -59,8 +52,6 @@ export function parseRoster(files: { name: string; text: string | null }[]): Ros
         sessionId: sessionIdOf(kv['session id']),
         isDone: /^done\b/i.test(status),
         isArchitect: seat === 'architect' || /^architect\b/i.test(kv.role ?? ''),
-        isUnreadable: false,
-        checkedAt: parseChecked(kv['name checked'] ?? kv['name last checked']),
       }]
     })
   return rows.sort((a, b) => Number(b.isArchitect) - Number(a.isArchitect) || a.seat.localeCompare(b.seat))

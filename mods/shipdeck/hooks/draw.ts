@@ -7,6 +7,7 @@
 
 import { ctxTone, describe, handoffPoints, prCount } from './band.ts'
 import type { BandModel, Leg, LegState, PrSummary, Style, Tone } from './model.ts'
+import type { SessionState } from '../types'
 
 const FONT = "-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',system-ui,sans-serif"
 
@@ -317,4 +318,20 @@ export function drawBand(m: BandModel, style: Style, maxWidth: number): Drawing 
     row = draw(m, fit)
   }
   return { ...row.svg(), alt: describe(m) }
+}
+
+const SESSION_WORDS: Record<SessionState, string> = { needs: 'needs you', working: 'working', idle: 'idle', unknown: 'state not known', done: 'done' }
+
+// A session's state in the pane, in the band's grammar: a mark 14 wide, set in
+// a slot as tall as a line of body text so it centres on the first line.
+export function sessionMark(state: SessionState): Drawing {
+  const [cx, cy, width, height] = [7, 10, 14, 20]
+  const body = {
+    needs: circle(cx, cy, 5.3, 'warn', 1.6) + circle(cx, cy, 2.3, 'warn'),
+    working: spinner(cx, cy, 5.2, 'warn', 1.8),
+    idle: circle(cx, cy, 2.6, 'faint'),
+    unknown: unknown(cx, cy),
+    done: circle(cx, cy, 6.2, 'ok') + check(cx, cy, 6.2, 'onFill', 1.5),
+  }[state]
+  return { source: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${CSS}${body}</svg>`, width, height, alt: SESSION_WORDS[state] }
 }

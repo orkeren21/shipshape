@@ -2,7 +2,7 @@
 // says, joined with the epic's seats and with what each session's own shipdeck
 // published when it asked something. Pure: core.ts does the reading.
 
-import type { Ask, ListedSession, RosterRow, SessionRow, SessionState } from '../types'
+import type { Ask, ListedSession, RosterRow, SessionRow, SessionsView, SessionState } from '../types'
 
 export type { Ask, ListedSession, SessionRow, SessionState }
 
@@ -98,6 +98,12 @@ export function sessionsView(input: {
   }
   const sorted = rows.sort((a, b) => ORDER[a.state] - ORDER[b.state] || (b.activeAt ?? 0) - (a.activeAt ?? 0))
   return { rows: sorted.slice(0, MAX_ROWS), more: Math.max(0, sorted.length - MAX_ROWS) }
+}
+
+// What the pane lists: the reading, or with none the seats on file, so a pane
+// outside the desktop app still shows the epic.
+export function rowsFor(view: SessionsView | null, roster: RosterRow[], now: number): { rows: SessionRow[]; more: number } {
+  return view?.state === 'ok' ? view : sessionsView({ listed: [], self: null, roster, asks: {}, now })
 }
 
 // What a tool call says about the session waiting on the operator: null when

@@ -28,8 +28,6 @@ export type RosterRow = {
   sessionId: string | null
   isDone: boolean
   isArchitect: boolean
-  isUnreadable: boolean
-  checkedAt: number | null
 }
 
 // What a read gave: `empty` is a read that found nothing, `unreadable` one that

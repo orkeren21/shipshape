@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { doneMap, epicView, firstClause, newlyDone, parseChecked, parseRulings, rulingParts } from '../hooks/epic.ts'
+import { doneMap, epicView, firstClause, newlyDone, parseRulings, rulingParts } from '../hooks/epic.ts'
 import { readEpic } from '../hooks/core.ts'
 
 // Synthetic files in each shape seen in real epics.
@@ -39,8 +39,6 @@ describe('roster', () => {
     expect(arch?.status).toBe('active')
     expect(f02?.status).toBe('handed-off')
     expect(f1?.isDone).toBe(true)
-    expect(arch?.checkedAt).toBe(Date.parse('2026-11-03T10:05:00Z'))
-    expect(f02?.checkedAt).toBe(Date.parse('2026-11-01T00:00:00Z'))
   })
   test('done lists the lanes that reported done', () => {
     expect(view.done).toEqual(['f1-fixture'])
@@ -61,17 +59,13 @@ describe('roster', () => {
   })
   test('a seat file that could not be read is unreadable, not blank and not gone', () => {
     const { rows, roster } = epicView([{ name: 'F2.md', text: null }, { name: 'F3.md', text: 'role: lane F3\nstatus: active' }], null)
-    expect(rows.map(r => [r.seat, r.status, r.isUnreadable])).toEqual([['F2', 'unreadable', true], ['F3', 'active', false]])
+    expect(rows.map(r => [r.seat, r.status])).toEqual([['F2', 'unreadable'], ['F3', 'active']])
     expect(roster).toBe('ok')
   })
   test('a status keeps its first clause', () => {
     expect(firstClause('done (epic closed 2026-09-27; next epic has its own)')).toBe('done')
     expect(firstClause('EPIC COMPLETE (2026-08-31, PRs merged)')).toBe('EPIC COMPLETE')
     expect(firstClause('a status that goes on far longer than the column holds')).toBe('a status that goes on far l…')
-  })
-  test('dates without a time, and garbage', () => {
-    expect(parseChecked('2026-08-30')).toBe(Date.parse('2026-08-30T00:00:00Z'))
-    expect(parseChecked('yesterday')).toBeNull()
   })
 })
 
