@@ -32,6 +32,10 @@ describe('reading the list', () => {
     expect(listedFrom(reply({ sessions: [raw('a')] }))).toBeNull()
     expect(listedFrom(reply([{ id: 'renamed', title: 'x' }]))).toBeNull()
   })
+  test('the app\'s prose for no sessions is an empty list, not a failed read', () => {
+    expect(listedFrom({ content: [{ type: 'text', text: 'No other sessions found.' }] })).toEqual([])
+    expect(listedFrom({ content: [{ type: 'text', text: 'No other sessions found in group "x".' }] })).toEqual([])
+  })
   test('a single session reads as a list of one', () => {
     expect(listedFrom(reply(raw('a')))?.map(s => s.id)).toEqual(['a'])
   })
@@ -109,6 +113,7 @@ describe('a question that has lapsed', () => {
   })
   test('a draft is not finished, and neither is any state but merged or closed', () => {
     expect(view([raw('a', { prNumber: 15, prState: 'DRAFT' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('needs')
+    expect(view([raw('a', { prNumber: 15, prState: 'QUEUED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('needs')
     expect(view([raw('a', { prNumber: 15, prState: 'CLOSED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('idle')
   })
   test('an idle session holding a draft stays, however old', () => {

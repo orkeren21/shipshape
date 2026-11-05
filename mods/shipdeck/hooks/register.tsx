@@ -34,8 +34,8 @@ const READ_BOUND_MS = 30_000
 // about 0.7 s on the desktop (measured: claude plugin list, then the doctor).
 const FIRST_READING_MS = 5_000
 const MAX_UNWRITTEN = 50
-// One publish waits for the one before, so one that never ends must not hold
-// the rest: the get's 5 s, then the store.
+// One publish waits for the one before, so this is how long it holds the rest.
+// It lets go and does not cancel: a store slower than this can still land late.
 const PUBLISH_MS = 8_000
 
 // Change a shape tag when its value's fields change: it declines what an
@@ -135,7 +135,8 @@ async function refreshEpic($: EngineInterface): Promise<void> {
   isReadingEpic = true
   try {
     const view = await readEpic($, dir)
-    if (lastDoctor?.seat?.role === 'architect') {
+    // A roster that could not be read says nothing about who finished.
+    if (lastDoctor?.seat?.role === 'architect' && view.roster === 'ok') {
       const before = await read($, seen)
       await update($, seen, () => ({ epic: dir, done: doneMap(view.rows) }))
       for (const lane of newlyDone(before?.epic === dir ? before.done : null, view.rows)) await addNotice($, `${lane} done`)
@@ -182,7 +183,8 @@ async function openPane($: EngineInterface) {
 // every session to read. Only moments shipdeck can see: a turn's closing
 // question and AskUserQuestion. With no app session id there is no list to be in.
 function publish($: EngineInterface, ask: { text: string } | null): Promise<void> {
-  publishing = publishing.then(() => upTo($, writeAsk($, ask), PUBLISH_MS)).then(() => {}, () => trace($, 'pane', 'a question could not be published'))
+  const failed = () => trace($, 'pane', 'a question could not be published')
+  publishing = publishing.then(() => upTo($, writeAsk($, ask).then(() => true), PUBLISH_MS)).then(done => (done ? undefined : failed()), failed)
   return publishing
 }
 

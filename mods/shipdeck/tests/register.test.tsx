@@ -64,7 +64,7 @@ type World = {
   modelThrows?: boolean
   openThrows?: boolean
   // What the app's session tools answer; absent, there is no such server.
-  listed?: unknown[]
+  listed?: unknown[] | string
   self?: unknown
   mcpHangs?: boolean
   // What the plugin store holds, and whether it refuses.
@@ -173,7 +173,7 @@ function world(on: On, w: World = {}) {
     if (value === undefined) throw new Error('no such server')
     seen.mcp.push(`${e.server}/${e.tool}`)
     seen.mcpArgs.push(e.args)
-    return { value: { content: [{ type: 'text', text: JSON.stringify(value) }] } } as never
+    return { value: { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] } } as never
   })
   on('store.keys', () => {
     if (w.storeThrows) throw new Error('refused')
@@ -206,7 +206,8 @@ function world(on: On, w: World = {}) {
   })
   on('turn.start', (_, e) => ({ turnId: e.turnId }) as never)
   on('session.attach', async (_, e) => {
-    // The engine's roster changes a macrotask on, so a read racing it loses.
+    // A roster that changes a macrotask on, which the types do not rule out: a
+    // read racing it would lose.
     await new Promise(resolve => setTimeout(resolve, 0))
     w.onAttach?.()
     return { clientId: e.clientId } as never
@@ -1948,4 +1949,69 @@ test('a publish that never ends lets go, and the next still lands', async ($, on
   await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Still there?' } as never)
   await clock.settle()
   expect(Object.keys(w.store ?? {})).toEqual(['ask/local_me'])
+})
+
+test('alone in the app, the pane shows this session and says nothing is wrong', async ($, on) => {
+  const { clock } = world(on, opened({ doctor: doctorJson({ seat: null }), listed: 'No other sessions found.' }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /This one/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /Could not read the session list/ })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('a done lane whose PR closed unmerged says so', async ($, on) => {
+  const { clock } = world(on, paneWorld({
+    listed: [{ ...ASKING, sessionId: 'local_gone', prNumber: 14, prState: 'CLOSED' }],
+    store: {},
+    files: { ...ROSTER, '/epic/roster/F1.md': 'role: lane F1\nsession id: local_gone\nstatus: done' },
+  }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /^#14 closed$/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('a question asked over a draft lapses when it merges', async ($, on) => {
+  const w = app({ self: { ...SELF, prNumber: 17, prState: 'DRAFT' } })
+  const { clock } = world(on, w)
+  await start($, clock)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Ready?' } as never)
+  await clock.settle()
+  expect(w.store).toEqual({ 'ask/local_me': { text: 'Ready?', at: NOW, prOpen: true } })
+})
+
+test('a store read that never answers lets the list go on, and says it could not read the questions', async ($, on) => {
+  const w = paneWorld({ storeHangs: true })
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  await clock.advance(15_000)
+  await clock.advance(5_000)
+  w.storeHangs = false
+  seen.mcp.length = 0
+  await clock.advance(10_000)
+  expect(seen.mcp).toContain('ccd_session_mgmt/list_sessions')
+})
+
+test('a publish that outlasts its bound leaves a line in the trace', async ($, on) => {
+  const w = app({ env: { CLAUDE_CODE_HOST_SESSION_ID: 'local_me' }, storeHangs: true })
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  await $.turn.start({ text: '', turnId: 't1' } as never)
+  await clock.settle()
+  await clock.advance(8_000)
+  await clock.settle()
+  expect(seen.traces.some(t => t.includes('a question could not be published'))).toBe(true)
+})
+
+test('one roster miss does not raise a finished lane as news again', async ($, on) => {
+  const files = { '/epic/roster/f1.md': 'role: lane f1\nstatus: done', '/epic/decisions.md': '' }
+  const w: World = { doctor: doctorJson({ seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }), files, dirs: { '/epic/roster': ['f1.md'] } }
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  w.dirs = {}
+  await clock.advance(30_000)
+  w.dirs = { '/epic/roster': ['f1.md'] }
+  await clock.advance(30_000)
+  expect(seen.toasts.some(t => t.includes('f1 done'))).toBe(false)
 })

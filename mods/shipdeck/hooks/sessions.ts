@@ -16,9 +16,9 @@ const MAX_ASK = 140
 // A question nobody answered for this long is not one the pane should lead with.
 const ASK_MAX_MS = 7 * 24 * 60 * 60 * 1000
 
-// Open in the wide sense: everything but finished, draft included. The app's
-// renderer knows states the list has not yet shown, and only `merged` and
-// `closed` say a PR is done with.
+// Open in the wide sense: everything but finished. The app's bundle knows states
+// the list has not yet shown (`queued`), and only `merged` and `closed` say a PR
+// is done with.
 export function isPrLive(pr: { state: string }): boolean {
   return pr.state !== 'merged' && pr.state !== 'closed'
 }
@@ -50,6 +50,9 @@ export function listedFrom(result: unknown): ListedSession[] | null {
   const { content, isError } = (result ?? {}) as { content?: unknown; isError?: unknown }
   if (isError === true || !Array.isArray(content)) return null
   const text = content.map(b => (b && typeof b === 'object' && 'text' in b ? String(b.text) : '')).join('')
+  // With no other sessions the app answers in prose, not `[]` (seen live for a
+  // group of none on 2.1.317; the plain string is from the app bundle).
+  if (text.trim().startsWith('No other sessions found')) return []
   try {
     const value = JSON.parse(text) as unknown
     const rows = Array.isArray(value) ? value : [value]
@@ -115,8 +118,8 @@ export function sessionsView(input: {
     })
   }
   // A seat whose session the list does not hold still draws, with what its file
-  // says, unless it is done: that session has gone, archived or aged out, and
-  // there is nothing left to show of it.
+  // says. A done one does not, once a list was read: its session has gone,
+  // archived or aged out, and there is nothing left to show of it.
   const shown = new Set(live.map(s => s.id))
   for (const seat of roster) {
     if ((isListRead && seat.isDone) || (seat.sessionId && shown.has(seat.sessionId))) continue

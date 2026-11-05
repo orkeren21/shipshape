@@ -158,8 +158,8 @@ export async function readEpic($: EngineInterface, epic: string): Promise<EpicVi
 // every call here fails soft into "unavailable", which the pane says plainly.
 const SESSIONS = 'ccd_session_mgmt'
 // A session waiting on the operator is by definition not recent, so the list is
-// read long and the pane's own rules do the cutting. It costs nothing to: 60 rows
-// came back in 109 to 128 ms, the same as 20 (2.1.317).
+// read long and the pane's own rules do the cutting. 60 rows came back in 109 to
+// 128 ms, the same as 20 (2.1.317).
 const LIST_LIMIT = 200
 const SESSION_CALL_MS = 5_000
 const ASK_KEY = 'ask/'
@@ -200,7 +200,7 @@ export async function readSessions($: EngineInterface, roster: RosterRow[]): Pro
   if (!listed) return { state: 'unavailable' }
   // The list leaves out the session asking, so this one is read on its own.
   const self = await readSelf($)
-  const asks = await readAsks($)
+  const asks = (await upTo($, readAsks($), SESSION_CALL_MS)) ?? null
   const now = await $.clock.now()
   return { state: 'ok', ...sessionsView({ listed, self, roster, asks: asks ?? {}, now }), asks: asks ? 'ok' : 'unreadable' }
 }

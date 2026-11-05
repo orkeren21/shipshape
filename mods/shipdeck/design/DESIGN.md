@@ -340,8 +340,8 @@ hanging indent from the mark, in body type:
 - Idle and done titles are muted: what is moving should read first.
 - The right-hand column holds the PR and the time at rest, tabular, in muted
   footnote, and never wraps: `#15 · 2m`, `#14 merged · 3h`. Under `Done` a
-  merged PR is the bare number, and any other says its state: `#17 open`, since
-  that merge is still owed.
+  merged PR is the bare number, and any other says its state: `#17 open` still
+  owes a merge. A row shows the one PR the app's list gives for a session.
 
 **Session marks**, 14 wide in a line-tall slot, so they centre on the first
 line:
