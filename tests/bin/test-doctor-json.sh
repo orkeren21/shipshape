@@ -314,6 +314,7 @@ printf 'url=https://x/pull/58\nnumber=58\nbranch=%s\n' "$branch" > "$scratch/pr-
 out="$(json)"
 assert_eq "57" "$(jget "$out" prs.0.number)" "the first PR"
 assert_eq "satisfied" "$(jget "$out" prs.0.state)" "satisfied at HEAD"
+assert_not_contains "$(text)" "freshness is not judged" "a stamp checked against a tip is judged"
 assert_eq "https://x/pull/57" "$(jget "$out" prs.0.url)" "with its url"
 assert_eq "58" "$(jget "$out" prs.1.number)" "the second PR"
 assert_eq "owing" "$(jget "$out" prs.1.state)" "owing evidence"
@@ -325,6 +326,24 @@ printf 'head=deadbeefdeadbeef\nbranch=%s\n' "$branch" > "$scratch/pr-satisfied-6
 out="$(json)"
 assert_eq "stale" "$(jget "$out" prs.0.state)" "a stamp at an old head is stale"
 assert_contains "$(text)" "PR #60 (https://x/pull/60, branch $branch) — STALE" "and the text mode agrees"
+rm -f "$scratch"/pr-armed-* "$scratch"/pr-satisfied-*
+
+# A branch git cannot resolve has no tip left to outrun the stamp, and the doctor
+# says what the gates do: the merge gate would let this through.
+printf 'url=https://x/pull/61\nnumber=61\nbranch=gone-lane\n' > "$scratch/pr-armed-61"
+printf 'head=%s\nbranch=gone-lane\n' "$head" > "$scratch/pr-satisfied-61"
+out="$(json)"
+assert_eq "satisfied" "$(jget "$out" prs.0.state)" "a stamp on a deleted branch stays satisfied"
+assert_not_contains "$(text)" "STALE" "and the text mode agrees"
+assert_contains "$(text)" "no tip here or on origin, so its freshness is not judged" \
+  "and says the stamp went unjudged, as the merge gate's trace does"
+
+# The tracking ref is the tip once the local branch is gone, as in the gates.
+moved="$(git -C "$repo" commit-tree -m "moved on origin" "$head^{tree}")"
+git -C "$repo" update-ref refs/remotes/origin/gone-lane "$moved"
+out="$(json)"
+assert_eq "stale" "$(jget "$out" prs.0.state)" "a tracking ref past the stamp is stale"
+git -C "$repo" update-ref -d refs/remotes/origin/gone-lane
 rm -f "$scratch"/pr-armed-* "$scratch"/pr-satisfied-*
 
 # A record with no url keeps its other fields in place: an empty field must

@@ -161,6 +161,16 @@ shipshape_enabled() {
   return 0
 }
 
+# The commit a pull request's branch points at, or nothing. A branch this
+# checkout deleted can still be open on the remote, so the remote-tracking ref is
+# its tip once the local one is gone. --verify is what makes the answer empty: a
+# bare rev-parse prints a name it cannot resolve and exits 128 (git 2.50.1). Both
+# gates and the doctor read this, so they cannot disagree about a stamp.
+shipshape_branch_tip() { # <branch>
+  git rev-parse --verify --quiet "$1" 2>/dev/null ||
+    git rev-parse --verify --quiet "refs/remotes/origin/$1" 2>/dev/null
+}
+
 # One line per event, appended to the session's trace log. This is what makes a
 # fail-open gate answerable after the fact: it says what it saw and what it did.
 shipshape_trace() {

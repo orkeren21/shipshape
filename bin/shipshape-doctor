@@ -106,7 +106,7 @@ while IFS= read -r record_file; do
   else
     stamp_head="$(field "$stamp" head)"
     stamp_branch="$(field "$stamp" branch)"
-    [ -n "$stamp_branch" ] && branch_head="$(git rev-parse "$stamp_branch" 2>/dev/null)"
+    [ -n "$stamp_branch" ] && branch_head="$(shipshape_branch_tip "$stamp_branch")"
     if [ -n "$branch_head" ] && [ "$stamp_head" != "$branch_head" ]; then
       rec_state="stale"
     else
@@ -301,6 +301,7 @@ while IFS="$sep" read -r n url br st stamp_head branch_head; do
       printf 'PR #%s (%s, branch %s) — SATISFIED at %s\n' \
         "$n" "${url:-url unrecorded}" "${br:-unknown}" \
         "$(printf '%s' "$stamp_head" | cut -c1-8)"
+      [ -n "$branch_head" ] || printf '  no tip here or on origin, so its freshness is not judged\n'
       printf '  merge gate: would allow the merge\n'
       ;;
   esac

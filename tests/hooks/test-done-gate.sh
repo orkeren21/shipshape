@@ -408,6 +408,71 @@ assert_eq "block" "$(hook_field "$out" decision)" \
 
 export SHIPSHAPE_SCRATCH_ROOT="$outer_cascade_root"
 
+# --- a stamped PR with no branch tip left is settled -------------------------
+#
+# With no tip here or on origin, nothing is left to outrun the stamp. The
+# branch is really deleted here because the bug lived in what git does with the
+# missing name: it prints the name and exits 128, and the name read as a tip.
+
+gone="$work/gone-branch-repo"
+make_repo "$gone"
+outer_gone_root="$SHIPSHAPE_SCRATCH_ROOT"
+export SHIPSHAPE_SCRATCH_ROOT="$gone"
+gscratch="$gone/.shipshape/$session"
+mkdir -p "$gscratch"
+
+stamp_lane() { # <number> <branch>: a PR opened and stamped at the branch's tip
+  printf 'url=https://x/pull/%s\nnumber=%s\nbranch=%s\nepoch=%s\n' \
+    "$1" "$1" "$2" "$(date -u +%s)" > "$gscratch/pr-armed-$1"
+  printf 'head=%s\nbranch=%s\nepoch=%s\n' \
+    "$(git -C "$gone" rev-parse "$2")" "$2" "$(date -u +%s)" > "$gscratch/pr-satisfied-$1"
+}
+
+git -C "$gone" checkout -q -b gone-lane
+git -C "$gone" commit -q --allow-empty -m "the lane's work"
+stamp_lane 21 gone-lane
+git -C "$gone" checkout -q -
+git -C "$gone" branch -q -D gone-lane
+
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$gone")"
+assert_eq "" "$(hook_field "$out" systemMessage)" \
+  "a stamped PR whose branch was deleted is not nudged about as owing"
+assert_contains "$(cat "$gscratch/trace.log")" "gone-lane has no tip here or on origin" \
+  "and the trace says freshness went unjudged"
+
+# The fail-open is for a branch that is gone. One that moved past its stamp owes.
+git -C "$gone" checkout -q -b moved-lane
+stamp_lane 22 moved-lane
+git -C "$gone" commit -q --allow-empty -m "a later commit"
+git -C "$gone" checkout -q -
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$gone")"
+nudge="$(hook_field "$out" systemMessage)"
+assert_contains "$nudge" "PR #22" "a branch that moved past its stamp still owes"
+assert_not_contains "$nudge" "PR #21" "and the deleted one is still not listed beside it"
+assert_not_contains "$(cat "$gscratch/trace.log")" "moved-lane has no tip" \
+  "a branch with a tip is judged, so the trace does not call it unjudged"
+
+# Deleting the local branch of a PR that moved on the remote does not settle it.
+git init -q --bare "$work/gone-origin.git"
+git -C "$gone" remote add origin "$work/gone-origin.git"
+git -C "$gone" checkout -q -b pushed-lane
+stamp_lane 23 pushed-lane
+git -C "$gone" commit -q --allow-empty -m "a commit the stamp never saw"
+git -C "$gone" push -q origin pushed-lane
+git -C "$gone" checkout -q -
+git -C "$gone" branch -q -D pushed-lane
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$gone")"
+assert_contains "$(hook_field "$out" systemMessage)" "PR #23" \
+  "a deleted branch whose tip moved on origin still owes"
+
+# So does a deleted branch that never earned a stamp.
+rm -f "$gscratch/pr-satisfied-21"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$gone")"
+assert_contains "$(hook_field "$out" systemMessage)" "PR #21" \
+  "a deleted branch with no stamp still owes: only an earned stamp is settled"
+
+export SHIPSHAPE_SCRATCH_ROOT="$outer_gone_root"
+
 # --- the nudge repeats only when the state changes ---------------------------
 #
 # The field complaint: a merge-queue monitor ends a turn per event, and the

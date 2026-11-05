@@ -45,7 +45,7 @@ record behind as a side effect. The record cannot exist without the work.
 | Hook | Event | What it does |
 |---|---|---|
 | `done-gate` | `Stop` | Arms per pull request, one obligation record each, so a cascade's second PR cannot evaporate the first one's debt. Disarms a record only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD** — and, with a plan bound, a passing, current verify record for every task in scope, and stamps it `pr-satisfied-<n>` for the merge gate. A "No" from any report that landed after the newest background review was launched still blocks: that review was sent before those findings existed. A foreground review is dated when it returns, so for it the rule reaches only a "No" that landed after it returned. The soft nudge speaks when the outstanding state changes and stays silent while it does not; the hard block on a completion claim never dedupes. On a branch other than the record's it nudges but does not block, and it never disarms. |
-| `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp, and, on the PR's own branch, while a review report the done gate would still count says No (a reasoned review waiver is honoured, as the done gate honours it). A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. |
+| `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp, one still at the branch's tip, read from the local branch or, once that is gone, from `origin`'s tracking ref (limits under *Where enforcement stops*). It also refuses, on the PR's own branch, while a review report the done gate would still count says No (a reasoned review waiver is honoured, as the done gate honours it). A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. |
 | `review-capture` | `PostToolUse`, `SubagentStop` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:` — at once for a foreground dispatch, and for a background one (in the field since late October 2026 the only kind the desktop app launches) when that agent stops, matched by its agent id and dated at its launch, so commits made while it read leave it stale. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
 | `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create` and hands back the `shipshape-pr-open` form. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. |
 | `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, at the seat's handoff point: 70/85% for a lane or solo session, 85/92% for an Architect. Worded as actions, with no prohibitions to echo back; the operator gets the number in a one-line `systemMessage`, so the session has nothing to announce. |
@@ -234,6 +234,17 @@ as editing one: `shipshape-plan` prints what it replaced and keeps nothing. A la
 that same plan. And `files` is
 only as good as what it lists: a file deleted after its record does not make the
 record stale, and a glob there is a name, not a pattern.
+
+A stamp's freshness is read from refs in this checkout, never from GitHub, and no gate
+fetches. While the local branch stands only it counts, so a push from elsewhere is
+invisible, fetched or not. Once the local branch is gone `origin`'s tracking ref counts,
+so that push shows only after a fetch, and a stale tracking ref still at the stamp reads
+settled. Only `origin` is read: a branch pushed to a remote of another name has no tip
+here once its local branch is gone. A branch with neither, such as one deleted and pruned
+after its merge, leaves nothing to compare, so its stamp stands, and the trace and the
+doctor's report say it went unjudged. A local branch moved back to its stamp with
+`git branch -f` passes, and so does a moved branch deleted along with its tracking ref.
+The name resolves as git resolves any name, so a tag sharing it outranks the branch.
 
 ## The pipeline
 

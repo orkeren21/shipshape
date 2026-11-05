@@ -111,6 +111,64 @@ assert_eq "merge_gate_stale" "$(hook_field "$out" shipshapeCode)" "named as stal
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "stale" \
   "and the reason says the evidence no longer describes the branch"
 
+# With no tip here or on origin, nothing is left to outrun the stamp, so it stands.
+# The branch is really deleted here because the bug lived in what git does with
+# the missing name: it prints the name and exits 128, and the name read as a tip.
+git -C "$repo" checkout -q -b gone-lane
+git -C "$repo" commit -q --allow-empty -m "the lane's work"
+give_record 60 gone-lane
+give_stamp 60 "$(git -C "$repo" rev-parse HEAD)" gone-lane
+git -C "$repo" checkout -q "$main_branch"
+git -C "$repo" branch -q -D gone-lane
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 60")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a stamped PR whose branch was deleted merges"
+assert_eq "" "$(hook_field "$out" shipshapeCode)" "and is not named as stale"
+assert_contains "$(cat "$scratch/trace.log")" "gone-lane has no tip here or on origin" \
+  "and the trace says freshness went unjudged"
+assert_not_contains "$(cat "$scratch/trace.log")" "allowed: PR #60 satisfied" \
+  "and no judged-sounding allow follows it"
+rm -f "$scratch/pr-armed-60" "$scratch/pr-satisfied-60"
+
+# `git branch -D` is routine cleanup and leaves the PR open on the remote, so
+# the fail-open is only for a branch with no tip here or on origin. A real push
+# and a real delete, because the case rests on the tracking ref outliving the
+# branch.
+git init -q --bare "$work/origin.git"
+git -C "$repo" remote add origin "$work/origin.git"
+git -C "$repo" checkout -q -b pushed-lane
+git -C "$repo" commit -q --allow-empty -m "the work the stamp saw"
+stamped="$(git -C "$repo" rev-parse HEAD)"
+give_record 61 pushed-lane
+give_stamp 61 "$stamped" pushed-lane
+git -C "$repo" push -q origin pushed-lane
+git -C "$repo" checkout -q "$main_branch"
+git -C "$repo" branch -q -D pushed-lane
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 61")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a deleted branch still at its stamp on origin merges"
+assert_not_contains "$(cat "$scratch/trace.log")" "pushed-lane has no tip" \
+  "and a tip read from origin is judged, so the trace does not call it unjudged"
+
+# The local branch outranks the tracking ref while it stands.
+git -C "$repo" checkout -q -b pushed-lane "$stamped"
+git -C "$repo" commit -q --allow-empty -m "a commit the stamp never saw"
+moved="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" checkout -q "$main_branch"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 61")" "$repo")"
+assert_eq "merge_gate_stale" "$(hook_field "$out" shipshapeCode)" \
+  "a local branch past its stamp is stale, though origin's tracking ref is still at it"
+
+git -C "$repo" push -q origin pushed-lane
+git -C "$repo" branch -q -D pushed-lane
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 61")" "$repo")"
+assert_eq "merge_gate_stale" "$(hook_field "$out" shipshapeCode)" \
+  "deleting the local branch does not hide a tip that moved past the stamp"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
+  "pushed-lane now points at $(printf '%s' "$moved" | cut -c1-8)" "and the refusal names the real tip"
+git -C "$repo" remote remove origin
+rm -f "$scratch/pr-armed-61" "$scratch/pr-satisfied-61"
+
 # --- foreign: no record at all is a refusal, not a pass ----------------------
 
 out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 444")" "$repo")"
