@@ -4,8 +4,8 @@
 #   shipshape-pr-open [any gh pr create arguments]
 #
 # Transparent: the arguments, the output and the exit code are gh's. The only
-# addition is .shipshape/<session>/pr-armed, written when — and only when — a
-# PR was actually created.
+# addition is .shipshape/<session>/pr-armed, written when a PR was created, or
+# may have been: --web leaves that to the browser.
 #
 # That file is what makes the done gate un-evadable by phrasing. The gate does
 # not look for the words "I opened a PR"; it looks for the artifact that
@@ -39,13 +39,30 @@ status=$?
 
 printf '%s\n' "$out"
 
+pull_url="$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*/pull/[0-9][0-9]*' | tail -1)"
+
+# What gh printed decides, never the arguments: a body of "-h" still opens a PR.
+#
+# gh can make the PR and then fail on what comes after, such as a reviewer. It
+# prints the URL, and a retry says the PR exists and exits 1, so this is the one
+# chance to arm. Any other failure opened nothing, even one that names a PR.
 if [ "$status" -ne 0 ]; then
-  shipshape_trace pr-open "gh pr create exited $status; nothing armed"
+  if [ -z "$pull_url" ] || ! grep -q 'pull request update failed' <<<"$out"; then
+    shipshape_trace pr-open "gh pr create exited $status; nothing armed"
+    exit "$status"
+  fi
+fi
+
+# Its help and a dry run exit 0 too and open nothing, and either can carry a URL.
+# Real creation prints neither line. If gh rewords them the run arms, which is
+# the safe way round. A here-string, not a pipe: with pipefail, grep -q leaving
+# early kills a long printf, and the pipeline reads as no match.
+if grep -qE '^(Would have created a Pull Request with:|  gh pr create \[flags\])$' <<<"$out"; then
+  shipshape_trace pr-open "gh opened no pull request; nothing armed"
   exit "$status"
 fi
 
-# gh prints the PR URL on success; keep the last URL-looking line.
-url="$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*' | tail -1)"
+url="${pull_url:-$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*' | tail -1)}"
 
 scratch="$(shipshape_scratch_dir)"
 
@@ -86,4 +103,4 @@ fi
 if [ -z "$(shipshape_plan_field "$scratch" path)" ]; then
   echo "shipshape-pr-open: no plan is bound, so nothing holds this branch to one. If it has a plan: shipshape-plan \"<path>\"" >&2
 fi
-exit 0
+exit "$status"

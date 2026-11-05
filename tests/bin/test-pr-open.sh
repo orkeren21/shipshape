@@ -144,4 +144,96 @@ status=$?
 assert_ne "0" "$status" "with no gh on PATH the wrapper fails rather than pretending"
 assert_no_file "$scratch/pr-armed" "a missing gh arms nothing"
 
+# --- no pull request, no arming ----------------------------------------------
+# gh exits 0 for its help and for a dry run, and both can carry a URL. Neither
+# opened anything, and a record of one reads as a PR for the rest of the session.
+# These outputs are real gh's. The decision reads them, never the arguments.
+
+export GH_STUB_CREATE_OUTPUT="Create a pull request on GitHub.
+
+USAGE
+  gh pr create [flags]
+
+LEARN MORE
+  Read the manual at https://cli.github.com/manual"
+export SHIPSHAPE_SESSION_ID=help-session
+"$pr_open" --help=true >/dev/null 2>&1
+assert_eq "0" "$?" "help keeps gh's status"
+assert_no_file "$work/.shipshape/help-session/pr-armed" "help opens nothing, however it's spelled"
+
+export GH_STUB_CREATE_OUTPUT="Would have created a Pull Request with:
+title:	Follow up on #30
+body:
+See https://github.com/acme/widget/pull/30"
+export SHIPSHAPE_SESSION_ID=dry-session
+"$pr_open" --title t --dry-run >/dev/null 2>&1
+assert_eq "0" "$?" "a dry run keeps gh's status"
+assert_no_file "$work/.shipshape/dry-session/pr-armed" "a dry run opens nothing, so it arms nothing"
+assert_no_file "$work/.shipshape/dry-session/pr-armed-30" "and a PR its body links stays another PR's"
+
+# Long enough that a pipe into grep -q would die early and read as no match.
+long_file="$work/long-output"
+{ printf "Would have created a Pull Request with:\nbody:\n"; head -c 200000 /dev/zero | tr "\0" x; printf "\nSee https://github.com/acme/widget/pull/30\n"; } > "$long_file"
+unset GH_STUB_CREATE_OUTPUT
+export GH_STUB_CREATE_OUTPUT_FILE="$long_file"
+export SHIPSHAPE_SESSION_ID=long-session
+"$pr_open" --title t --dry-run >/dev/null 2>&1
+assert_no_file "$work/.shipshape/long-session/pr-armed-30" "a long dry run arms nothing either"
+unset GH_STUB_CREATE_OUTPUT_FILE
+
+# The arguments can't decide: a body of "-h" still opens a PR, and a wrapper that
+# trusted the flag would let it go unrecorded.
+unset GH_STUB_CREATE_OUTPUT
+export GH_STUB_PR_URL="https://github.com/acme/widget/pull/77"
+export SHIPSHAPE_SESSION_ID=flag-session
+"$pr_open" --title t --body -h >/dev/null 2>&1
+assert_file "$work/.shipshape/flag-session/pr-armed-77" "a real PR arms, whatever its arguments look like"
+
+# A browser flow prints no URL here, and the PR may yet exist.
+export GH_STUB_CREATE_OUTPUT="Opening github.com/acme/widget/compare/main...feature in your browser."
+export SHIPSHAPE_SESSION_ID=web-session
+"$pr_open" --web --body -h >/dev/null 2>&1
+assert_contains "$(cat "$work/.shipshape/web-session/pr-armed" 2>/dev/null)" "number=unknown-" "an unnumbered obligation beats an evaporated one"
+
+# The PR's URL wins over any other URL gh prints after it.
+export GH_STUB_CREATE_OUTPUT="https://github.com/acme/widget/pull/78
+See https://cli.github.com/manual"
+export SHIPSHAPE_SESSION_ID=url-session
+"$pr_open" --title t >/dev/null 2>&1
+assert_contains "$(cat "$work/.shipshape/url-session/pr-armed-78" 2>/dev/null)" "url=https://github.com/acme/widget/pull/78" "the record names the PR, not the last URL printed"
+
+# --- a PR gh made, then failed on -------------------------------------------
+# Labels, reviewers and the like come after creation. gh prints the URL, then
+# fails. The PR exists, and a retry says so and exits 1, so this is the one chance.
+
+export GH_STUB_CREATE_EXIT=1
+export GH_STUB_CREATE_OUTPUT="https://github.com/acme/widget/pull/79
+pull request update failed: could not request reviewer"
+export SHIPSHAPE_SESSION_ID=late-session
+"$pr_open" --title t --reviewer acme/team >/dev/null 2>&1
+assert_eq "1" "$?" "gh's failure still reaches the caller"
+assert_file "$work/.shipshape/late-session/pr-armed-79" "a PR gh made before failing is armed"
+
+export GH_STUB_CREATE_EXIT=4
+export GH_STUB_CREATE_OUTPUT="a pull request for branch feature already exists:
+https://github.com/acme/widget/pull/80"
+export SHIPSHAPE_SESSION_ID=exists-session
+"$pr_open" --title t >/dev/null 2>&1
+assert_eq "4" "$?" "any other failure keeps gh's status"
+assert_no_file "$work/.shipshape/exists-session/pr-armed" "another failure that names a PR opened nothing"
+# Long output after the update failure: a pipe here would lose the PR.
+{ printf "https://github.com/acme/widget/pull/81\npull request update failed: reviewer\n"; head -c 200000 /dev/zero | tr "\0" x; printf "\n"; } > "$long_file"
+export GH_STUB_CREATE_EXIT=1 GH_STUB_CREATE_OUTPUT_FILE="$long_file" SHIPSHAPE_SESSION_ID=late-long-session
+"$pr_open" --title t >/dev/null 2>&1
+assert_file "$work/.shipshape/late-long-session/pr-armed-81" "a long failure that made a PR still arms"
+unset GH_STUB_CREATE_OUTPUT_FILE
+# The no-PR exit is gh's too, when gh failed.
+export GH_STUB_CREATE_EXIT=3 SHIPSHAPE_SESSION_ID=failed-dry-session
+export GH_STUB_CREATE_OUTPUT="Would have created a Pull Request with:
+https://github.com/acme/widget/pull/82
+pull request update failed: reviewer"
+"$pr_open" --title t --dry-run >/dev/null 2>&1
+assert_eq "3" "$?" "a run that opened nothing keeps a failing status"
+unset GH_STUB_CREATE_EXIT GH_STUB_CREATE_OUTPUT
+
 finish
