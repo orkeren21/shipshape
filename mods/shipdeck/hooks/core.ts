@@ -1,5 +1,6 @@
 // Everything shipdeck reads from outside its own environment: where the core
-// plugin is, what its doctor says, what an epic folder holds, and where an
+// plugin is, what its doctor says, what GitHub says of a PR, what an epic folder
+// holds, and where an
 // original prompt is kept. Each call fails soft into a note, because a
 // display that throws helps nobody, and the gates are bash's anyway.
 
@@ -134,6 +135,19 @@ async function readDecisions($: EngineInterface, path: string): Promise<string |
     return await $.fs.read(path)
   } catch {
     return (await $.fs.stat(path).then(() => true, () => false)) ? { unreadable: true } : null
+  }
+}
+
+// What GitHub says of one PR, lowercased: `open`, `merged` or `closed`. null when
+// it can't say, which keeps the PR: gh missing, signed out or offline must not
+// read as finished. By URL, so it holds from any folder.
+export async function readPrState($: EngineInterface, url: string): Promise<string | null> {
+  try {
+    const ran = await $.process.run(['gh', 'pr', 'view', url, '--json', 'state', '--jq', '.state'], { timeoutMs: 8_000 })
+    const state = ran.exitCode === 0 ? ran.stdout.trim().toLowerCase() : ''
+    return state || null
+  } catch {
+    return null
   }
 }
 

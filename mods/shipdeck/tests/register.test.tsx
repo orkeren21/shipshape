@@ -35,6 +35,10 @@ function doctorJson(over: Partial<DoctorJson> = {}): DoctorJson {
 
 type World = {
   doctor?: DoctorJson | string
+  prState?: string
+  prByUrl?: Record<string, string>
+  ghFails?: boolean
+  ghThrows?: boolean
   reply?: unknown
   replies?: unknown[]
   answer?: (prompt: string) => string
@@ -85,7 +89,7 @@ type World = {
 
 // The engine beneath shipdeck: every $ call it makes, answered from memory.
 function world(on: On, w: World = {}) {
-  const seen = { model: [] as unknown[], runs: [] as unknown[], lookups: [] as unknown[], traces: [] as string[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[], mcp: [] as string[], mcpArgs: [] as unknown[], storeReads: [] as string[], storeDeletes: [] as string[], usage: 0 }
+  const seen = { gh: [] as string[], model: [] as unknown[], runs: [] as unknown[], lookups: [] as unknown[], traces: [] as string[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[], mcp: [] as string[], mcpArgs: [] as unknown[], storeReads: [] as string[], storeDeletes: [] as string[], usage: 0 }
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, w.env ?? {})
   on('command.register', (_, e) => {
@@ -131,6 +135,13 @@ function world(on: On, w: World = {}) {
     return { value: undefined } as never
   })
   on('process.run', async (_, e) => {
+    if (e.argv[0] === 'gh') {
+      const url = String(e.argv[3])
+      seen.gh.push(url)
+      if (w.ghThrows) throw new Error('spawn gh ENOENT')
+      if (w.ghFails) return { value: { exitCode: 1, stdout: '', stderr: 'not signed in' } } as never
+      return { value: { exitCode: 0, stdout: `${w.prByUrl?.[url] ?? w.prState ?? 'OPEN'}\n`, stderr: '' } } as never
+    }
     if (e.argv[0] === 'claude') {
       seen.lookups.push(e)
       return { value: { exitCode: 0, stdout: JSON.stringify(w.installed ?? []), stderr: '' } } as never
@@ -391,6 +402,111 @@ test('/shipdeck style switches the band through the config row', async ($, on) =
   expect(set.text).toBe('shipdeck: the band now uses the linear style.')
   const bad = await $.command.run({ command: 'shipdeck', args: 'style neon', origin: { kind: 'composer' }, presentation: {} } as never)
   expect(bad.text).toContain('style github or')
+})
+
+const OWN_PR = { number: '10', url: 'https://github.com/o/r/pull/10', branch: 'feature', state: 'satisfied' }
+const BRANCHED = (over: Partial<DoctorJson> = {}) => doctorJson({ branch: 'feature', prs: [OWN_PR], ...over })
+
+test('a merged PR leaves the band with no pane open, and is asked about once', async ($, on) => {
+  const { clock, seen } = world(on, { doctor: BRANCHED(), prState: 'MERGED' })
+  await start($, clock)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt ?? '')).not.toContain('#10')
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt ?? '')).not.toContain('review')
+  await clock.advance(300_000)
+  expect(seen.gh).toEqual([OWN_PR.url])
+  await band.unmount()
+})
+
+test('an open PR stays on the band, and is asked about again', async ($, on) => {
+  const { clock, seen } = world(on, { doctor: BRANCHED(), prState: 'OPEN' })
+  await start($, clock)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).toContain('PR #10')
+  await clock.advance(120_000)
+  expect(seen.gh.length).toBeGreaterThan(1)
+  await band.unmount()
+})
+
+test('gh failing keeps the PR: not knowing is not finished', async ($, on) => {
+  const { clock } = world(on, { doctor: BRANCHED(), ghFails: true })
+  await start($, clock)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).toContain('PR #10')
+  await band.unmount()
+})
+
+test('a gh that will not run keeps the PR too', async ($, on) => {
+  const { clock } = world(on, { doctor: BRANCHED(), ghThrows: true })
+  await start($, clock)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).toContain('PR #10')
+  await band.unmount()
+})
+
+test('a reopened PR comes back, because a closed one is still asked about', async ($, on) => {
+  const w: World = { doctor: BRANCHED(), prState: 'CLOSED' }
+  const { clock } = world(on, w)
+  await start($, clock)
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).not.toContain('PR #10')
+  w.prState = 'OPEN'
+  await clock.advance(120_000)
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).toContain('PR #10')
+  await band.unmount()
+})
+
+test('a turn\'s end asks after its reading, so a PR that reading brings is asked about at once', async ($, on) => {
+  const w: World = { doctor: doctorJson({ branch: 'feature', prs: [] }), prState: 'MERGED' }
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  expect(seen.gh).toEqual([])
+  w.doctor = BRANCHED()
+  await $.turn.complete({ reason: 'answer' } as never)
+  await clock.settle()
+  expect(seen.gh).toEqual([OWN_PR.url])
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).not.toContain('PR #10')
+  await band.unmount()
+})
+
+test('coming back to a session asks at once, so a merge made meanwhile has left', async ($, on) => {
+  const w: World = { doctor: BRANCHED(), prState: 'OPEN', surfaces: [] }
+  const { clock } = world(on, w)
+  await start($, clock)
+  w.prState = 'MERGED'
+  w.surfaces = ['desktop']
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:1' } as never)
+  await clock.settle()
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).not.toContain('PR #10')
+  await band.unmount()
+})
+
+test('the clock stays quiet with nobody attached', async ($, on) => {
+  const { clock, seen } = world(on, { doctor: BRANCHED(), prState: 'OPEN', surfaces: [] })
+  await start($, clock)
+  const before = seen.gh.length
+  await clock.advance(600_000)
+  expect(seen.gh.length).toBe(before)
+})
+
+test('the pane\'s PR detail leaves out a finished one', async ($, on) => {
+  const url = (n: string) => `https://github.com/o/r/pull/${n}`
+  const prs = [{ ...OWN_PR, number: '15', url: url('15'), state: 'owing' }, { ...OWN_PR, number: '12', url: url('12'), branch: 'old', state: 'owing' }, { ...OWN_PR, number: '9', url: url('9'), branch: 'older', state: 'owing' }]
+  const { clock } = world(on, { ...paneWorld(), doctor: doctorJson({ branch: 'feature', prs, seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }), prByUrl: { [url('12')]: 'MERGED' } })
+  await start($, clock)
+  const { pane, texts } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /#15 owed · #9 owed/ })).toBeDefined()
+  expect(texts.some(t => t.includes('#12'))).toBe(false)
+  await pane.unmount()
+})
+
+test('/shipdeck says what the band says about a finished PR', async ($, on) => {
+  const { clock } = world(on, { doctor: BRANCHED(), prState: 'MERGED' })
+  await start($, clock)
+  const ran = await $.command.run({ command: 'shipdeck', args: '' } as never)
+  expect(JSON.stringify(ran)).not.toContain('#10')
 })
 
 test('the linear style draws one SVG too', { options: { style: 'linear' } }, async ($, on) => {
@@ -958,7 +1074,7 @@ test('a refused write of that flag still opens the pane, and costs the reading n
   await start($, clock)
   expect(seen.opened).toEqual(['shipdeck-epic'])
   const pane = await $.ui.mount({ plugin: 'shipdeck', surface: 'desktop', component: 'Pane', requestId: 'shipdeck-epic', props: { title: 'Sessions', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as never })
-  expect(await pane.find({ type: 'Text', text: /f1\s+active/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^active$/ })).toBeDefined()
   await pane.unmount()
   // A pane closed by hand must not come back with every reading.
   await clock.advance(120_000)
@@ -977,7 +1093,7 @@ test('a pane that cannot open costs the reading nothing', async ($, on) => {
   expect(await bandSays($, /architect/)).toBe(true)
   // The epic read comes after the open, so this says the reading went on.
   const pane = await $.ui.mount({ plugin: 'shipdeck', surface: 'desktop', component: 'Pane', requestId: 'shipdeck-epic', props: { title: 'Sessions', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as never })
-  expect(await pane.find({ type: 'Text', text: /f1\s+active/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^active$/ })).toBeDefined()
   await pane.unmount()
 })
 
@@ -1499,27 +1615,36 @@ test('a row says what it is doing, its seat, its PR and how long it has rested',
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /F4\s+epic skills/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /epic skills/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /^#16$/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /Architect\s+ShipShape mods/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /ShipShape mods/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /^3m$/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /^#15 · 2m$/ })).toBeDefined()
   await pane.unmount()
 })
 
-test('a PR that is not open says what it is', async ($, on) => {
+test('a finished PR leaves an idle row; only an open one is named', async ($, on) => {
   const { clock } = world(on, paneWorld({ listed: [{ ...IDLE, prNumber: 14, prState: 'MERGED' }] }))
   await start($, clock)
   const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /^#14 merged · 3m$/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^3m$/ })).toBeDefined()
   await pane.unmount()
 })
 
-test('this session is in the list, and marked', async ($, on) => {
+test('this session is in the list', async ($, on) => {
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /This one\s+this session/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /This one/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('a title stays on one line, and a question may wrap to be read whole', async ($, on) => {
+  const { clock } = world(on, paneWorld())
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect((await pane.find({ type: 'Text', text: /This one/ }))?.props.wrap).toBe('truncate-end')
+  expect((await pane.find({ type: 'Text', text: /Merge PR 15\?/ }))?.props.wrap).toBeUndefined()
   await pane.unmount()
 })
 
@@ -1527,7 +1652,7 @@ test('a seat with no session draws what its file says, and a handoff in roster/ 
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const { pane, texts } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /F5\s+waiting on F2/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^waiting on F2$/ })).toBeDefined()
   expect(texts.some(t => t.includes('F2-handoff'))).toBe(false)
   await pane.unmount()
 })
@@ -1628,7 +1753,7 @@ test('a seat file that will not open says so in its row', async ($, on) => {
   const { clock } = world(on, paneWorld({ files }))
   await start($, clock)
   const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /F5\s+unreadable/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /unreadable/ })).toBeDefined()
   await pane.unmount()
 })
 
@@ -1708,15 +1833,27 @@ test('no session server says so, and the seats on file still show', async ($, on
   await start($, clock)
   const { pane, texts } = await paneTexts($, clock)
   expect(await pane.find({ type: 'Text', text: /Could not read the session list, which needs the Claude desktop app/ })).toBeDefined()
-  expect(texts.some(t => /F4\s+active/.test(t))).toBe(true)
+  expect(texts.includes('F4') && texts.includes('active')).toBe(true)
   await pane.unmount()
 })
 
-test('the pane says plainly what Needs you covers', async ($, on) => {
+test('a working pane carries no footnote', async ($, on) => {
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /Needs you covers only sessions running shipdeck/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /Needs you covers/ })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('every section is ruled off on the desktop, Rulings too', async ($, on) => {
+  const { clock } = world(on, paneWorld())
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  const rules = (await pane.findAll({ type: 'Svg' })).filter(s => s.props.alt === 'divider')
+  // Needs you, Working, Idle, Seats, Done and Rulings each open with one.
+  expect(rules.length).toBe(6)
+  expect(rules[0]?.props.height).toBe(1)
+  expect(Number(rules[0]?.props.width)).toBeGreaterThan(400)
   await pane.unmount()
 })
 
@@ -1762,7 +1899,7 @@ test('a session going from working to idle moves on the next read, with nobody t
   const { pane } = await paneTexts($, clock)
   const stateOf = async () => {
     const texts = (await pane.findAll({ type: 'Text' })).map(t => String(t.text ?? ''))
-    const row = texts.findIndex(t => /F4\s+epic skills/.test(t))
+    const row = texts.findIndex(t => /epic skills/.test(t))
     return { working: row > texts.indexOf('Working') && row < texts.indexOf('Idle') }
   }
   expect((await stateOf()).working).toBe(true)
@@ -1796,7 +1933,7 @@ test('seats read after the list still name their rows, with no wait for the next
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const pane = await $.ui.mount(PANE('desktop'))
-  expect(await pane.find({ type: 'Text', text: /F4\s+epic skills/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /epic skills/ })).toBeDefined()
   await pane.unmount()
 })
 

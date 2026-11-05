@@ -89,6 +89,8 @@ declare module 'claude-code' {
       rows: Shaped<RefinedRow[]>
       epic: Shaped<EpicView | null>
       sessions: Shaped<SessionsView | null>
+      // What GitHub last said of this session's PRs, by URL.
+      prStates: Shaped<Record<string, string>>
       seen: Shaped<{ epic: string; done: Record<string, boolean> } | null>
       warned: boolean
       paneOpened: boolean

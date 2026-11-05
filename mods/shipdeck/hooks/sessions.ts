@@ -10,8 +10,11 @@ export type { Ask, ListedSession, SessionRow, SessionState }
 // quietest rows ever become the count.
 export const MAX_ROWS = 12
 // An idle session older than this leaves the list, unless it still holds
-// something: an open PR, a question, a seat.
+// something: a question, a seat, or an open PR for the week below.
 const RECENT_MS = 24 * 60 * 60 * 1000
+// An open PR holds a session this long. Past it, a row is someone's forgotten
+// branch, not work the operator is steering.
+const OPEN_PR_MS = 7 * 24 * 60 * 60 * 1000
 const MAX_ASK = 140
 // A question nobody answered for this long is not one the pane should lead with.
 const ASK_MAX_MS = 7 * 24 * 60 * 60 * 1000
@@ -103,7 +106,8 @@ export function sessionsView(input: {
     const ask = liveAsk(asks[s.id], s, now)
     const isSelf = s.id === self?.id
     const state: SessionState = ask !== null ? 'needs' : s.isRunning ? 'working' : seat?.isDone ? 'done' : 'idle'
-    const isHeld = isSelf || seat !== null || state !== 'idle' || (s.pr !== null && isPrLive(s.pr))
+    const hasLivePr = s.pr !== null && isPrLive(s.pr) && (s.activeAt === null || now - s.activeAt < OPEN_PR_MS)
+    const isHeld = isSelf || seat !== null || state !== 'idle' || hasLivePr
     if (!isHeld && s.activeAt !== null && now - s.activeAt >= RECENT_MS) continue
     rows.push({
       key: s.id,

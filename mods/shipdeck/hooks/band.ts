@@ -70,8 +70,20 @@ export function prName(number: string): string {
 
 // The legs are the current commit's, so they mean this branch's PR, and the
 // rest of the session's PRs are a count. A reading with no `prs` is none.
-export function prSummary(doctor: DoctorJson): PrSummary | null {
-  const prs = doctor.prs ?? []
+//
+// A PR GitHub says has finished is out of it: the doctor works offline from what
+// the session opened, so its record stands after a merge. PRs are told apart by
+// URL, because a number means nothing across repositories or for an old record.
+export function livePrs(doctor: DoctorJson, finished: readonly string[]): DoctorJson['prs'] {
+  return (doctor.prs ?? []).filter(p => !p.url || !finished.includes(p.url))
+}
+
+export function finishedUrls(states: Record<string, string>): string[] {
+  return Object.keys(states).filter(url => states[url] === 'merged' || states[url] === 'closed')
+}
+
+export function prSummary(doctor: DoctorJson, finished: readonly string[] = []): PrSummary | null {
+  const prs = livePrs(doctor, finished)
   if (prs.length === 0) return null
   const mine = doctor.branch === null ? undefined : prs.findLast(p => p.branch === doctor.branch)
   const rest = prs.filter(p => p !== mine)
@@ -83,11 +95,21 @@ export function prSummary(doctor: DoctorJson): PrSummary | null {
 }
 
 // With no PR on this branch and nothing yet on disk, three hollow marks would
-// read as owed when nothing is. Anything that has happened keeps the row,
-// hollow marks included, and the plan leg exists only while a plan is bound.
-function legsToDraw(doctor: DoctorJson, pr: PrSummary | null, now: number): Leg[] {
+// read as owed when nothing is, and stale ones are another commit's. Anything
+// done at this commit keeps the row, hollow marks included, and the plan leg
+// exists only while a plan is bound.
+//
+// Once this branch's PR has finished, its green row is history and would read as
+// work in progress. What is still moving keeps it: a reviewer out, a failure, a
+// bound plan. A new PR on the branch brings it back.
+function legsToDraw(doctor: DoctorJson, pr: PrSummary | null, finished: readonly string[], now: number): Leg[] {
   const drawn = legs(doctor, now)
-  return pr?.label || drawn.some(l => l.state !== 'missing' || l.name === 'plan') ? drawn : []
+  if (pr?.label) return drawn
+  const isHistory = doctor.branch !== null && (doctor.prs ?? []).some(p => p.branch === doctor.branch && !!p.url && finished.includes(p.url))
+  const isMoving = isHistory
+    ? drawn.some(l => l.state === 'running' || l.state === 'fail' || l.name === 'plan')
+    : drawn.some(l => (l.state !== 'missing' && l.state !== 'stale') || l.name === 'plan')
+  return isMoving ? drawn : []
 }
 
 // The seat's two handoff thresholds. These are context-watch's defaults; a
@@ -115,15 +137,17 @@ export function bandModel(input: {
   notices: string[]
   refining: boolean
   now: number
+  // The URLs of PRs GitHub reports as merged or closed.
+  finished?: readonly string[]
 }): BandModel {
-  const { doctor } = input
+  const { doctor, finished = [] } = input
   const inRepo = !!doctor && (doctor.branch !== null || doctor.head !== null)
-  const pr = inRepo ? prSummary(doctor) : null
+  const pr = inRepo ? prSummary(doctor, finished) : null
   return {
     seat: doctor ? seatLabel(doctor.seat) : null,
     role: doctor?.seat?.role ?? null,
     ctx: input.percent,
-    legs: doctor ? (inRepo ? legsToDraw(doctor, pr, input.now) : []) : input.isUnavailable ? null : [],
+    legs: doctor ? (inRepo ? legsToDraw(doctor, pr, finished, input.now) : []) : input.isUnavailable ? null : [],
     pr,
     notices: input.notices.slice(-2),
     refining: input.refining,

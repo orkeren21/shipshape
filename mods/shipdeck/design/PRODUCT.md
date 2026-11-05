@@ -22,8 +22,10 @@ shipdeck is ShipShape's companion mod. It shows what ShipShape's gates
 already know (the seat, the context fill, the evidence legs, the PR they mean,
 a running reviewer), lists the operator's sessions, and raises two notices: a
 lane reported done, and a successor card is waiting. It never gates. Success means the operator never has to ask a
-session "where are you?", and the band never disagrees with the gates,
-because it reads the same artifacts they read.
+session "where are you?", and the band never disagrees with the gates about a
+live PR, because it reads the same artifacts they read. A merged or closed PR
+leaves the band even if the done gate still holds a record of it: that PR is
+over, and the band is about what is happening now.
 
 ## Brand Personality
 
@@ -45,8 +47,9 @@ native to Claude Code, not like a widget bolted onto it.
 
 1. **Read the gates, never guess.** Every evidence mark comes from an artifact
    the bash gates read, so the band can never show green while a gate would
-   refuse. The pane's session marks come from the app's session list, the
-   seat files and what each session publishes.
+   refuse. Whether a PR has finished comes from GitHub, and the pane's session
+   marks from the app's session list, the seat files and what each session
+   publishes.
 2. **One glance, one answer.** Seat, context and evidence read in a second,
    left to right, in the same place every time.
 3. **State, not decoration.** Colour and motion mean a state; nothing is

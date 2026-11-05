@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bandModel, ctxTone, describe as say, legs, parseDoctor, prSummary, seatLabel } from '../hooks/band.ts'
+import { bandModel, ctxTone, describe as say, finishedUrls, legs, parseDoctor, prSummary, seatLabel } from '../hooks/band.ts'
 import { drawBand, measure } from '../hooks/draw.ts'
 import type { BandModel, Leg, LegState } from '../hooks/model.ts'
 import type { DoctorJson } from '../types'
@@ -245,6 +245,50 @@ describe('which PR the legs mean', () => {
     const m = modelOf(doctor({ legs: { ...HOLLOW, plan: { state: 'open', detail: null } } }))
     expect(m.legs?.map(l => l.name)).toEqual(['review', 'CI', 'smoke', 'plan'])
     expect(modelOf(doctor({ legs: { ...HOLLOW, plan: { state: 'none', detail: null } } })).legs).toEqual([])
+  })
+  const finished = (d: DoctorJson, urls: string[]) => bandModel({ doctor: d, isUnavailable: false, percent: 49, notices: [], refining: false, now: 0, finished: urls })
+  const at = (number: string, branch: string, state = 'satisfied') => ({ ...pr(number, branch, state), url: `https://x/pull/${number}` })
+  test('a merged PR leaves the band, and its green legs with it', () => {
+    const m = finished(doctor({ prs: [at('10', 'feature')] }), ['https://x/pull/10'])
+    expect(m.pr).toBeNull()
+    expect(m.legs).toEqual([])
+    expect(say(m)).not.toContain('review')
+  })
+  test('what is still moving keeps the legs after a merge', () => {
+    const failing = doctor({ prs: [at('10', 'feature')], legs: { review: { state: 'verdict-no', detail: null }, ci: { state: 'ok', detail: null }, smoke: { state: 'ok', detail: null } } })
+    expect(finished(failing, ['https://x/pull/10']).legs?.length).toBeGreaterThan(0)
+    const planned = doctor({ prs: [at('10', 'feature')], legs: { review: { state: 'ok', detail: null }, ci: { state: 'ok', detail: null }, smoke: { state: 'ok', detail: null }, plan: { state: 'open', detail: null } } })
+    expect(finished(planned, ['https://x/pull/10']).legs?.map(l => l.name)).toContain('plan')
+  })
+  test('a reviewer still out keeps the legs after a merge', () => {
+    const d = doctor({ prs: [at('10', 'feature')], pending: [{ agent: 'a', kind: 'review', since: null }] })
+    expect(finished(d, ['https://x/pull/10']).legs?.length).toBeGreaterThan(0)
+  })
+  test('a PR finished on another branch says nothing about this branch\'s evidence', () => {
+    const m = finished(doctor({ prs: [at('10', 'old')] }), ['https://x/pull/10'])
+    expect(m.pr).toBeNull()
+    expect(m.legs?.length).toBeGreaterThan(0)
+  })
+  test('a finished PR on another branch only leaves the count, and its stale record owes nothing', () => {
+    const m = finished(doctor({ prs: [at('15', 'feature', 'owing'), at('10', 'old', 'stale')] }), ['https://x/pull/10'])
+    expect(m.pr).toEqual({ label: '#15', others: 0, isOwing: false })
+    expect(m.legs?.length).toBeGreaterThan(0)
+  })
+  test('the newer PR on a branch is named once the older has merged, and neither once both have', () => {
+    const d = doctor({ prs: [at('10', 'feature'), at('11', 'feature', 'owing')] })
+    expect(finished(d, ['https://x/pull/10']).pr?.label).toBe('#11')
+    expect(finished(d, ['https://x/pull/10', 'https://x/pull/11']).pr).toBeNull()
+  })
+  test('a record with no URL can\'t be matched, so it stays', () => {
+    expect(finished(doctor({ prs: [pr('legacy', 'feature', 'satisfied')] }), ['https://x/pull/10']).pr).not.toBeNull()
+  })
+  test('finished means merged or closed', () => {
+    expect(finishedUrls({ a: 'merged', b: 'closed', c: 'open', d: 'draft' })).toEqual(['a', 'b'])
+  })
+  test('stale legs with no PR are another commit\'s, so they stay away', () => {
+    const stale = { review: { state: 'stale', detail: null }, ci: { state: 'stale', detail: null }, smoke: { state: 'stale', detail: null } }
+    expect(modelOf(doctor({ legs: stale })).legs).toEqual([])
+    expect(modelOf(doctor({ legs: { ...stale, smoke: { state: 'ok', detail: null } } })).legs?.length).toBeGreaterThan(0)
   })
   test('one PR on this branch names itself, and its legs show hollow: a PR owes them', () => {
     const m = modelOf(doctor({ legs: HOLLOW, prs: [pr('15', 'feature')] }))

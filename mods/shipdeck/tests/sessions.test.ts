@@ -63,6 +63,13 @@ describe('which sessions show', () => {
     ).rows
     expect(rows.map(r => r.key).sort()).toEqual(['asks', 'pr'])
   })
+  test('an open PR holds a session for a week, and a forgotten one goes', () => {
+    const rows = view([
+      raw('week', { lastActivityAt: minutes(7 * 24 * 60 - 1), prNumber: 9, prState: 'OPEN' }),
+      raw('forgotten', { lastActivityAt: minutes(7 * 24 * 60), prNumber: 382, prState: 'OPEN' }),
+    ]).rows
+    expect(rows.map(r => r.key)).toEqual(['week'])
+  })
   test('this session and a seat stay however long they have been idle', () => {
     const old = minutes(25 * 60)
     const self = list([raw('me', { lastActivityAt: old })])[0] ?? null
@@ -116,7 +123,7 @@ describe('a question that has lapsed', () => {
     expect(view([raw('a', { prNumber: 15, prState: 'QUEUED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('needs')
     expect(view([raw('a', { prNumber: 15, prState: 'CLOSED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('idle')
   })
-  test('an idle session holding a draft stays, however old', () => {
+  test('an idle session with an open PR stays past a day', () => {
     expect(view([raw('a', { prNumber: 15, prState: 'DRAFT', lastActivityAt: minutes(25 * 60) })]).rows.map(r => r.key)).toEqual(['a'])
   })
   test('one asked with no PR open stands, whatever the PR says now', () => {

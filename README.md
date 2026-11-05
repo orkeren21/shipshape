@@ -108,7 +108,8 @@ Bug reports and pull requests: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 An optional second plugin in the same marketplace, for Claude Code 2.1.309 or
 later. It never gates: it shows what the gates already know, read from the
-same artifacts through `shipshape-doctor --json`.
+same artifacts through `shipshape-doctor --json`, and it asks `gh` whether a PR
+has finished, so a merged PR leaves its display.
 
 - **A band above the prompt.** It shows the session's seat and a context
   gauge that turns amber and red at the seat's own handoff points. It also

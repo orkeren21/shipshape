@@ -322,6 +322,17 @@ export function drawBand(m: BandModel, style: Style, maxWidth: number): Drawing 
 
 const SESSION_WORDS: Record<SessionState, string> = { needs: 'needs you', working: 'working', idle: 'idle', unknown: 'state not known', done: 'done' }
 
+// One hairline, in the palette's own line colour for either theme.
+export function sectionRule(width: number): Drawing {
+  const w = Math.round(width)
+  return {
+    source: `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="1" viewBox="0 0 ${w} 1">${CSS}<rect class="f-line" width="${w}" height="1"/></svg>`,
+    width: w,
+    height: 1,
+    alt: 'divider',
+  }
+}
+
 // A session's state in the pane, in the band's grammar: a mark 14 wide, set in
 // a slot as tall as a line of body text so it centres on the first line.
 export function sessionMark(state: SessionState): Drawing {
