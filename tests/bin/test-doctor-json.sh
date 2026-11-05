@@ -276,6 +276,13 @@ out="$(json)"
 assert_eq "$plan — prose only (on $branch)" "$(jget "$out" plan_cleared)" "and a field of its own carries it"
 assert_eq "null" "$(jget "$out" legs.plan.detail)" "leaving the leg's words alone"
 
+git -C "$repo" checkout -q -b other-work
+assert_contains "$(text)" "cleared: $plan — prose only (on $branch)" "another branch's doctor reads it too"
+out="$(json)"
+assert_eq "$plan — prose only (on $branch)" "$(jget "$out" plan_cleared)" "and so does its JSON"
+git -C "$repo" checkout -q "$branch"
+git -C "$repo" branch -q -D other-work
+
 # The doctor is what a reader runs, so it says so with another plan bound too.
 bind
 assert_contains "$(text)" "cleared: $plan — prose only (on $branch)" "a clearing shows beside a bound plan"

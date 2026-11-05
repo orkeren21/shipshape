@@ -122,12 +122,13 @@ rm -rf "$scratch"
 out="$(GH_STUB_CREATE_EXIT=1 "$pr_open" --title "doomed" 2>&1)"
 assert_not_contains "$out" "shipshape-plan" "and with no PR there is nothing to say"
 
-# A branch that dropped its plan is told that, not asked whether it has one.
+# A clearing adds a line and never replaces one. It may be another branch's, so a
+# branch with no plan bound is still told that.
 mkdir -p "$scratch"
 printf 'path=/a/plan.md\nbranch=feature\nreason=prose only\n' > "$scratch/plan-cleared"
 out="$("$pr_open" --title "cleared" 2>&1)"
 assert_contains "$out" "prose only" "a cleared plan is named as the PR opens"
-assert_not_contains "$out" "If it has a plan" "rather than asked about"
+assert_contains "$out" "no plan is bound" "and a branch with none bound still hears that"
 printf 'path=/a/stub.md\n' > "$scratch/plan"
 assert_contains "$("$pr_open" --title "stub" 2>&1)" "prose only" "and it is named with another plan bound too"
 

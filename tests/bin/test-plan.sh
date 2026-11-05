@@ -228,9 +228,10 @@ mv "$plan.moved" "$plan"
 # --- a clearing is the session's ------------------------------------------------------
 #
 # `elsewhere` prints --clear as a way out, so the call often comes from another
-# branch. There is one record, and every reader shows it wherever it stands,
-# labelled with the branch the plan was bound on. A session shipping two branches
-# sees the other's clearing: a note over-reported, which is harmless, not lost.
+# branch. There is one record, this wrapper and the doctor show it wherever they
+# run, labelled with the branch the plan was bound on. A session shipping two
+# branches sees the other's clearing: a note over-reported, which is harmless, not
+# lost.
 
 "$plan_bin" "$plan" >/dev/null 2>&1
 git checkout -q -b from-elsewhere
@@ -241,6 +242,15 @@ assert_contains "$("$plan_bin" 2>&1)" "dropped from another branch (on $branch)"
 git checkout -q "$branch"
 assert_contains "$("$plan_bin" 2>&1)" "dropped from another branch (on $branch)" "and there"
 rm -f "$cleared_file"
+
+# Taking one back is about the plan, not the branch it was bound on.
+"$plan_bin" "$plan" >/dev/null 2>&1
+"$plan_bin" --clear --reason "back on another branch" >/dev/null 2>&1
+git checkout -q -b take-back
+"$plan_bin" "$plan" >/dev/null 2>&1
+assert_no_file "$cleared_file" "binding that same plan from another branch takes the clearing back"
+git checkout -q "$branch"
+git branch -q -D take-back
 
 # The label is text from the binding, so nothing about the branch can lose it.
 "$plan_bin" "$plan" >/dev/null 2>&1
