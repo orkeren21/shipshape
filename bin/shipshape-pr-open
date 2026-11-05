@@ -44,8 +44,22 @@ if [ "$status" -ne 0 ]; then
   exit "$status"
 fi
 
-# gh prints the PR URL on success; keep the last URL-looking line.
-url="$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*' | tail -1)"
+# gh prints the PR URL on success. Its help and a dry run exit 0 too, and help
+# carries a URL, so those two open nothing and arm nothing. The flag alone can't
+# decide, or a body of "-h" would open a PR and leave no record: a pull URL in the
+# output always arms.
+pull_url="$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*/pull/[0-9][0-9]*' | tail -1)"
+if [ -z "$pull_url" ]; then
+  for arg in "$@"; do
+    case "$arg" in
+      --help|-h|--dry-run)
+        shipshape_trace pr-open "$arg opened no pull request; nothing armed"
+        exit 0
+        ;;
+    esac
+  done
+fi
+url="${pull_url:-$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*' | tail -1)}"
 
 scratch="$(shipshape_scratch_dir)"
 

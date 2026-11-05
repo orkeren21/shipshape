@@ -144,4 +144,32 @@ status=$?
 assert_ne "0" "$status" "with no gh on PATH the wrapper fails rather than pretending"
 assert_no_file "$scratch/pr-armed" "a missing gh arms nothing"
 
+# --- no pull request, no arming ----------------------------------------------
+# gh exits 0 for its help and for a dry run, and its help carries a URL. Neither
+# opened anything, and a record of one reads as a PR for the rest of the session.
+
+help_scratch="$work/.shipshape/help-session"
+export SHIPSHAPE_SESSION_ID=help-session
+export GH_STUB_PR_URL="https://cli.github.com/manual"
+"$pr_open" --help >/dev/null 2>&1
+assert_eq "0" "$?" "help keeps gh's status"
+assert_no_file "$help_scratch/pr-armed" "--help opens nothing, so it arms nothing"
+"$pr_open" -h >/dev/null 2>&1
+assert_no_file "$help_scratch/pr-armed" "-h opens nothing, so it arms nothing"
+"$pr_open" --title t --dry-run >/dev/null 2>&1
+assert_no_file "$help_scratch/pr-armed" "a dry run opens nothing, so it arms nothing"
+
+# The flag alone can't decide: a body of "-h" still opens a PR, and a wrapper that
+# trusted the flag would let any PR go unrecorded. The URL settles it.
+export GH_STUB_PR_URL="https://github.com/acme/widget/pull/77"
+"$pr_open" --title t --body -h >/dev/null 2>&1
+assert_file "$help_scratch/pr-armed-77" "a real PR arms, whatever its arguments look like"
+
+# The PR's URL wins over any other URL gh prints after it.
+url_scratch="$work/.shipshape/url-session"
+export SHIPSHAPE_SESSION_ID=url-session
+export GH_STUB_PR_URL="https://github.com/acme/widget/pull/78 see https://cli.github.com/manual"
+"$pr_open" --title t >/dev/null 2>&1
+assert_contains "$(cat "$url_scratch/pr-armed-78" 2>/dev/null)" "url=https://github.com/acme/widget/pull/78" "the record names the PR, not the last URL printed"
+
 finish
