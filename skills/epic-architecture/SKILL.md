@@ -123,13 +123,13 @@ operator for four things:
 - a meaningful decision that neither the plan nor the vision gives a
   reasonable, direct way to settle
 
-Hold each question against that list before it goes up. The fourth is usually
-a scope change, something irreversible or outward-facing the plan did not name
-— a push to a shared branch, a publish, a deletion — or spending money. Those
+Hold each question against that list before it goes up. The fourth covers a
+scope change, anything irreversible or outward-facing the plan did not name —
+a push to a shared branch, a publish, a deletion — and spending money. Those
 go to the operator batched, with the asking lane's lean and your own. Doubt
 sends you back to the plan, not up: a Major from review once sat a day with the
-operator when the review rule already answered it. The same goes for a
-priming's stop rules, which name only these four.
+operator when `shipshape:requesting-code-review` already answered it. The same
+goes for a priming's stop rules, which name only these four.
 
 Every ruling — yours and the operator's — goes into `decisions.md` as it is
 made: the question, who asked, the ruling, the reason, who ruled. A ruling
