@@ -63,11 +63,21 @@ type World = {
   traceThrows?: boolean
   modelThrows?: boolean
   openThrows?: boolean
+  // What the app's session tools answer; absent, there is no such server.
+  listed?: unknown[]
+  self?: unknown
+  mcpHangs?: boolean
+  // What the plugin store holds, and whether it refuses.
+  store?: Record<string, unknown>
+  storeThrows?: boolean
+  // The panes open, and the surfaces attached.
+  panes?: string[]
+  surfaces?: string[]
 }
 
 // The engine beneath shipdeck: every $ call it makes, answered from memory.
 function world(on: On, w: World = {}) {
-  const seen = { model: [] as unknown[], runs: [] as unknown[], lookups: [] as unknown[], traces: [] as string[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[], usage: 0 }
+  const seen = { model: [] as unknown[], runs: [] as unknown[], lookups: [] as unknown[], traces: [] as string[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[], mcp: [] as string[], usage: 0 }
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, w.env ?? {})
   on('command.register', (_, e) => {
@@ -149,6 +159,33 @@ function world(on: On, w: World = {}) {
     seen.opened.push(String((e as { id?: string }).id))
     return { value: { isPlaced: true } } as never
   })
+  on('mcp.call', async (_, e) => {
+    if (w.mcpHangs) await new Promise(() => {})
+    const value = e.tool === 'get_session' ? w.self : w.listed
+    if (value === undefined) throw new Error('no such server')
+    seen.mcp.push(`${e.server}/${e.tool}`)
+    return { value: { content: [{ type: 'text', text: JSON.stringify(value) }] } } as never
+  })
+  on('store.keys', () => {
+    if (w.storeThrows) throw new Error('refused')
+    return { value: Object.keys(w.store ?? {}) } as never
+  })
+  on('store.get', (_, e) => {
+    if (w.storeThrows) throw new Error('refused')
+    return { value: w.store?.[e.key] } as never
+  })
+  on('store.set', (_, e) => {
+    if (w.storeThrows) throw new Error('refused')
+    w.store = { ...w.store, [e.key]: e.value }
+    return { value: undefined } as never
+  })
+  on('store.delete', (_, e) => {
+    if (w.storeThrows) throw new Error('refused')
+    w.store = Object.fromEntries(Object.entries(w.store ?? {}).filter(([k]) => k !== e.key))
+    return { value: undefined } as never
+  })
+  on('ui.panes', () => ({ value: (w.panes ?? seen.opened).map(id => ({ id, title: id, isShown: true, isFocused: false, isPlaced: true })) }) as never)
+  on('session.surfaces', () => ({ value: w.surfaces ?? ['desktop'] }) as never)
   on('config.set', (_, e) => ({ value: e.value }) as never)
   on('session.start', (_, e) => ({ cwd: e.cwd }) as never)
   on('tool.call', () => ({ result: {} }) as never)
@@ -881,7 +918,7 @@ test('a trace that cannot be written costs nothing', async ($, on) => {
 test('a narrow pane gives up the seat column before it overflows', async ($, on) => {
   const { clock } = world(on, {
     doctor: doctorJson({ seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }),
-    files: { '/epic/roster/a-very-long-lane-name.md': 'status: active', '/epic/decisions.md': '' },
+    files: { '/epic/roster/a-very-long-lane-name.md': 'role: lane x\nstatus: active', '/epic/decisions.md': '' },
     dirs: { '/epic/roster': ['a-very-long-lane-name.md'] },
   })
   await start($, clock)
@@ -913,7 +950,7 @@ test('a refused write of that flag still opens the pane, and costs the reading n
   })
   const { clock, seen } = world(on, {
     doctor: doctorJson({ seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }),
-    files: { '/epic/roster/f1.md': 'status: active', '/epic/decisions.md': '' },
+    files: { '/epic/roster/f1.md': 'role: lane x\nstatus: active', '/epic/decisions.md': '' },
     dirs: { '/epic/roster': ['f1.md'] },
   })
   await start($, clock)
@@ -930,7 +967,7 @@ test('a pane that cannot open costs the reading nothing', async ($, on) => {
   const { clock, seen } = world(on, {
     openThrows: true,
     doctor: doctorJson({ seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }),
-    files: { '/epic/roster/f1.md': 'status: done', '/epic/decisions.md': '' },
+    files: { '/epic/roster/f1.md': 'role: lane x\nstatus: done', '/epic/decisions.md': '' },
     dirs: { '/epic/roster': ['f1.md'] },
   })
   await start($, clock)
@@ -953,7 +990,7 @@ function seedOnce(on: On, stored: { key: string; value: unknown }) {
 }
 const architectInEpic = {
   doctor: doctorJson({ seat: { role: 'architect', lane: null, epic: '/epic', handoff: null } }),
-  files: { '/epic/roster/f1.md': 'status: done', '/epic/decisions.md': '' },
+  files: { '/epic/roster/f1.md': 'role: lane x\nstatus: done', '/epic/decisions.md': '' },
   dirs: { '/epic/roster': ['f1.md'] },
 }
 const SEEN_BEFORE = { epic: '/epic', done: { f1: false } }
@@ -976,7 +1013,7 @@ test('a lane done in one epic is not news in the next one', async ($, on) => {
   const seat = (epic: string) => doctorJson({ seat: { role: 'architect', lane: null, epic, handoff: null } })
   const w: World = {
     doctor: seat('/epic-a'),
-    files: { '/epic-a/roster/f1.md': 'status: active', '/epic-b/roster/f2.md': 'status: done', '/epic-a/decisions.md': '', '/epic-b/decisions.md': '' },
+    files: { '/epic-a/roster/f1.md': 'role: lane x\nstatus: active', '/epic-b/roster/f2.md': 'role: lane x\nstatus: done', '/epic-a/decisions.md': '', '/epic-b/decisions.md': '' },
     dirs: { '/epic-a/roster': ['f1.md'], '/epic-b/roster': ['f2.md'] },
   }
   const { clock, seen } = world(on, w)
@@ -984,10 +1021,10 @@ test('a lane done in one epic is not news in the next one', async ($, on) => {
   w.doctor = seat('/epic-b')
   await clock.advance(60_000)
   expect(seen.toasts.some(t => t.includes('f2 done'))).toBe(false)
-  w.files!['/epic-b/roster/f3.md'] = 'status: active'
+  w.files!['/epic-b/roster/f3.md'] = 'role: lane x\nstatus: active'
   w.dirs!['/epic-b/roster'] = ['f2.md', 'f3.md']
   await clock.advance(30_000)
-  w.files!['/epic-b/roster/f3.md'] = 'status: done'
+  w.files!['/epic-b/roster/f3.md'] = 'role: lane x\nstatus: done'
   await clock.advance(30_000)
   expect(seen.toasts.some(t => t.includes('f3 done'))).toBe(true)
 })

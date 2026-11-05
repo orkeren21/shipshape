@@ -6,8 +6,10 @@
 import type { EngineInterface } from 'claude-code'
 import { parseDoctor } from './band.ts'
 import { epicView } from './epic.ts'
+import { listedFrom, sessionsView } from './sessions.ts'
 import type { DoctorJson } from './model.ts'
-import type { EpicView } from './epic.ts'
+import type { EpicView, RosterRow } from './epic.ts'
+import type { Ask, SessionsView } from '../types'
 
 function parent(path: string): string {
   const trimmed = path.replace(/\/+$/, '')
@@ -125,19 +127,77 @@ export async function runDoctor($: EngineInterface, root: string, dir: string): 
   }
 }
 
+// Reading no file and reading an empty one must stay apart, so a failure here
+// is carried through as what it was, never as nothing.
+async function readDecisions($: EngineInterface, path: string): Promise<string | null | { unreadable: true }> {
+  try {
+    return await $.fs.read(path)
+  } catch {
+    return (await $.fs.stat(path).then(() => true, () => false)) ? { unreadable: true } : null
+  }
+}
+
 export async function readEpic($: EngineInterface, epic: string): Promise<EpicView | null> {
   try {
-    const entries = await $.fs.list(`${epic}/roster`).catch(() => [])
-    const roster: { name: string; text: string }[] = []
-    for (const entry of entries) {
+    const entries = await $.fs.list(`${epic}/roster`).catch(() => null)
+    const roster: { name: string; text: string | null }[] | null = entries && []
+    for (const entry of entries ?? []) {
       if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue
-      roster.push({ name: entry.name, text: await $.fs.read(`${epic}/roster/${entry.name}`).catch(() => '') })
+      roster?.push({ name: entry.name, text: await $.fs.read(`${epic}/roster/${entry.name}`).catch(() => null) })
     }
-    const decisions = await $.fs.read(`${epic}/decisions.md`).catch(() => null)
-    return epicView(roster, decisions)
+    return epicView(roster, await readDecisions($, `${epic}/decisions.md`))
   } catch {
     return null
   }
+}
+
+// The app's session tools. The server's name is the app's own and could change
+// (seen on 2.1.309 and 2.1.317), and it is absent outside the desktop app, so
+// every call here fails soft into "unavailable", which the pane says plainly.
+const SESSIONS = 'ccd_session_mgmt'
+const LIST_LIMIT = 20
+const SESSION_CALL_MS = 5_000
+const ASK_KEY = 'ask/'
+
+async function callSessions($: EngineInterface, tool: string, args: Record<string, unknown>) {
+  return (await upTo($, $.mcp.call(SESSIONS, tool, args).then(listedFrom, () => null), SESSION_CALL_MS)) ?? null
+}
+
+// This session's id as the app knows it, which is what its list rows carry.
+export async function readHostId($: EngineInterface): Promise<string | null> {
+  return (await callSessions($, 'get_session', { session_id: 'self' }))?.[0]?.id ?? null
+}
+
+// $.store is one JSON file per plugin, and live across sessions: two sessions
+// writing 40 keys each at once saw each other's and lost none (2.1.317).
+export async function publishAsk($: EngineInterface, id: string, ask: Ask | null): Promise<void> {
+  const key = `${ASK_KEY}${id}`
+  if (ask) await $.store.set(key, ask)
+  else if ((await $.store.get(key)) !== undefined) await $.store.delete(key)
+}
+
+async function readAsks($: EngineInterface): Promise<Record<string, Ask> | null> {
+  try {
+    const out: Record<string, Ask> = {}
+    for (const key of await $.store.keys()) {
+      if (!key.startsWith(ASK_KEY)) continue
+      const value = (await $.store.get(key)) as Partial<Ask> | undefined
+      if (typeof value?.text === 'string') out[key.slice(ASK_KEY.length)] = { text: value.text, at: Number(value.at) || 0 }
+    }
+    return out
+  } catch {
+    return null
+  }
+}
+
+export async function readSessions($: EngineInterface, roster: RosterRow[]): Promise<SessionsView> {
+  const listed = await callSessions($, 'list_sessions', { limit: LIST_LIMIT })
+  if (!listed) return { state: 'unavailable' }
+  // The list leaves out the session asking, so this one is read on its own.
+  const self = (await callSessions($, 'get_session', { session_id: 'self' }))?.[0] ?? null
+  const asks = await readAsks($)
+  const now = await $.clock.now()
+  return { state: 'ok', ...sessionsView({ listed, self, roster, asks: asks ?? {}, now }), asks: asks ? 'ok' : 'unreadable' }
 }
 
 // Lines for the session's trace, in the hooks' format. $.fs has no append and

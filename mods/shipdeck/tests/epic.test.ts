@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { doneMap, epicView, firstClause, newlyDone, parseChecked, parseRulings } from '../hooks/epic.ts'
+import { doneMap, epicView, firstClause, newlyDone, parseChecked, parseRulings, rulingParts } from '../hooks/epic.ts'
 
 // Synthetic files in each shape seen in real epics.
 const PLAIN_ARCHITECT = [
@@ -44,6 +44,25 @@ describe('roster', () => {
   test('done lists the lanes that reported done', () => {
     expect(view.done).toEqual(['f1-fixture'])
   })
+  test('a seat file is one that names a role or a session: handoffs and notes in the folder are not seats', () => {
+    const { rows } = epicView(
+      [
+        { name: 'F2.md', text: 'role: lane F2\nstatus: active' },
+        { name: 'F3.md', text: 'session id: local_3\nstatus: active' },
+        { name: 'F2-handoff.md', text: '# Handoff\n\nSeat: lane F2 of post-0.5.\nstatus: not a field of a seat' },
+      ],
+      null,
+    )
+    expect(rows.map(r => r.seat)).toEqual(['F2', 'F3'])
+  })
+  test('a seat carries its session id, in either shape', () => {
+    expect(view.rows.map(r => r.sessionId)).toEqual(['local_1', 'local_3', 'local_2'])
+  })
+  test('a seat file that could not be read is unreadable, not blank and not gone', () => {
+    const { rows, roster } = epicView([{ name: 'F2.md', text: null }, { name: 'F3.md', text: 'role: lane F3\nstatus: active' }], null)
+    expect(rows.map(r => [r.seat, r.status, r.isUnreadable])).toEqual([['F2', 'unreadable', true], ['F3', 'active', false]])
+    expect(roster).toBe('ok')
+  })
   test('a status keeps its first clause', () => {
     expect(firstClause('done (epic closed 2026-09-27; next epic has its own)')).toBe('done')
     expect(firstClause('EPIC COMPLETE (2026-08-31, PRs merged)')).toBe('EPIC COMPLETE')
@@ -55,8 +74,34 @@ describe('roster', () => {
   })
 })
 
+describe('what the epic folder could give', () => {
+  const seat = { name: 'F1.md', text: PLAIN_LANE_DONE }
+  test('no seats is empty; a folder that cannot be listed is unreadable, and they differ', () => {
+    expect(epicView([], null).roster).toBe('empty')
+    expect(epicView(null, null).roster).toBe('unreadable')
+    expect(epicView([{ name: 'F1-handoff.md', text: 'just notes' }], null).roster).toBe('empty')
+    expect(epicView([seat], null).roster).toBe('ok')
+  })
+  test('no decisions file is empty; one that cannot be read is unreadable', () => {
+    expect(epicView([seat], null).decisions).toBe('empty')
+    expect(epicView([seat], { unreadable: true }).decisions).toBe('unreadable')
+  })
+  test('a decisions file with text but no entries the pane can read is unreadable, not empty', () => {
+    const table = '# Decisions\n\n| ID | Ruling |\n|---|---|\n| D1 | Ship it |\n'
+    expect(epicView([seat], table).decisions).toBe('unreadable')
+    expect(epicView([seat], table).rulings).toEqual([])
+  })
+  test('a decisions file holding only its heading has no rulings yet', () => {
+    expect(epicView([seat], '# Decisions\n\n').decisions).toBe('empty')
+    expect(epicView([seat], '').decisions).toBe('empty')
+  })
+  test('entries read as ok', () => {
+    expect(epicView([seat], '**D1** · Ship the band\n').decisions).toBe('ok')
+  })
+})
+
 describe('lanes finishing', () => {
-  const rows = (f1: string) => epicView([{ name: 'architect.md', text: PLAIN_ARCHITECT }, { name: 'f1.md', text: `status: ${f1}` }], null).rows
+  const rows = (f1: string) => epicView([{ name: 'architect.md', text: PLAIN_ARCHITECT }, { name: 'f1.md', text: `role: lane f1\nstatus: ${f1}` }], null).rows
   test('the first read only seeds', () => {
     expect(newlyDone(null, rows('done'))).toEqual([])
   })
@@ -68,6 +113,12 @@ describe('lanes finishing', () => {
 })
 
 describe('rulings', () => {
+  test('a ruling splits into its ID and its title, for the ID to sit in a column', () => {
+    expect(rulingParts('D26 · The pane keeps its rulings')).toEqual({ id: 'D26', title: 'The pane keeps its rulings' })
+    expect(rulingParts('D-067 · 2026-08-31 · F02c DONE')).toEqual({ id: 'D-067', title: '2026-08-31 · F02c DONE' })
+    expect(rulingParts('D1. What the site serves.')).toEqual({ id: 'D1', title: 'What the site serves.' })
+    expect(rulingParts('2026-09-24 · Follow-up lane DONE')).toEqual({ id: null, title: '2026-09-24 · Follow-up lane DONE' })
+  })
   test('bold ID-led entries, newest first', () => {
     const text = [
       '# Decisions',

@@ -11,16 +11,21 @@ import type { Elements, EngineInterface, PromptSubmitInput, PromptSubmitResult, 
 
 import type { DoctorJson } from '../types'
 import { bandModel, describe } from './band.ts'
-import { appendTrace, findCore, readEpic, runDoctor, saveOriginal, upTo } from './core.ts'
+import { appendTrace, findCore, publishAsk, readEpic, readHostId, readSessions, runDoctor, saveOriginal, upTo } from './core.ts'
 import { drawBand } from './draw.ts'
 import { doneMap, newlyDone } from './epic.ts'
 import type { Style } from './model.ts'
 import { paneTree } from './pane.tsx'
 import { assemble, checkReply, countWords, MAX_TOKENS, request, rowKey, rowText, score, skipPrefix, splitReminders, wordsBesideReminders } from './refine.ts'
 import type { Score, Split } from './refine.ts'
+import { askFromTool } from './sessions.ts'
 import { terminalBand } from './terminal.tsx'
 
 const PANE = 'shipdeck-epic'
+const PANE_TITLE = 'Sessions'
+// How often an open pane re-reads the session list. A list and a get cost about
+// 240 ms together (measured on 2.1.317), and it only runs while the pane can be seen.
+const SESSIONS_MS = 15_000
 // Long enough for the slowest honest reading: the core lookup's 15 s, then
 // the doctor's 10 s.
 const READ_BOUND_MS = 30_000
@@ -40,7 +45,8 @@ const notices = atom({ plugin: 'shipdeck', key: 'notices' } as const, [], { shap
 const refining = atom({ plugin: 'shipdeck', key: 'refining' } as const, 0, { shape: 'refining-2' })
 const refineOff = atom({ plugin: 'shipdeck', key: 'refineOff' } as const, false)
 const rows = atom({ plugin: 'shipdeck', key: 'rows' } as const, [], { shape: 'rows-1' })
-const epic = atom({ plugin: 'shipdeck', key: 'epic' } as const, null, { shape: 'epic-1' })
+const epic = atom({ plugin: 'shipdeck', key: 'epic' } as const, null, { shape: 'epic-2' })
+const sessions = atom({ plugin: 'shipdeck', key: 'sessions' } as const, null, { shape: 'sessions-1' })
 // The roster's done map and the one-toast flag outlive a reload, so a lane
 // that finished during one still raises its notice, and the warning stays one.
 // The map names its epic: another epic's first read only seeds.
@@ -64,6 +70,8 @@ let transientFailures = 0
 let coreNoteAt = 0
 let hasToldNoScratch = false
 let isReadingEpic = false
+let isReadingSessions = false
+let hostId: string | null = null
 // Operator prompts enter in the order typed: each waits for the one before.
 // The wait is bounded at 8 s because a hook's own budget is 10 s and a wait
 // on another dispatch counts against it (`$` calls and `next` do not, except
@@ -112,20 +120,53 @@ async function refreshUsage($: EngineInterface): Promise<void> {
 }
 
 async function refreshEpic($: EngineInterface): Promise<void> {
-  const dir = lastDoctor?.seat?.role === 'architect' ? lastDoctor.seat.epic : null
+  const dir = lastDoctor?.seat?.epic ?? null
   if (!dir) return
   if (isReadingEpic) return
   isReadingEpic = true
   try {
     const view = await readEpic($, dir)
     if (!view) return
-    const before = await read($, seen)
-    await update($, seen, () => ({ epic: dir, done: doneMap(view.rows) }))
-    for (const lane of newlyDone(before?.epic === dir ? before.done : null, view.rows)) await addNotice($, `${lane} done`)
+    if (lastDoctor?.seat?.role === 'architect') {
+      const before = await read($, seen)
+      await update($, seen, () => ({ epic: dir, done: doneMap(view.rows) }))
+      for (const lane of newlyDone(before?.epic === dir ? before.done : null, view.rows)) await addNotice($, `${lane} done`)
+    }
     await update($, epic, () => view)
   } finally {
     isReadingEpic = false
   }
+}
+
+// The list is read only while the pane can be seen: a session nobody has open
+// has no surface attached, so nothing would draw (measured on 2.1.317).
+async function refreshSessions($: EngineInterface): Promise<void> {
+  if (isReadingSessions) return
+  isReadingSessions = true
+  try {
+    if (!(await $.ui.panes()).some(p => p.id === PANE)) return
+    if ((await $.session.surfaces()).length === 0) return
+    const view = await readSessions($, (await read($, epic))?.rows ?? [])
+    await update($, sessions, prev => (JSON.stringify(prev) === JSON.stringify(view) ? prev : view))
+  } finally {
+    isReadingSessions = false
+  }
+}
+
+async function openPane($: EngineInterface) {
+  const opened = await $.ui.open({ id: PANE, title: PANE_TITLE })
+  void refreshSessions($).catch(() => {})
+  return opened
+}
+
+// What this session is waiting on the operator for, published for the pane in
+// every session to read. Only moments shipdeck can see: a turn's closing
+// question and AskUserQuestion. With no app session id there is no list to be in.
+async function publish($: EngineInterface, ask: { text: string } | null): Promise<void> {
+  hostId ??= await readHostId($)
+  if (!hostId) return
+  await publishAsk($, hostId, ask && { text: ask.text, at: await $.clock.now() })
+  void refreshSessions($).catch(() => {})
 }
 
 // The doctor runs after tool calls that can change evidence, at most once
@@ -181,7 +222,7 @@ async function readDoctor($: EngineInterface): Promise<void> {
     await update($, note, () => null)
     if (got.doctor.seat?.role === 'architect' && !hasOpenedPane && !(await read($, paneOpened))) {
       hasOpenedPane = true
-      void $.ui.open({ id: PANE, title: 'Epic' }).catch(() => {})
+      void openPane($).catch(() => {})
       await update($, paneOpened, () => true).catch(() => {})
     }
     await refreshEpic($)
@@ -348,19 +389,24 @@ export const register: Register = (on, options) => {
     firstReading = refreshDoctor($, true).catch(() => {})
     $.clock.every(60_000, () => void readFromMainLoop($, true).catch(() => {}))
     $.clock.every(30_000, () => void refreshEpic($).catch(() => {}))
+    $.clock.every(SESSIONS_MS, () => void refreshSessions($).catch(() => {}))
     await $.command.register({ name: 'refine', description: 'shipdeck: turn prompt refining on or off for this session', argumentHint: 'on | off' }).catch(() => {})
-    await $.command.register({ name: 'shipdeck', description: 'shipdeck: open the epic pane, or switch the band style', argumentHint: 'style github | style linear' }).catch(() => {})
+    await $.command.register({ name: 'shipdeck', description: 'shipdeck: open the sessions pane, or switch the band style', argumentHint: 'style github | style linear' }).catch(() => {})
     return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
+    const isSubagent = !!(e as { agentId?: string }).agentId
+    // Before the call: AskUserQuestion holds it open until it is answered.
+    const asked = isOff || isSubagent ? null : askFromTool(String(e.tool), e)
+    if (asked) void publish($, asked.kind === 'ask' ? asked : null).catch(() => {})
     const ran = await next(e)
     if (isOff) return ran
     try {
+      if (!isSubagent && e.tool === 'AskUserQuestion') void publish($, null).catch(() => {})
       // Only the session's own calls move its context, so only they refresh
       // the gauge, as at turn end. (A subagent's hook reads the session's
       // figure too, probed on 2.1.309; the call would change nothing.)
-      const isSubagent = !!(e as { agentId?: string }).agentId
       if (!isSubagent) void refreshUsage($).catch(() => {})
       const tool = String(e.tool)
       const isEvidence = tool === 'Bash' || tool === 'Agent' || tool === 'Task'
@@ -378,6 +424,19 @@ export const register: Register = (on, options) => {
     }
     return ran
   }).catch(($, e, next) => next(e))
+
+  // A new turn is the session moving on, whoever started it: whatever it asked
+  // is answered, or the turn's own close will ask again.
+  on('turn.start', async ($, e, next) => {
+    if (!isOff && !e.agentId) void publish($, null).catch(() => {})
+    return next(e)
+  })
+
+  // The operator opening this session is when the pane is first seen.
+  on('session.attach', async ($, e, next) => {
+    if (!isOff) void refreshSessions($).catch(() => {})
+    return next(e)
+  })
 
   on('turn.complete', async ($, e, next) => {
     if (!isOff) {
@@ -513,14 +572,12 @@ export const register: Register = (on, options) => {
         return { text: 'shipdeck: the style could not be set here; set the style option in the plugin settings instead.' }
       }
     }
+    const opened = await openPane($)
+    await update($, paneOpened, () => true).catch(() => {})
     const d = await read($, doctor)
-    if (d?.seat?.role === 'architect') {
-      const opened = await $.ui.open({ id: PANE, title: 'Epic' })
-      await update($, paneOpened, () => true).catch(() => {})
-      return { text: opened.isPlaced ? 'shipdeck: the epic pane is open.' : `shipdeck: the epic pane waits for room (${opened.reason}).` }
-    }
     const why = (await read($, note)) ?? ''
     const model = bandModel({ doctor: d, isUnavailable: why !== '', percent: await read($, percent), notices: [], refining: false, now: await $.clock.now() })
-    return { text: `shipdeck: ${describe(model)}${why ? ` (${why})` : ''}. The epic pane is for an Architect seat; /shipdeck style github or linear switches the band.` }
+    const pane = opened.isPlaced ? 'the sessions pane is open' : `the sessions pane waits for room (${opened.reason})`
+    return { text: `shipdeck: ${pane}. ${describe(model)}${why ? ` (${why})` : ''}. /shipdeck style github or linear switches the band.` }
   })
 }

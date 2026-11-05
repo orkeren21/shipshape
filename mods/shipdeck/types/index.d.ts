@@ -20,12 +20,52 @@ export type DoctorJson = {
 export type RosterRow = {
   seat: string
   status: string
+  sessionId: string | null
   isDone: boolean
   isArchitect: boolean
+  isUnreadable: boolean
   checkedAt: number | null
 }
 
-export type EpicView = { rows: RosterRow[]; rulings: string[]; done: string[] }
+// What a read gave: `empty` is a read that found nothing, `unreadable` one that
+// could not tell. The pane says the two apart.
+export type Reading = 'ok' | 'empty' | 'unreadable'
+
+export type EpicView = { rows: RosterRow[]; rulings: string[]; done: string[]; roster: Reading; decisions: Reading }
+
+// One session as the app's session list gives it.
+export type ListedSession = {
+  id: string
+  title: string
+  isRunning: boolean
+  isArchived: boolean
+  pr: { number: number; state: string } | null
+  activeAt: number | null
+}
+
+// What a session's own shipdeck published when it asked the operator something.
+export type Ask = { text: string; at: number }
+
+// `unknown`: a seat whose session the list does not hold.
+export type SessionState = 'needs' | 'working' | 'idle' | 'unknown' | 'done'
+
+export type SessionRow = {
+  key: string
+  seat: string | null
+  title: string
+  state: SessionState
+  isSelf: boolean
+  pr: { number: number; state: string } | null
+  ask: string | null
+  restingFor: number | null
+  activeAt: number | null
+}
+
+export type SessionsView =
+  // The app's list was read; `asks` says whether the published questions were too.
+  | { state: 'ok'; rows: SessionRow[]; more: number; asks: Reading }
+  // No list: outside the desktop app, or the server would not answer.
+  | { state: 'unavailable' }
 
 // One refinement, so the operator's transcript row can show what the
 // session received: keyed by the typed words, normalised.
@@ -44,6 +84,7 @@ declare module 'claude-code' {
       refineOff: boolean
       rows: Shaped<RefinedRow[]>
       epic: Shaped<EpicView | null>
+      sessions: Shaped<SessionsView | null>
       seen: Shaped<{ epic: string; done: Record<string, boolean> } | null>
       warned: boolean
       paneOpened: boolean
