@@ -48,6 +48,10 @@ assert_contains "$epic" 'take the seat again with the new path' \
   "and its seat follows, since the pane reads the path from it"
 assert_contains "$epic" 'before telling any other lane where to look' \
   "all before a second lane depends on the path"
+assert_contains "$lane" 'write your roster file in it and nothing else' \
+  "the lane's own skill says what to do in a folder that is not there yet"
+assert_contains "$lane" 'put its absolute path in your `ANNOUNCE`' \
+  "and how the Architect learns the path"
 assert_contains "$template" 'first lane of an Architect with no notes folder in view' \
   "the priming template carries the same exception"
 assert_not_contains "$brainstorming" "with no folders of their own" \

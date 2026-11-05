@@ -67,6 +67,12 @@ hands since the priming was written — and send one line it can act on:
 
     ANNOUNCE (auth-ui): lane starting from the 2026-08-30 priming, beginning at t1
 
+The first lane of an epic can find its epic folder not there yet, when the
+Architect could not see the notes folder and the priming names it by the foot
+of the brief. Create the folder, write your roster file in it and nothing else,
+put its absolute path in your `ANNOUNCE` to the Architect the priming names, and
+hold for the Architect's word. It copies the epic in and releases you.
+
 ## The message shape
 
 The first line of every message is `TYPE (lane): what this is` — receivers
