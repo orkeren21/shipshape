@@ -71,6 +71,15 @@ cover is proposed instead, as a card (`own_initiative`) the operator starts
 with a click — and on a turn a lane's message started, the app refuses a
 direct start anyway.
 
+An Architect with no notes folder in its own brief or working directories
+learns it from the first lane, because the app names it at the foot of that
+lane's brief. So that one priming gives the epic folder as `<epic-slug>/` under
+the folder named at the foot of the brief, and the lane's `ANNOUNCE` carries
+the absolute path. Move the epic there and take the seat again with the new
+path before telling any other lane where to look: a copy started in a worktree
+is in that worktree alone. If the move is refused, that is a manual action for
+the operator.
+
 Without a session-starting tool, hand each priming to the operator to paste
 into a new session, as before.
 

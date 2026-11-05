@@ -69,11 +69,11 @@ desktop app refuses a worktree session's writes to the main checkout, and the
 notes folder outlives every worktree. The app names it at the foot of a started
 session's brief and lists it among that session's additional working
 directories. An Architect with none in view starts the epic at
-`docs/shipshape/work/<epic-slug>/` and moves it to the notes folder the app
-names when the first lane starts. Sessions without a notes folder keep the epic
-there, in the shared checkout, addressed by absolute path, since each worktree
-carries its own gitignored copy of that tree. Quote the path wherever it is
-used: the notes folder sits under `Application Support`.
+`docs/shipshape/work/<epic-slug>/` and moves it once its first lane's brief
+names the folder (`shipshape:epic-architecture` has the steps). Sessions with no
+notes folder keep the epic there, in the shared checkout, addressed by absolute
+path, since each worktree carries its own gitignored copy of that tree. Quote
+the path wherever it is used: the notes folder sits under `Application Support`.
 
 The design document starts the folder. The plan, the retro and any handoff are
 its siblings, named after it — `<design>-plan.md`, `<design>-retro.md`,

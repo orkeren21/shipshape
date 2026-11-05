@@ -34,6 +34,10 @@ assert_contains "$brainstorming" '<epic folder>/<lane>/' \
 assert_contains "$brainstorming" 'before its `DONE`' \
   "and reach it before the lane reports done, since a worktree takes its copy with it"
 assert_contains "$brainstorming" "a worktree takes" "and it says why"
+assert_contains "$epic" 'foot of the brief' \
+  "an Architect with no notes folder in view learns it from its first lane"
+assert_contains "$epic" 'before telling any other lane where to look' \
+  "and moves the epic before a second lane depends on the path"
 assert_not_contains "$brainstorming" "with no folders of their own" \
   "the old layout, which gave a lane no folder, is gone"
 assert_not_contains "$template" "as an absolute path in the shared checkout" \
