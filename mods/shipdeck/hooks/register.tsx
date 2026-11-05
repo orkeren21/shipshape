@@ -11,7 +11,7 @@ import type { Elements, EngineInterface, PromptSubmitInput, PromptSubmitResult, 
 
 import type { DoctorJson } from '../types'
 import { bandModel, describe } from './band.ts'
-import { appendTrace, findCore, publishAsk, readEpic, readHostId, readSessions, runDoctor, saveOriginal, upTo } from './core.ts'
+import { appendTrace, findCore, publishAsk, readEpic, readSelf, readSessions, runDoctor, saveOriginal, upTo } from './core.ts'
 import { drawBand } from './draw.ts'
 import { doneMap, newlyDone } from './epic.ts'
 import type { Style } from './model.ts'
@@ -71,7 +71,10 @@ let coreNoteAt = 0
 let hasToldNoScratch = false
 let isReadingEpic = false
 let isReadingSessions = false
+let sessionMisses = 0
 let hostId: string | null = null
+// One write at a time, so a clear never reads the store ahead of its own ask.
+let publishing: Promise<void> = Promise.resolve()
 // Operator prompts enter in the order typed: each waits for the one before.
 // The wait is bounded at 8 s because a hook's own budget is 10 s and a wait
 // on another dispatch counts against it (`$` calls and `next` do not, except
@@ -104,15 +107,17 @@ async function writeTrace($: EngineInterface): Promise<void> {
 
 // What the refiner decided, for tuning its heuristic in the field: counts and
 // reasons, never the operator's words.
-async function traceRefiner($: EngineInterface, decision: string): Promise<void> {
+async function trace($: EngineInterface, who: string, decision: string): Promise<void> {
   try {
     const at = new Date(await $.clock.now()).toISOString().replace(/\.\d+Z$/, 'Z')
-    unwritten = [...unwritten, `${at} shipdeck refiner: ${decision}`].slice(-MAX_UNWRITTEN)
+    unwritten = [...unwritten, `${at} shipdeck ${who}: ${decision}`].slice(-MAX_UNWRITTEN)
     await writeTrace($)
   } catch {
     // a trace must never cost what it records
   }
 }
+
+const traceRefiner = ($: EngineInterface, decision: string) => trace($, 'refiner', decision)
 
 async function refreshUsage($: EngineInterface): Promise<void> {
   const usage = await $.session.usage()
@@ -149,6 +154,14 @@ async function refreshSessions($: EngineInterface): Promise<void> {
     if (!(await $.ui.panes()).some(p => p.id === PANE)) return
     if ((await $.session.surfaces()).length === 0) return
     const view = await readSessions($, (await read($, epic))?.rows ?? [])
+    // One miss keeps the last good reading, as the doctor's does: a read that
+    // timed out must not wipe the list.
+    if (view.state === 'unavailable') {
+      if (++sessionMisses === 1) void trace($, 'pane', 'the session list could not be read').catch(() => {})
+      if (sessionMisses < 2 && (await read($, sessions))?.state === 'ok') return
+    } else {
+      sessionMisses = 0
+    }
     await update($, sessions, prev => (JSON.stringify(prev) === JSON.stringify(view) ? prev : view))
   } finally {
     isReadingSessions = false
@@ -164,15 +177,23 @@ async function openPane($: EngineInterface) {
 // What this session is waiting on the operator for, published for the pane in
 // every session to read. Only moments shipdeck can see: a turn's closing
 // question and AskUserQuestion. With no app session id there is no list to be in.
-async function publish($: EngineInterface, ask: { text: string } | null): Promise<void> {
-  hostId ??= await readHostId($)
+function publish($: EngineInterface, ask: { text: string } | null): Promise<void> {
+  publishing = publishing.then(() => writeAsk($, ask)).catch(() => trace($, 'pane', 'a question could not be published'))
+  return publishing
+}
+
+async function writeAsk($: EngineInterface, ask: { text: string } | null): Promise<void> {
+  // A question needs this session's PR, to lapse when that closes; a clear needs
+  // only the id, which the environment gives without a call (measured on 2.1.317).
+  const self = ask ? await readSelf($) : null
+  hostId ??= self?.id ?? (await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')) ?? (await readSelf($))?.id ?? null
   if (!hostId) return
-  await publishAsk($, hostId, ask && { text: ask.text, at: await $.clock.now() })
+  await publishAsk($, hostId, ask && { text: ask.text, at: await $.clock.now(), prOpen: self?.pr?.state === 'open' })
   void refreshSessions($).catch(() => {})
 }
 
 // What the band shows now. The pane draws the same, since the app can take the
-// band away.
+// band away (read from the app bundle, not confirmed live).
 async function bandNow($: EngineInterface) {
   return bandModel({
     doctor: await read($, doctor),
@@ -412,7 +433,8 @@ export const register: Register = (on, options) => {
 
   on('tool.call', async ($, e, next) => {
     const isSubagent = !!(e as { agentId?: string }).agentId
-    // Before the call: AskUserQuestion holds it open until it is answered.
+    // Before the call: the engine holds AskUserQuestion's call open until it is
+    // answered, by the tool's own doc; only wrap_up has been seen here.
     const asked = isOff || isSubagent ? null : askFromTool(String(e.tool), e)
     if (asked) void publish($, asked.kind === 'ask' ? asked : null).catch(() => {})
     const ran = await next(e)
@@ -440,17 +462,25 @@ export const register: Register = (on, options) => {
     return ran
   }).catch(($, e, next) => next(e))
 
-  // A new turn is the session moving on, whoever started it: whatever it asked
-  // is answered, or the turn's own close will ask again.
+  // A new turn is the session moving on, whoever started it, and its own close
+  // asks again if the question still stands.
   on('turn.start', async ($, e, next) => {
     if (!isOff && !e.agentId) void publish($, null).catch(() => {})
     return next(e)
   })
 
-  // The operator opening this session is when the pane is first seen.
-  on('session.attach', async ($, e, next) => {
-    if (!isOff) void refreshSessions($).catch(() => {})
+  // A /clear ends the conversation that asked, with no turn to say so.
+  on('session.end', async ($, e, next) => {
+    if (!isOff && e.reason === 'clear') void publish($, null).catch(() => {})
     return next(e)
+  })
+
+  // The operator opening this session is when the pane is first seen. The read
+  // waits for the engine to put the client on its roster.
+  on('session.attach', async ($, e, next) => {
+    const attached = await next(e)
+    if (!isOff) void refreshSessions($).catch(() => {})
+    return attached
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -591,12 +621,12 @@ export const register: Register = (on, options) => {
         return { text: 'shipdeck: the style could not be set here; set the style option in the plugin settings instead.' }
       }
     }
-    const opened = await openPane($)
-    await update($, paneOpened, () => true).catch(() => {})
+    const opened = await openPane($).catch(() => null)
+    if (opened) await update($, paneOpened, () => true).catch(() => {})
     const d = await read($, doctor)
     const why = (await read($, note)) ?? ''
     const model = bandModel({ doctor: d, isUnavailable: why !== '', percent: await read($, percent), notices: [], refining: false, now: await $.clock.now() })
-    const pane = opened.isPlaced ? 'the sessions pane is open' : `the sessions pane waits for room (${opened.reason})`
+    const pane = !opened ? 'the sessions pane could not open' : opened.isPlaced ? 'the sessions pane is open' : `the sessions pane waits for room (${opened.reason})`
     return { text: `shipdeck: ${pane}. ${describe(model)}${why ? ` (${why})` : ''}. /shipdeck style github or linear switches the band.` }
   })
 }

@@ -34,7 +34,7 @@ export type RosterRow = {
 // could not tell. The pane says the two apart.
 export type Reading = 'ok' | 'empty' | 'unreadable'
 
-export type EpicView = { rows: RosterRow[]; rulings: string[]; done: string[]; roster: Reading; decisions: Reading }
+export type EpicView = { rows: RosterRow[]; rulings: string[]; roster: Reading; decisions: Reading }
 
 // One session as the app's session list gives it.
 export type ListedSession = {
@@ -47,7 +47,8 @@ export type ListedSession = {
 }
 
 // What a session's own shipdeck published when it asked the operator something.
-export type Ask = { text: string; at: number }
+// `prOpen`: the session held an open PR when it asked.
+export type Ask = { text: string; at: number; prOpen?: boolean }
 
 // `unknown`: a seat whose session the list does not hold.
 export type SessionState = 'needs' | 'working' | 'idle' | 'unknown' | 'done'

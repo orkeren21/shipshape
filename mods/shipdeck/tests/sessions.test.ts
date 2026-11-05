@@ -28,6 +28,10 @@ describe('reading the list', () => {
     expect(listedFrom(null)).toBeNull()
     expect(listedFrom(reply([]))).toEqual([])
   })
+  test('a reply holding something, none of it sessions, is no list: the app\'s shape could move', () => {
+    expect(listedFrom(reply({ sessions: [raw('a')] }))).toBeNull()
+    expect(listedFrom(reply([{ id: 'renamed', title: 'x' }]))).toBeNull()
+  })
   test('a single session reads as a list of one', () => {
     expect(listedFrom(reply(raw('a')))?.map(s => s.id)).toEqual(['a'])
   })
@@ -89,6 +93,25 @@ describe('state', () => {
   test('the time since activity is carried for a session at rest, not for one working', () => {
     expect(view([raw('a'), raw('b', { isRunning: true })]).rows.map(r => [r.key, r.restingFor])).toEqual([['b', null], ['a', 5 * 60_000]])
   })
+  test('it moves by the minute, so a read inside one changes nothing to redraw', () => {
+    expect(view([raw('a', { lastActivityAt: new Date(NOW - 5 * 60_000 - 59_000).toISOString() })]).rows[0]?.restingFor).toBe(5 * 60_000)
+  })
+})
+
+describe('a question that has lapsed', () => {
+  const asked = (over: object = {}) => ({ a: { text: 'Merge PR 15?', at: NOW - 60_000, ...over } })
+  test('one asked with the PR open goes once it is not: the app can merge from the card itself', () => {
+    expect(view([raw('a', { prNumber: 15, prState: 'MERGED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('idle')
+    expect(view([raw('a', { prNumber: 15, prState: 'OPEN' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('needs')
+  })
+  test('one asked with no PR open stands, whatever the PR says now', () => {
+    expect(view([raw('a', { prNumber: 15, prState: 'MERGED' })], { asks: asked() }).rows[0]?.state).toBe('needs')
+  })
+  test('one nobody answered in a week goes', () => {
+    const old = (days: number) => ({ a: { text: 'Still?', at: NOW - days * 86_400_000 } })
+    expect(view([raw('a')], { asks: old(6.9) }).rows[0]?.state).toBe('needs')
+    expect(view([raw('a')], { asks: old(7) }).rows[0]?.state).toBe('idle')
+  })
 })
 
 describe('order', () => {
@@ -121,8 +144,8 @@ describe('seats', () => {
     const rows = view([raw('a')], { roster: [seat('F5', 'gone', { status: 'waiting on F2' }), seat('F6', null, { status: 'active' })] }).rows
     expect(rows.map(r => [r.key, r.seat, r.state, r.title])).toEqual([['a', null, 'idle', 'Session a'], ['seat:F5', 'F5', 'unknown', 'waiting on F2'], ['seat:F6', 'F6', 'unknown', 'active']])
   })
-  test('a done seat with no session listed draws as done', () => {
-    expect(view([], { roster: [seat('F1', 'gone', { isDone: true, status: 'done' })] }).rows.map(r => r.state)).toEqual(['done'])
+  test('a done seat with no session listed is gone: archived ones go, whatever else', () => {
+    expect(view([], { roster: [seat('F1', 'gone', { isDone: true, status: 'done' })] }).rows).toEqual([])
   })
   test('a seat file that could not be read says so', () => {
     expect(view([], { roster: [seat('F2', null, { status: 'unreadable' })] }).rows[0]).toMatchObject({ state: 'unknown', title: 'unreadable' })
@@ -149,6 +172,7 @@ describe('the title as a row shows it', () => {
   })
   test('a title that only mentions the seat, or another one, is left alone', () => {
     expect(stripSeat('Fix what F3 broke', 'F3')).toBe('Fix what F3 broke')
+    expect(stripSeat('Add F3-style rows', 'F3')).toBe('Add F3-style rows')
     expect(stripSeat('TF3: other', 'F3')).toBe('TF3: other')
     expect(stripSeat('post-0.5 · F13: other', 'F3')).toBe('post-0.5 · F13: other')
     expect(stripSeat('F3:', 'F3')).toBe('F3:')

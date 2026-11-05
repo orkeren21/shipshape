@@ -9,7 +9,7 @@ import { epicView } from './epic.ts'
 import { listedFrom, sessionsView } from './sessions.ts'
 import type { DoctorJson } from './model.ts'
 import type { EpicView, RosterRow } from './epic.ts'
-import type { Ask, SessionsView } from '../types'
+import type { Ask, ListedSession, SessionsView } from '../types'
 
 function parent(path: string): string {
   const trimmed = path.replace(/\/+$/, '')
@@ -145,7 +145,8 @@ export async function readEpic($: EngineInterface, epic: string): Promise<EpicVi
       if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue
       roster?.push({ name: entry.name, text: await $.fs.read(`${epic}/roster/${entry.name}`).catch(() => null) })
     }
-    return epicView(roster, await readDecisions($, `${epic}/decisions.md`))
+    // With the folder itself out of reach, a missing file proves nothing.
+    return epicView(roster, roster ? await readDecisions($, `${epic}/decisions.md`) : { unreadable: true })
   } catch {
     return epicView(null, { unreadable: true })
   }
@@ -155,7 +156,9 @@ export async function readEpic($: EngineInterface, epic: string): Promise<EpicVi
 // (seen on 2.1.309 and 2.1.317), and it is absent outside the desktop app, so
 // every call here fails soft into "unavailable", which the pane says plainly.
 const SESSIONS = 'ccd_session_mgmt'
-const LIST_LIMIT = 20
+// A session waiting on the operator is by definition not recent, so the list is
+// read long and the pane's own rules do the cutting.
+const LIST_LIMIT = 200
 const SESSION_CALL_MS = 5_000
 const ASK_KEY = 'ask/'
 
@@ -163,9 +166,9 @@ async function callSessions($: EngineInterface, tool: string, args: Record<strin
   return (await upTo($, $.mcp.call(SESSIONS, tool, args).then(listedFrom, () => null), SESSION_CALL_MS)) ?? null
 }
 
-// This session's id as the app knows it, which is what its list rows carry.
-export async function readHostId($: EngineInterface): Promise<string | null> {
-  return (await callSessions($, 'get_session', { session_id: 'self' }))?.[0]?.id ?? null
+// This session as the app knows it: its id is what list rows carry.
+export async function readSelf($: EngineInterface): Promise<ListedSession | null> {
+  return (await callSessions($, 'get_session', { session_id: 'self' }))?.[0] ?? null
 }
 
 // $.store is one JSON file per plugin, and live across sessions: two sessions
@@ -182,7 +185,7 @@ async function readAsks($: EngineInterface): Promise<Record<string, Ask> | null>
     for (const key of await $.store.keys()) {
       if (!key.startsWith(ASK_KEY)) continue
       const value = (await $.store.get(key)) as Partial<Ask> | undefined
-      if (typeof value?.text === 'string') out[key.slice(ASK_KEY.length)] = { text: value.text, at: Number(value.at) || 0 }
+      if (typeof value?.text === 'string') out[key.slice(ASK_KEY.length)] = { text: value.text, at: Number(value.at) || 0, prOpen: value.prOpen === true }
     }
     return out
   } catch {
@@ -194,7 +197,7 @@ export async function readSessions($: EngineInterface, roster: RosterRow[]): Pro
   const listed = await callSessions($, 'list_sessions', { limit: LIST_LIMIT })
   if (!listed) return { state: 'unavailable' }
   // The list leaves out the session asking, so this one is read on its own.
-  const self = (await callSessions($, 'get_session', { session_id: 'self' }))?.[0] ?? null
+  const self = await readSelf($)
   const asks = await readAsks($)
   const now = await $.clock.now()
   return { state: 'ok', ...sessionsView({ listed, self, roster, asks: asks ?? {}, now }), asks: asks ? 'ok' : 'unreadable' }

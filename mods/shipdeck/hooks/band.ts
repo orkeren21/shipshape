@@ -63,6 +63,11 @@ export function legs(doctor: DoctorJson, now: number): Leg[] {
   return drawn
 }
 
+// An old record carries no number.
+export function prName(number: string): string {
+  return /^\d+$/.test(number) ? `#${number}` : 'PR'
+}
+
 // The legs are the current commit's, so they mean this branch's PR, and the
 // rest of the session's PRs are a count. A reading with no `prs` is none.
 export function prSummary(doctor: DoctorJson): PrSummary | null {
@@ -71,7 +76,7 @@ export function prSummary(doctor: DoctorJson): PrSummary | null {
   const mine = doctor.branch === null ? undefined : prs.findLast(p => p.branch === doctor.branch)
   const rest = prs.filter(p => p !== mine)
   return {
-    label: mine ? (/^\d+$/.test(mine.number) ? `#${mine.number}` : 'PR') : null,
+    label: mine ? prName(mine.number) : null,
     others: rest.length,
     isOwing: rest.some(p => p.state !== 'satisfied'),
   }

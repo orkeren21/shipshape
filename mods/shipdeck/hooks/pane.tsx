@@ -1,12 +1,13 @@
 // The operator's pane. This session's seat, context and evidence come first:
 // the app takes the band away while a next-step card shows and leaves panes up
 // (read from the app bundle, not confirmed live), so this is where they stay
-// in view. Then every session by state, then the epic's latest rulings. Drawn
+// in view. Then the live and recent sessions by state, then the epic's latest
+// rulings. Drawn
 // with the surface's own elements, so it sits in the host's type and theme;
 // the marks are the band's grammar, and DESIGN.md has the rules.
 
 import type { Elements } from 'claude-code'
-import { age } from './band.ts'
+import { age, prName } from './band.ts'
 import { drawBand, sessionMark } from './draw.ts'
 import { rulingParts } from './epic.ts'
 import type { EpicView } from './epic.ts'
@@ -71,8 +72,10 @@ function prLabel(pr: NonNullable<SessionRow['pr']>): string {
   return pr.state === 'open' ? `#${pr.number}` : `#${pr.number} ${pr.state}`
 }
 
+// A row under Done has said its PR is finished, and has no rest to count.
 function metaOf(r: SessionRow): string {
-  const rest = r.restingFor === null || r.state === 'done' ? null : r.restingFor < 60_000 ? 'now' : age(r.restingFor)
+  if (r.state === 'done') return r.pr ? `#${r.pr.number}` : ''
+  const rest = r.restingFor === null ? null : r.restingFor < 60_000 ? 'now' : age(r.restingFor)
   return [r.pr && prLabel(r.pr), rest].filter(Boolean).join(' · ')
 }
 
@@ -109,14 +112,14 @@ function bandTree(view: PaneView, els: Table, columns: number, surface: string) 
   const drawing = drawnOn(surface, els)
   if (!drawing) return terminalBand(view.band, els as Elements['terminal'])
   const { Svg } = drawing
-  const drawn = drawBand(view.band, view.style, Math.max(240, columns * 8 - 16))
+  const drawn = drawBand(view.band, view.style, Math.max(240, columns * 8))
   return <Svg key="band" source={drawn.source} width={drawn.width} height={drawn.height} alt={drawn.alt} />
 }
 
 // The band says "#15 +2"; this is the detail it points at.
 function prDetail(prs: DoctorJson['prs'], band: BandModel): string | null {
-  if (!band.pr || (band.pr.label !== null && band.pr.others === 0)) return null
-  return (prs ?? []).map(p => `#${p.number} ${OWED[p.state] ?? p.state}`).join(' · ')
+  if (!band.pr || band.pr.others === 0) return null
+  return (prs ?? []).map(p => `${prName(p.number)} ${OWED[p.state] ?? p.state}`).join(' · ')
 }
 
 function rulingsTree(view: PaneView, els: Table) {
@@ -124,7 +127,7 @@ function rulingsTree(view: PaneView, els: Table) {
   const { epic, epicDir } = view
   if (!epicDir) return null
   if (!epic) return <Text key="rulings" size="footnote" dimColor>Reading {epicDir}…</Text>
-  if (epic.decisions === 'unreadable') return section('rulings', 'Rulings', <Text key="note" size="footnote" dimColor>Could not read the rulings in decisions.md.</Text>, els)
+  if (epic.decisions === 'unreadable') return section('rulings', 'Rulings', <Text key="note" size="footnote" dimColor>No rulings this pane can read in decisions.md.</Text>, els)
   if (epic.decisions === 'empty') return section('rulings', 'Rulings', <Text key="note" size="footnote" dimColor>No rulings yet.</Text>, els)
   const rows = epic.rulings.map(rulingParts)
   const idWidth = Math.max(3, ...rows.map(r => r.id?.length ?? 0))
@@ -140,9 +143,9 @@ function footTree(view: PaneView, els: Table) {
   const { Text } = els
   const { sessions } = view
   if (sessions === null) return <Text key="foot" size="caption" dimColor>Reading sessions…</Text>
-  if (sessions.state === 'unavailable') return <Text key="foot" size="caption" dimColor>Live session state needs the Claude desktop app.</Text>
+  if (sessions.state === 'unavailable') return <Text key="foot" size="caption" dimColor>Could not read the session list, which needs the Claude desktop app.</Text>
   if (sessions.asks === 'unreadable') return <Text key="foot" size="caption" dimColor>Could not read what sessions are asking.</Text>
-  return <Text key="foot" size="caption" dimColor>Needs you covers sessions running shipdeck.</Text>
+  return <Text key="foot" size="caption" dimColor>Needs you covers only sessions running shipdeck.</Text>
 }
 
 export function paneTree(view: PaneView, els: Table, columns: number, surface: string) {
@@ -159,7 +162,7 @@ export function paneTree(view: PaneView, els: Table, columns: number, surface: s
       {view.isArchitect && !view.epicDir && <Text key="no-epic" size="footnote" dimColor>No epic folder recorded for this seat. Take the seat with shipshape-seat architect --epic "&lt;abs path&gt;".</Text>}
       {view.epic?.roster === 'unreadable' && <Text key="no-roster" size="footnote" dimColor>Could not read the roster in {view.epicDir}.</Text>}
       {groups.map(g => section(`group-${g.state}`, g.title, g.rows.map(r => rowTree(r, els, surface)), els))}
-      {more > 0 && <Text key="more" size="footnote" dimColor>{more} more</Text>}
+      {more > 0 && <Text key="more" size="footnote" dimColor tabular>{more} more</Text>}
       {rulingsTree(view, els)}
       {footTree(view, els)}
     </Box>

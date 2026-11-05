@@ -1,8 +1,8 @@
 # shipdeck
 
 ShipShape's companion mod, for Claude Code 2.1.309 or later. It shows what
-ShipShape's gates already know, in a band above the prompt, and every session
-you have running, in a pane beside the chat. It also refines a dictated prompt
+ShipShape's gates already know, in a band above the prompt, and your live and
+recent sessions, in a pane beside the chat. It also refines a dictated prompt
 before the session reads it. It reads and displays, and it never gates: the
 gates are the core plugin's, in bash.
 
@@ -34,22 +34,29 @@ context only and reads `evidence unavailable`.
   - review, CI and smoke as the doctor reports them, including a reviewer
     still out, with its age once it passes 15 minutes, and a fourth leg, the
     plan, while the session has one bound (core 0.6.0 or later);
+  - the PR those marks mean, as `#15`. Other PRs this session opened are a
+    count, `#15 +2`, with a dot if one of them still owes evidence. With no
+    PR and nothing on disk the marks stay away, so nothing reads as owed;
   - up to two notices.
 - **Notices**: a lane reported done, and a successor card waiting. They
   show in the band until your next prompt, plus a toast, and a native
   notification in a terminal.
 - **The sessions pane**, on the right: this session's seat, context and
-  evidence, then every session by state (needs you, working, idle, done) with
-  what it is doing, its PR and how long it has rested, then the epic's latest
-  rulings. It opens by itself for an Architect, and `/shipdeck` opens it for
-  any seat. The list refreshes every 15 seconds while the pane can be seen.
+  evidence, then your sessions by state (needs you, working, idle, seats with
+  no session, done) with what each is doing, its PR and how long it has rested,
+  then the epic's latest rulings. Idle sessions older than a day drop off unless
+  they hold a seat, an open PR or a question, and twelve rows show at most. It
+  opens by itself for an Architect, and `/shipdeck` opens it for any seat. The
+  list refreshes every 15 seconds while the pane can be seen.
 
   Four limits, stated plainly. It sits on the right, since a mod cannot draw
   in the sidebar. It shows only in a session that has it open. **Needs you**
   covers sessions running shipdeck, and only what shipdeck can see: a turn's
   closing question and `AskUserQuestion`, so a permission prompt does not
   show. And the question's text goes into shipdeck's own store under your
-  Claude configuration folder, until the session's next turn clears it.
+  Claude configuration folder. The session's next turn, a closing with no
+  question, an answer or a `/clear` removes it. The pane stops showing one
+  after a week, or once the PR the session held when it asked has closed.
 
   The band and the pane show the same evidence because the desktop app takes
   the band away while a next-step card is showing, and leaves panes up. That

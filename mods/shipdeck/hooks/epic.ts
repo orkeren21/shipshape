@@ -28,8 +28,9 @@ export function firstClause(s: string, max = 28): string {
   return head.length > max ? `${head.slice(0, max - 1)}…` : head
 }
 
+// The first word: a value can trail a note, and an id's shape is the app's.
 function sessionIdOf(s: string | undefined): string | null {
-  return /local_[\w-]+/.exec(s ?? '')?.[0] ?? null
+  return s?.split(/\s/)[0] || null
 }
 
 // A roster folder also holds handoffs and notes, so a seat file is one that
@@ -78,7 +79,10 @@ export function parseRulings(text: string, n = 5): string[] {
     const rest = (m[2] ?? '').replace(/^\s*[·:—-]\s*/, '').trim()
     byId.push(oneLine(head.length > 12 || !rest ? head : `${head} · ${rest}`))
   }
-  const found = byId.length > 0
+  // A table's headings would read as rulings, so a table is left for the pane to
+  // call unreadable.
+  const isTable = lines.some(l => /^\s*\|/.test(l))
+  const found = byId.length > 0 || isTable
     ? byId
     : lines.map(l => HEADING.exec(l)?.[1]).filter((h): h is string => !!h).map(h => oneLine(h))
   return found.slice(-n).reverse()
@@ -103,11 +107,12 @@ export function epicView(roster: { name: string; text: string | null }[] | null,
   const rows = parseRoster(roster ?? [])
   const text = typeof decisions === 'string' ? decisions : null
   const rulings = text ? parseRulings(text) : []
+  // Files that gave no seat are a roster the pane cannot read, not an empty one.
+  const hasFiles = (roster ?? []).some(f => f.name.endsWith('.md'))
   return {
     rows,
     rulings,
-    done: rows.filter(r => r.isDone && !r.isArchitect).map(r => r.seat),
-    roster: roster === null ? 'unreadable' : rows.length > 0 ? 'ok' : 'empty',
+    roster: rows.length > 0 ? 'ok' : roster === null || hasFiles ? 'unreadable' : 'empty',
     decisions: text !== null ? readingOf(text, rulings) : decisions === null ? 'empty' : 'unreadable',
   }
 }

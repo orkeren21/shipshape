@@ -123,8 +123,9 @@ same artifacts through `shipshape-doctor --json`.
   the session received, and the original stays in the session's scratch
   folder (until a core 0.5.0 reading gives it one, nothing is refined). Start a prompt with `raw:` to send it as typed, or run
   `/refine off` to stop refining for the session.
-- **A sessions pane.** It lists every session by state, with what each is
-  doing, its PR and what it needs from you, then the epic's latest rulings.
+- **A sessions pane.** It lists your live and recent sessions by state, with
+  what each is doing, its PR and what it needs from you, then the epic's
+  latest rulings.
 - **Two notices:** a lane reporting done, and a successor card waiting.
 
 ```

@@ -13,6 +13,8 @@ export const MAX_ROWS = 12
 // something: an open PR, a question, a seat.
 const RECENT_MS = 24 * 60 * 60 * 1000
 const MAX_ASK = 140
+// A question nobody answered for this long is not one the pane should lead with.
+const ASK_MAX_MS = 7 * 24 * 60 * 60 * 1000
 
 const ORDER: Record<SessionState, number> = { needs: 0, working: 1, idle: 2, unknown: 3, done: 4 }
 
@@ -35,29 +37,41 @@ function listedOf(raw: unknown): ListedSession | null {
 
 // An MCP tool's reply as sessions: `list_sessions` gives an array, `get_session`
 // one object. null when there is no reading, which is not the same as no
-// sessions: the pane says the two apart.
+// sessions: the pane says the two apart. A reply holding something, none of it
+// a session, is no reading: the shape is the app's and could move.
 export function listedFrom(result: unknown): ListedSession[] | null {
   const { content, isError } = (result ?? {}) as { content?: unknown; isError?: unknown }
   if (isError === true || !Array.isArray(content)) return null
   const text = content.map(b => (b && typeof b === 'object' && 'text' in b ? String(b.text) : '')).join('')
   try {
     const value = JSON.parse(text) as unknown
-    return (Array.isArray(value) ? value : [value]).flatMap(r => listedOf(r) ?? [])
+    const rows = Array.isArray(value) ? value : [value]
+    const listed = rows.flatMap(r => listedOf(r) ?? [])
+    return rows.length > 0 && listed.length === 0 ? null : listed
   } catch {
     return null
   }
 }
 
 // A title often opens with the epic and the seat the row already shows. Only a
-// seat followed by a separator counts: "Fix what F3 broke" stays whole.
+// seat followed by a separator counts: "Fix what F3 broke" and "Add F3-style
+// rows" stay whole.
 export function stripSeat(title: string, seat: string): string {
   const word = seat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const rest = new RegExp(`^(?:.*\\s)?${word}\\s*[:·–—-]\\s*(.+)$`, 'i').exec(title)?.[1]
+  const rest = new RegExp(`^(?:.*\\s)?${word}(?:\\s*[:·–—]|\\s+-)\\s+(.+)$`, 'i').exec(title)?.[1]
   return rest ?? title
 }
 
 function seatLabel(seat: RosterRow): string {
   return seat.isArchitect ? 'Architect' : seat.seat
+}
+
+// The app can merge a PR from a question's own card with no prompt sent (read
+// from the app bundle, not measured), so no turn starts to clear it. A question
+// asked with the PR open has lapsed once it is not.
+function liveAsk(ask: Ask | undefined, s: ListedSession, now: number): string | null {
+  if (!ask || now - ask.at >= ASK_MAX_MS) return null
+  return ask.prOpen && s.pr?.state !== 'open' ? null : ask.text
 }
 
 export function sessionsView(input: {
@@ -73,7 +87,7 @@ export function sessionsView(input: {
   const rows: SessionRow[] = []
   for (const s of live) {
     const seat = seatFor.get(s.id) ?? null
-    const ask = asks[s.id]?.text ?? null
+    const ask = liveAsk(asks[s.id], s, now)
     const isSelf = s.id === self?.id
     const state: SessionState = ask !== null ? 'needs' : s.isRunning ? 'working' : seat?.isDone ? 'done' : 'idle'
     const isHeld = isSelf || seat !== null || state !== 'idle' || s.pr?.state === 'open'
@@ -90,11 +104,13 @@ export function sessionsView(input: {
       activeAt: s.activeAt,
     })
   }
-  // A seat whose session the list does not hold still draws, with what its file says.
+  // A seat whose session the list does not hold still draws, with what its file
+  // says, unless it is done: that session has gone, archived or aged out, and
+  // there is nothing left to show of it.
   const shown = new Set(live.map(s => s.id))
   for (const seat of roster) {
-    if (seat.sessionId && shown.has(seat.sessionId)) continue
-    rows.push({ key: `seat:${seat.seat}`, seat: seatLabel(seat), title: seat.status || 'no status', state: seat.isDone ? 'done' : 'unknown', isSelf: false, pr: null, ask: null, restingFor: null, activeAt: null })
+    if (seat.isDone || (seat.sessionId && shown.has(seat.sessionId))) continue
+    rows.push({ key: `seat:${seat.seat}`, seat: seatLabel(seat), title: seat.status || 'no status', state: 'unknown', isSelf: false, pr: null, ask: null, restingFor: null, activeAt: null })
   }
   const sorted = rows.sort((a, b) => ORDER[a.state] - ORDER[b.state] || (b.activeAt ?? 0) - (a.activeAt ?? 0))
   return { rows: sorted.slice(0, MAX_ROWS), more: Math.max(0, sorted.length - MAX_ROWS) }

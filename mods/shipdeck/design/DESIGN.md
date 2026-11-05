@@ -103,7 +103,8 @@ font-glyph status, and loud traffic-light blocks.
 The pane is the same panel read for longer: a logbook of the operator's
 sessions, one list grouped by state, in the host's own type, with nothing
 boxed. It carries the band's row at its top, because the desktop app takes the
-band away while a next-step card is showing and leaves panes up.
+band away while a next-step card is showing and leaves panes up. That reading
+comes from the app's bundle and has not been confirmed live.
 
 **Key Characteristics:**
 
@@ -132,7 +133,7 @@ state lives.
   words (`context`), the labels of legs not yet run, and the handoff mark on
   the gauge.
 - **Mist** (`oklch(0.60 0.010 60)` / `oklch(0.60 0.008 60)`): icons for
-  missing and waived legs. It is at 3.5:1 in both themes, the floor for
+  missing and waived legs, and an idle session's dot. It is at 3.5:1 in both themes, the floor for
   non-text graphics.
 - **Track, Chip, Hairline**: the same ink at 11%, 4.5% and 12% (15%, 5.5%
   and 13% dark), for the unfilled bar and ring, the chip ground, and the
@@ -141,10 +142,11 @@ state lives.
 ### State
 
 - **Signal Green** (`oklch(0.56 0.12 150)` / `oklch(0.74 0.14 150)`): ok
-  icons and a healthy context fill. Its text variant (`0.48` / `0.78`) is
+  icons, a done session's mark and a healthy context fill. Its text variant (`0.48` / `0.78`) is
   for notice text on its own tint, at 4.9:1 and 5.7:1.
 - **Brass** (`oklch(0.58 0.12 80)` / `oklch(0.80 0.12 85)`): stale,
-  running, and context between the seat's two handoff thresholds.
+  running, a session working or waiting on the operator, the dot beside a PR
+  count, and context between the seat's two handoff thresholds.
 - **Signal Red** (`oklch(0.56 0.17 27)` / `oklch(0.70 0.16 27)`): a failed
   leg, and context past the seat's second threshold.
 
@@ -173,8 +175,9 @@ pane's session marks follow: ◉ needs you, ◌ working, · idle, ? not known,
 Text', 'Segoe UI', system-ui, sans-serif`), so the band matches the app
 around it.
 
-**Character:** one family at small sizes. Hierarchy comes from weight, not
-size.
+**Character:** one family at small sizes. In the band, hierarchy comes from
+weight, not size. The pane uses the host's own size steps as well, because it
+is read for longer.
 
 ### Hierarchy
 
@@ -215,7 +218,8 @@ last, until it fits. The narrowest band is 240px, and everything fits there:
    unavailable` becomes `unavailable`.
 7. Legs that did not pass, but did not fail, do the same.
 8. The spacing tightens: GitHub's gaps and Linear's chips.
-9. The count of other PRs goes, and its dot with it.
+9. The count of other PRs goes, and its dot with it. `2 PRs`, with no PR on
+   this branch, stays until step 13.
 10. The seat loses the word `lane` and is cut to 5 characters.
 11. The seat goes.
 12. A failed leg goes to its initial, then a reviewer's age goes.
@@ -319,9 +323,10 @@ Built from the host's own elements, so it takes the app's type, theme and
 spacing, with only the state marks drawn. Top to bottom:
 
 1. **This session:** the band's own row, drawn to the pane's width, then the
-   PR detail when there is more than one.
+   PR detail when the band is only counting some of them.
 2. **Sessions**, grouped under `Needs you`, `Working`, `Idle`, `Seats` and
-   `Done`, in that order. Each group shows only when it has rows.
+   `Done`, in that order. Each group shows only when it has rows. Past twelve
+   rows the quietest become a tabular `N more`.
 3. **Rulings:** the last five, the ID in its own column.
 4. A caption saying what `Needs you` covers.
 
@@ -334,7 +339,8 @@ hanging indent from the mark, in body type:
   under it in muted footnote.
 - Idle and done titles are muted: what is moving should read first.
 - The right-hand column holds the PR and the time at rest, tabular, in muted
-  footnote, and never wraps: `#15 · 2m`, `#14 merged`.
+  footnote, and never wraps: `#15 · 2m`, `#14 merged · 3h`. Under `Done` it is
+  the bare number.
 
 **Session marks**, 14 wide in a line-tall slot, so they centre on the first
 line:
@@ -348,9 +354,11 @@ line:
 | not known | mist circle with a `?`, the band's `unavailable` mark |
 
 **A read that failed never looks like an empty one.** `No rulings yet.` means a
-file with no entries. `Could not read the rulings in decisions.md.` means a file
-that would not open, or held text with no entry in the format. The same goes for
-the roster, the session list and the published questions.
+file with nothing past its title, or none at all. `No rulings this pane can read
+in decisions.md.` means a file that would not open, or text with no entry in the
+format, a preamble included. The roster, the session list and the published
+questions each say so when they cannot be read, and one missed session read keeps
+the last good list.
 
 ## Do's and Don'ts
 

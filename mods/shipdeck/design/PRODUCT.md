@@ -43,9 +43,9 @@ native to Claude Code, not like a widget bolted onto it.
 
 ## Design Principles
 
-1. **Read the gates, never guess.** Every mark comes from an artifact the
-   bash gates read, so the band can never show green while a gate would
-   refuse.
+1. **Read the gates, never guess.** Every evidence mark comes from an artifact
+   the bash gates read, so the band can never show green while a gate would
+   refuse. The pane's session marks come from the app's own session list.
 2. **One glance, one answer.** Seat, context and evidence read in a second,
    left to right, in the same place every time.
 3. **State, not decoration.** Colour and motion mean a state; nothing is
@@ -53,7 +53,7 @@ native to Claude Code, not like a widget bolted onto it.
 4. **Native first.** It uses the host's type, theme and rhythm, and works on
    the terminal as text and on desktop as drawings.
 5. **Quiet until it matters.** A missing leg is grey, a failure is red, and
-   a notice is the only thing that asks for attention.
+   only a notice or a session waiting on the operator asks for attention.
 
 ## Accessibility & Inclusion
 

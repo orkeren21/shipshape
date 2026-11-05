@@ -281,6 +281,9 @@ describe('which PR the legs mean', () => {
     expect(prSummary(doctor({ prs: [pr('legacy', 'feature')] })).label).toBe('PR')
     expect(say(modelOf(doctor({ prs: [pr('legacy', 'feature')] })))).toContain('; PR;')
   })
+  test('with two records on this branch the later one is meant', () => {
+    expect(prSummary(doctor({ prs: [pr('12', 'feature', 'satisfied'), pr('15', 'feature')] })).label).toBe('#15')
+  })
   test('a reading with no prs field is a session with no PRs', () => {
     const { prs: _, ...old } = doctor()
     expect(prSummary(old as DoctorJson)).toBeNull()
@@ -365,6 +368,13 @@ describe('a narrow band', () => {
       expect(words(full.source)).not.toContain('#15')
       expect(full.alt).toContain('PR #15')
       expect(words(drawBand(model({ seat: LONG_SEAT, legs: legsOf('ok', 'ok', 'ok'), pr }), style, FLOOR).source)).toContain('#15')
+    })
+
+    test(`${style}: the owed dot goes with the count, and stays with a count that has no PR beside it`, () => {
+      const dot = (m: Partial<BandModel>, width: number) => /pr-owing/.test(drawBand(model(m), style, width).source)
+      const seat = { seat: LONG_SEAT, refining: true, notices: NOTICES, legs: legsOf('fail', 'fail', 'fail', 'fail') }
+      expect(dot({ ...seat, pr: { label: '#15', others: 2, isOwing: true } }, FLOOR)).toBe(false)
+      expect(dot({ pr: { label: null, others: 2, isOwing: true }, legs: [] }, 900)).toBe(true)
     })
 
     test(`${style}: a count that owes carries a mark, one that does not carries none`, () => {

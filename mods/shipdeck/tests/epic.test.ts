@@ -40,8 +40,11 @@ describe('roster', () => {
     expect(f02?.status).toBe('handed-off')
     expect(f1?.isDone).toBe(true)
   })
-  test('done lists the lanes that reported done', () => {
-    expect(view.done).toEqual(['f1-fixture'])
+  test('a role can make the Architect, whatever its file is called', () => {
+    expect(epicView([{ name: 'chief.md', text: 'role: architect of this epic\nstatus: active' }], null).rows[0]?.isArchitect).toBe(true)
+  })
+  test('a session id keeps its first word, whatever its shape', () => {
+    expect(epicView([{ name: 'F1.md', text: 'session id: session_abc (stable)\nstatus: active' }], null).rows[0]?.sessionId).toBe('session_abc')
   })
   test('a seat file is one that names a role or a session: handoffs and notes in the folder are not seats', () => {
     const { rows } = epicView(
@@ -74,7 +77,7 @@ describe('what the epic folder could give', () => {
   test('no seats is empty; a folder that cannot be listed is unreadable, and they differ', () => {
     expect(epicView([], null).roster).toBe('empty')
     expect(epicView(null, null).roster).toBe('unreadable')
-    expect(epicView([{ name: 'F1-handoff.md', text: 'just notes' }], null).roster).toBe('empty')
+    expect(epicView([{ name: 'F1-handoff.md', text: 'just notes' }], null).roster).toBe('unreadable')
     expect(epicView([seat], null).roster).toBe('ok')
   })
   test('no decisions file is empty; one that cannot be read is unreadable', () => {
@@ -85,6 +88,11 @@ describe('what the epic folder could give', () => {
     const table = '# Decisions\n\n| ID | Ruling |\n|---|---|\n| D1 | Ship it |\n'
     expect(epicView([seat], table).decisions).toBe('unreadable')
     expect(epicView([seat], table).rulings).toEqual([])
+  })
+  test('a table under a section heading is not a ruling called by that heading', () => {
+    const table = '# Decisions\n\n## Operator rulings\n\n| ID | Ruling |\n|---|---|\n| D1 | Ship it |\n'
+    expect(epicView([seat], table).rulings).toEqual([])
+    expect(epicView([seat], table).decisions).toBe('unreadable')
   })
   test('a decisions file holding only its heading has no rulings yet', () => {
     expect(epicView([seat], '# Decisions\n\n').decisions).toBe('empty')
