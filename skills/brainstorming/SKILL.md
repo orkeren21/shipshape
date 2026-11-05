@@ -117,7 +117,7 @@ coordination costs. Not for a stream of related tasks that merely *could* be
 split.
 
 Both modes exit through the same gates: a whole-branch review, green CI, a
-scoped smoke. The choice is about time and parallelism. It is never about how
+scoped smoke, any bound plan. The choice is about time and parallelism. It is never about how
 carefully the work gets checked.
 
 The request that started this skill authorized the design — even when it asked

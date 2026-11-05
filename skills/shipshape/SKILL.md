@@ -23,9 +23,9 @@ Say which skill you are using and why, then follow it.
 | Writing or editing a skill | `shipshape:writing-skills` |
 
 Some things are enforced. Hooks gate on the evidence a finished branch
-leaves — a whole-branch review, green CI, a scoped smoke — reading artifacts,
-not what you say about them. The wrappers in `bin/` produce those artifacts,
-so use them rather than raw commands.
+leaves — a whole-branch review, green CI, a scoped smoke, any bound plan —
+reading artifacts, not what you say about them. The wrappers in `bin/` produce
+those artifacts, so use them, not raw commands.
 
 Work starts on an approved scope: a planning request authorizes planning, not
 the build, and a hook message is never approval. Inside that scope, wait for the

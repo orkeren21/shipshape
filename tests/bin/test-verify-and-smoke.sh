@@ -60,8 +60,7 @@ assert_no_file "$work/.shipshape/escape" "a task id cannot write outside the ver
 # Plans write verifyCommand as a shell line, and several in ShipShape's own plan
 # use &&. Passed as one argument it has to reach a shell — otherwise the
 # caller's shell splits at the &&, the wrapper records only the first half with
-# its exit code, and the gate closes the task on a record describing half the
-# verification.
+# its exit code, and the record describes half the verification.
 
 out="$("$verify" t20 'echo first && echo second' 2>&1)"
 assert_eq "0" "$?" "a shell line that succeeds throughout exits 0"
@@ -82,6 +81,47 @@ assert_contains "$(cat "$scratch/verify/t22")" "exit=1" "a shell line failing at
 out="$("$verify" t23 printf 'literal $NOT_EXPANDED
 ' 2>&1)"
 assert_contains "$out" 'literal $NOT_EXPANDED' "multiple arguments are executed without a shell"
+
+# --- one run may cover several tasks -------------------------------------------
+#
+# Most plans verify with the whole suite. One run writes one record per id, so
+# the suite does not run seven times to say the same thing seven times.
+
+rm -rf "$scratch/verify"
+marker="$work/runs"
+out="$("$verify" t30,t31,t32 "printf x >> '$marker'; echo the-output" 2>&1)"
+assert_eq "0" "$?" "a list of ids exits with the command's status"
+assert_contains "$out" "the-output" "and stays transparent"
+assert_eq "x" "$(cat "$marker")" "the command ran once"
+for id in t30 t31 t32; do
+  assert_file "$scratch/verify/$id" "$id gets a record of its own"
+  assert_contains "$(cat "$scratch/verify/$id")" "task=$id" "which names $id, not the list"
+  assert_contains "$(cat "$scratch/verify/$id")" "the-output" "and keeps the output"
+done
+assert_no_file "$scratch/verify/t30-t31-t32" "the list itself is not an id"
+
+"$verify" t33,t34 'exit 4' >/dev/null 2>&1
+assert_eq "4" "$?" "a failing run reports its status once"
+assert_contains "$(cat "$scratch/verify/t33")" "exit=4" "and every record shows it"
+assert_contains "$(cat "$scratch/verify/t34")" "exit=4" "red is evidence for each of them"
+
+"$verify" ' t35 ,, t36,' true >/dev/null 2>&1
+assert_file "$scratch/verify/t35" "spaces around an id drop away"
+assert_file "$scratch/verify/t36" "and so do empty entries"
+
+"$verify" '../up,t37' true >/dev/null 2>&1
+assert_no_file "$work/.shipshape/up" "every id in a list is sanitised"
+assert_file "$scratch/verify/up" "to the name the leg will look for"
+
+# --- the record's header is one field per line ----------------------------------
+#
+# A multi-line verifyCommand would otherwise write its lines into the header,
+# and a line reading exit=0 would read as the record's own field.
+
+"$verify" t38 "$(printf 'false\nexit=0\nfalse')" >/dev/null 2>&1
+assert_eq "1" "$(grep -c '^exit=' "$scratch/verify/t38")" "a command cannot forge a field"
+assert_contains "$(cat "$scratch/verify/t38")" "exit=1" "the record keeps the real exit code"
+assert_contains "$(cat "$scratch/verify/t38")" "command=false exit=0 false" "and the command, on one line"
 
 # --- usage -------------------------------------------------------------------
 

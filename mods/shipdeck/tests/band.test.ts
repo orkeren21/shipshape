@@ -62,6 +62,31 @@ describe('the doctor\'s words become marks', () => {
     const d = doctor({ legs: { review: { state: 'something-new', detail: null }, ci: { state: 'ok', detail: null }, smoke: { state: 'ok', detail: null } } })
     expect(legs(d, NOW)[0]?.state).toBe('missing')
   })
+
+  const planned = (state: string) => doctor({ legs: { ...doctor().legs, plan: { state, detail: 't1' } } })
+  test('the plan leg maps each of the doctor\'s words', () => {
+    const marks: Record<string, LegState> = {
+      ok: 'ok', open: 'missing', stale: 'stale', failed: 'fail', 'wrong-command': 'fail',
+      elsewhere: 'missing', unreadable: 'fail', waived: 'waived',
+    }
+    for (const [word, state] of Object.entries(marks)) expect(legs(planned(word), NOW)[3]).toEqual({ name: 'plan', state })
+  })
+  test('with no plan bound there is no plan leg, rather than one not run', () => {
+    expect(legs(planned('none'), NOW).map(l => l.name)).toEqual(['review', 'CI', 'smoke'])
+  })
+  test('a core older than the plan leg sends no such key, and the band reads the same', () => {
+    // Format stays 1, so parseDoctor passes this reading on to the drawing.
+    const older = parseDoctor(JSON.stringify(doctor()))
+    expect(older).not.toBeNull()
+    expect(legs(older as DoctorJson, NOW).map(l => l.name)).toEqual(['review', 'CI', 'smoke'])
+  })
+  test('an unknown plan word is a leg not run, as for the others: only none draws nothing', () => {
+    expect(legs(planned('something-new'), NOW)[3]).toEqual({ name: 'plan', state: 'missing' })
+  })
+  test('the alt text says the plan leg in words', () => {
+    const m = bandModel({ doctor: planned('failed'), isUnavailable: false, percent: null, notices: [], refining: false, now: NOW })
+    expect(say(m)).toContain('plan failed')
+  })
 })
 
 describe('seat and context', () => {
@@ -205,27 +230,35 @@ describe('a narrow band', () => {
   const LONG_SEAT = 'lane payments-reconciliation-rework'
   const NOTICES = ['F1 done', 'successor card waiting']
 
-  const legsOf = (review: LegState, ci: LegState, smoke: LegState): Leg[] => [
+  const legsOf = (review: LegState, ci: LegState, smoke: LegState, plan: LegState | null = null): Leg[] => [
     { name: 'review', state: review, ...(review === 'running' ? { age: '18m' } : {}) },
     { name: 'CI', state: ci },
     { name: 'smoke', state: smoke },
+    ...(plan ? [{ name: 'plan', state: plan } as Leg] : []),
   ]
+  // The plan leg takes a turn through the sweep rather than a loop of its own,
+  // which would multiply each of these tests by six. Each combination of the
+  // other three is drawn sixteen times, so it meets every entry here. The widest
+  // case gets a test of its own below.
+  const PLAN: (LegState | null)[] = [null, 'ok', 'stale', 'fail', 'missing', 'waived']
   const model = (over: Partial<BandModel> = {}): BandModel => ({ seat: 'lane F2', role: 'lane', ctx: 37, legs: legsOf('ok', 'ok', 'ok'), notices: [], refining: false, ...over })
   // The words of a drawing, left to right.
   const words = (source: string): string[] => [...source.matchAll(/<text [^>]*>([^<]*)<\/text>/g)].map(r => r[1] as string)
-  const LABEL = /^(review|R|CI|C|smoke|S)( · \S+)?$/
+  const LABEL = /^(review|R|CI|C|smoke|S|plan|P)( · \S+)?$/
   for (const style of STYLES) {
     for (const width of [784, 464, 304, FLOOR]) {
       test(`${style}: every state fits in ${width}px, every leg stays and a failure stays a failure`, () => {
         const wrong: string[] = []
+        let turn = 0
         for (const review of STATES) for (const ci of STATES) for (const smoke of STATES) {
           for (const seat of [null, LONG_SEAT]) for (const ctx of [null, 100]) for (const refining of [false, true]) for (const notices of [[], NOTICES]) {
-            const legs = legsOf(review, ci, smoke)
+            const plan = PLAN[turn++ % PLAN.length] as LegState | null
+            const legs = legsOf(review, ci, smoke, plan)
             const d = drawBand(model({ seat, ctx, refining, notices, legs }), style, width)
             const failed = legs.filter(l => l.state === 'fail').length
-            const label = `${review}/${ci}/${smoke} seat=${!!seat} ctx=${ctx} refining=${refining} notices=${notices.length}`
+            const label = `${review}/${ci}/${smoke}/${plan} seat=${!!seat} ctx=${ctx} refining=${refining} notices=${notices.length}`
             if (d.width > width) wrong.push(`${label}: ${d.width}px`)
-            if (words(d.source).filter(w => LABEL.test(w)).length !== 3) wrong.push(`${label}: a leg went`)
+            if (words(d.source).filter(w => LABEL.test(w)).length !== legs.length) wrong.push(`${label}: a leg went`)
             if ((d.source.match(/<polygon/g) ?? []).length !== failed) wrong.push(`${label}: a failure went`)
           }
         }
@@ -239,12 +272,22 @@ describe('a narrow band', () => {
       expect(words(d.source)).toContain('unavailable')
     })
 
-    test(`${style}: a fourth leg fits at the floor too`, () => {
-      for (const state of STATES) {
-        const four = [...legsOf(state, state, state), { name: 'smoke', state } as Leg]
-        const d = drawBand(model({ seat: LONG_SEAT, legs: four, refining: true, notices: NOTICES }), style, FLOOR)
-        expect(d.width).toBeLessThan(FLOOR + 1)
+    test(`${style}: four legs at their widest fit everything else at every width`, () => {
+      // A failed leg keeps its word longest and a reviewer's age goes last, so
+      // a failed plan beside any state of the other three is the widest row.
+      for (const width of [784, 464, 304, FLOOR]) for (const state of STATES) {
+        const four = legsOf(state, state, state, 'fail')
+        const d = drawBand(model({ seat: LONG_SEAT, legs: four, ctx: 100, refining: true, notices: NOTICES }), style, width)
+        expect(d.width).toBeLessThan(width + 1)
+        expect(words(d.source).filter(w => LABEL.test(w))).toHaveLength(4)
       }
+    })
+
+    test(`${style}: a passing plan goes to its initial with the others, and a failed plan keeps its word`, () => {
+      const m = model({ legs: legsOf('ok', 'ok', 'ok', 'fail') })
+      const shapes = new Set<string>()
+      for (let width = 900; width >= FLOOR; width -= 4) shapes.add(words(drawBand(m, style, width).source).filter(w => LABEL.test(w)).join(' '))
+      expect([...shapes].at(-1)).toBe('R C S plan')
     })
 
     test(`${style}: the order never changes, whatever goes`, () => {
@@ -298,6 +341,8 @@ describe('a narrow band', () => {
       const d = drawBand(model(), style, FLOOR)
       expect(d.source).toContain('lane F2')
       expect(words(d.source).filter(w => LABEL.test(w))).toEqual(['R', 'C', 'S'])
+      const four = drawBand(model({ legs: legsOf('ok', 'ok', 'ok', 'ok') }), style, FLOOR)
+      expect(words(four.source).filter(w => LABEL.test(w))).toEqual(['R', 'C', 'S', 'P'])
     })
   }
 

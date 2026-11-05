@@ -14,6 +14,11 @@ const CI: Record<string, LegState> = {
 const SMOKE: Record<string, LegState> = {
   ok: 'ok', missing: 'missing', stale: 'stale', 'no-runs': 'missing', failures: 'fail', waived: 'waived',
 }
+// none is not here: no plan bound means no leg, which is not a leg not run.
+const PLAN: Record<string, LegState> = {
+  ok: 'ok', open: 'missing', stale: 'stale', failed: 'fail', 'wrong-command': 'fail',
+  elsewhere: 'missing', unreadable: 'fail', waived: 'waived',
+}
 
 // A reviewer out longer than this shows how long, so a stuck one is visible.
 export const RUNNING_AGE_MS = 15 * 60 * 1000
@@ -45,11 +50,17 @@ export function legs(doctor: DoctorJson, now: number): Leg[] {
     const oldest = Math.min(...out.map(p => (p.since ?? now / 1000) * 1000))
     if (now - oldest > RUNNING_AGE_MS) review.age = age(now - oldest)
   }
-  return [
+  const drawn: Leg[] = [
     review,
     { name: 'CI', state: CI[doctor.legs.ci.state] ?? 'missing' },
     { name: 'smoke', state: SMOKE[doctor.legs.smoke.state] ?? 'missing' },
   ]
+  // Drawn only while a plan is bound. A core older than the leg sends no such
+  // key and format 1 lets that reading through, so this read is guarded: the
+  // render has no guard of its own, and a throw there loses the whole band.
+  const plan = doctor.legs.plan?.state
+  if (plan && plan !== 'none') drawn.push({ name: 'plan', state: PLAN[plan] ?? 'missing' })
+  return drawn
 }
 
 // The seat's two handoff thresholds. These are context-watch's defaults; a
