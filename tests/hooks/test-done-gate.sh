@@ -449,6 +449,8 @@ out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" 
 nudge="$(hook_field "$out" systemMessage)"
 assert_contains "$nudge" "PR #22" "a branch that moved past its stamp still owes"
 assert_not_contains "$nudge" "PR #21" "and the deleted one is still not listed beside it"
+assert_not_contains "$(cat "$gscratch/trace.log")" "moved-lane has no tip" \
+  "a branch with a tip is judged, so the trace does not call it unjudged"
 
 # Deleting the local branch of a PR that moved on the remote does not settle it.
 git init -q --bare "$work/gone-origin.git"

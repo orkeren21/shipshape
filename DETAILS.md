@@ -233,11 +233,15 @@ that same plan. And `files` is
 only as good as what it lists: a file deleted after its record does not make the
 record stale, and a glob there is a name, not a pattern.
 
-A stamp's freshness is read from refs in this checkout, not from GitHub. A branch
-with no tip here or on `origin`, the ordinary end of a merged branch, leaves nothing
-to compare, so its stamp stands and the trace and the doctor say it went unjudged. A
-push from elsewhere that was never fetched is invisible, and a local branch moved back
-to its stamp with `git branch -f` passes.
+A stamp's freshness is read from refs in this checkout, never from GitHub, and no gate
+fetches. While the local branch stands only it counts, so a push from elsewhere is
+invisible, fetched or not. Once the local branch is gone `origin`'s tracking ref counts,
+so that push shows only after a fetch, and a stale tracking ref still at the stamp reads
+settled. Only `origin` is read: a branch pushed to a remote of another name has no tip
+here once its local branch is gone. A branch with neither, such as one deleted and pruned
+after its merge, leaves nothing to compare, so its stamp stands, and the trace and the
+doctor's report say it went unjudged. A local branch moved back to its stamp with
+`git branch -f` passes, and so does a moved branch deleted along with its tracking ref.
 
 ## The pipeline
 

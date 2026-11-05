@@ -90,8 +90,8 @@ while IFS= read -r record_file; do
     if [ -f "$stamp" ]; then
       stamp_head="$(record_field "$stamp" head)"
       branch_head="$(shipshape_branch_tip "$rec_branch")"
-      # A branch with no tip here or on origin (deleted after merge) fails open:
-      # the stamp was earned, and nothing this checkout can see outran it.
+      # A branch with no tip here or on origin (deleted and pruned after merge)
+      # fails open: the stamp was earned, and neither ref is left to outrun it.
       if [ -z "$branch_head" ]; then
         shipshape_trace done-gate "PR #$rec_number: branch $rec_branch has no tip here or on origin, so the stamp stands unjudged"
         settled=yes

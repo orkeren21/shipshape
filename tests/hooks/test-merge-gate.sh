@@ -129,9 +129,9 @@ assert_contains "$(cat "$scratch/trace.log")" "gone-lane has no tip here or on o
 rm -f "$scratch/pr-armed-60" "$scratch/pr-satisfied-60"
 
 # `git branch -D` is routine cleanup and leaves the PR open on the remote, so
-# the fail-open is only for a branch with no tip anywhere this checkout can see.
-# A real push and a real delete, because the case rests on the tracking ref
-# outliving the branch.
+# the fail-open is only for a branch with no tip here or on origin. A real push
+# and a real delete, because the case rests on the tracking ref outliving the
+# branch.
 git init -q --bare "$work/origin.git"
 git -C "$repo" remote add origin "$work/origin.git"
 git -C "$repo" checkout -q -b pushed-lane
@@ -145,12 +145,19 @@ git -C "$repo" branch -q -D pushed-lane
 out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 61")" "$repo")"
 assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "a deleted branch still at its stamp on origin merges"
+assert_not_contains "$(cat "$scratch/trace.log")" "pushed-lane has no tip" \
+  "and a tip read from origin is judged, so the trace does not call it unjudged"
 
+# The local branch outranks the tracking ref while it stands.
 git -C "$repo" checkout -q -b pushed-lane "$stamped"
 git -C "$repo" commit -q --allow-empty -m "a commit the stamp never saw"
 moved="$(git -C "$repo" rev-parse HEAD)"
-git -C "$repo" push -q origin pushed-lane
 git -C "$repo" checkout -q "$main_branch"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 61")" "$repo")"
+assert_eq "merge_gate_stale" "$(hook_field "$out" shipshapeCode)" \
+  "a local branch past its stamp is stale, though origin's tracking ref is still at it"
+
+git -C "$repo" push -q origin pushed-lane
 git -C "$repo" branch -q -D pushed-lane
 out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 61")" "$repo")"
 assert_eq "merge_gate_stale" "$(hook_field "$out" shipshapeCode)" \

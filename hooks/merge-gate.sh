@@ -220,13 +220,9 @@ stamp_branch="$(record_field "$stamp" branch)"
 branch_head=""
 [ -n "$stamp_branch" ] && branch_head="$(shipshape_branch_tip "$stamp_branch")"
 
-# A branch with no tip here or on origin fails open, deleted after an earlier
-# merge most often. The stamp was earned and nothing this checkout can see outran
-# it, but its freshness went unjudged, and the trace has to say so.
-if [ -z "$branch_head" ]; then
-  shipshape_trace merge-gate "PR #$number: branch ${stamp_branch:-unrecorded} has no tip here or on origin, so the stamp stands unjudged"
-fi
-
+# A branch with no tip here or on origin fails open, most often one deleted and
+# pruned after its merge. The stamp was earned and neither ref is left to outrun
+# it, so its freshness goes unjudged, and the last trace line says so.
 if [ -n "$branch_head" ] && [ "$stamp_head" != "$branch_head" ]; then
   if [ "$legs_current" = yes ]; then
     shipshape_trace merge-gate "allowed: PR #$number stamp stale but legs settled live at HEAD"
@@ -258,5 +254,9 @@ if [ -n "$record_branch" ] && [ "$record_branch" = "$current_branch" ] \
   esac
 fi
 
-shipshape_trace merge-gate "allowed: PR #$number satisfied at ${stamp_head:-unknown}"
+if [ -n "$branch_head" ]; then
+  shipshape_trace merge-gate "allowed: PR #$number satisfied at ${stamp_head:-unknown}"
+else
+  shipshape_trace merge-gate "allowed: PR #$number, branch ${stamp_branch:-unrecorded} has no tip here or on origin, so the stamp stands unjudged"
+fi
 exit 0

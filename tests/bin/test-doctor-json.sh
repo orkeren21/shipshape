@@ -314,6 +314,7 @@ printf 'url=https://x/pull/58\nnumber=58\nbranch=%s\n' "$branch" > "$scratch/pr-
 out="$(json)"
 assert_eq "57" "$(jget "$out" prs.0.number)" "the first PR"
 assert_eq "satisfied" "$(jget "$out" prs.0.state)" "satisfied at HEAD"
+assert_not_contains "$(text)" "freshness is not judged" "a stamp checked against a tip is judged"
 assert_eq "https://x/pull/57" "$(jget "$out" prs.0.url)" "with its url"
 assert_eq "58" "$(jget "$out" prs.1.number)" "the second PR"
 assert_eq "owing" "$(jget "$out" prs.1.state)" "owing evidence"
