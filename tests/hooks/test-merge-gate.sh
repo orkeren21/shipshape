@@ -111,6 +111,21 @@ assert_eq "merge_gate_stale" "$(hook_field "$out" shipshapeCode)" "named as stal
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "stale" \
   "and the reason says the evidence no longer describes the branch"
 
+# A deleted branch has no tip left to outrun the stamp, so the stamp stands. The
+# branch is really deleted here because the bug lived in what git does with the
+# missing name: it prints the name and exits 128, and the name read as a tip.
+git -C "$repo" checkout -q -b gone-lane
+git -C "$repo" commit -q --allow-empty -m "the lane's work"
+give_record 60 gone-lane
+give_stamp 60 "$(git -C "$repo" rev-parse HEAD)" gone-lane
+git -C "$repo" checkout -q "$main_branch"
+git -C "$repo" branch -q -D gone-lane
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 60")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a stamped PR whose branch was deleted merges"
+assert_eq "" "$(hook_field "$out" shipshapeCode)" "and is not named as stale"
+rm -f "$scratch/pr-armed-60" "$scratch/pr-satisfied-60"
+
 # --- foreign: no record at all is a refusal, not a pass ----------------------
 
 out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 444")" "$repo")"

@@ -218,10 +218,11 @@ fi
 stamp_head="$(record_field "$stamp" head)"
 stamp_branch="$(record_field "$stamp" branch)"
 branch_head=""
-[ -n "$stamp_branch" ] && branch_head="$(git rev-parse "$stamp_branch" 2>/dev/null)"
+[ -n "$stamp_branch" ] && branch_head="$(git rev-parse --verify --quiet "$stamp_branch" 2>/dev/null)"
 
 # A branch git cannot resolve fails open — deleted after an earlier merge, or
 # a remote-only ref. The stamp was earned; there is no tip left to outrun it.
+# --verify is what leaves this empty; a bare rev-parse prints the name back.
 if [ -n "$branch_head" ] && [ "$stamp_head" != "$branch_head" ]; then
   if [ "$legs_current" = yes ]; then
     shipshape_trace merge-gate "allowed: PR #$number stamp stale but legs settled live at HEAD"

@@ -89,9 +89,10 @@ while IFS= read -r record_file; do
     settled=no
     if [ -f "$stamp" ]; then
       stamp_head="$(record_field "$stamp" head)"
-      branch_head="$(git rev-parse "$rec_branch" 2>/dev/null)"
+      branch_head="$(git rev-parse --verify --quiet "$rec_branch" 2>/dev/null)"
       # A branch git cannot resolve (deleted after merge) fails open: the
-      # stamp was earned, and there is no tip left to outrun it.
+      # stamp was earned, and there is no tip left to outrun it. --verify is
+      # what leaves this empty; a bare rev-parse prints the name back.
       if [ -z "$branch_head" ] || [ "$stamp_head" = "$branch_head" ]; then
         settled=yes
       fi

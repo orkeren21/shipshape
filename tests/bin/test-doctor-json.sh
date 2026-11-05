@@ -327,6 +327,15 @@ assert_eq "stale" "$(jget "$out" prs.0.state)" "a stamp at an old head is stale"
 assert_contains "$(text)" "PR #60 (https://x/pull/60, branch $branch) — STALE" "and the text mode agrees"
 rm -f "$scratch"/pr-armed-* "$scratch"/pr-satisfied-*
 
+# A branch git cannot resolve has no tip left to outrun the stamp, and the doctor
+# says what the gates do: the merge gate would let this through.
+printf 'url=https://x/pull/61\nnumber=61\nbranch=gone-lane\n' > "$scratch/pr-armed-61"
+printf 'head=%s\nbranch=gone-lane\n' "$head" > "$scratch/pr-satisfied-61"
+out="$(json)"
+assert_eq "satisfied" "$(jget "$out" prs.0.state)" "a stamp on a deleted branch stays satisfied"
+assert_not_contains "$(text)" "STALE" "and the text mode agrees"
+rm -f "$scratch"/pr-armed-* "$scratch"/pr-satisfied-*
+
 # A record with no url keeps its other fields in place: an empty field must
 # not collapse and shift the branch into the url's slot.
 printf 'number=59\nbranch=%s\n' "$branch" > "$scratch/pr-armed-59"
