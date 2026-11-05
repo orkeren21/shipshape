@@ -371,10 +371,18 @@ describe('a narrow band', () => {
     })
 
     test(`${style}: the owed dot goes with the count, and stays with a count that has no PR beside it`, () => {
-      const dot = (m: Partial<BandModel>, width: number) => /pr-owing/.test(drawBand(model(m), style, width).source)
-      const seat = { seat: LONG_SEAT, refining: true, notices: NOTICES, legs: legsOf('fail', 'fail', 'fail', 'fail') }
-      expect(dot({ ...seat, pr: { label: '#15', others: 2, isOwing: true } }, FLOOR)).toBe(false)
-      expect(dot({ pr: { label: null, others: 2, isOwing: true }, legs: [] }, 900)).toBe(true)
+      const m = model({ seat: LONG_SEAT, refining: true, notices: NOTICES, legs: legsOf('fail', 'fail', 'fail', 'fail'), pr: { label: '#15', others: 2, isOwing: true } })
+      let seenAlone = false
+      for (let width = 900; width >= FLOOR; width -= 2) {
+        const { source } = drawBand(m, style, width)
+        const shown = words(source)
+        if (shown.includes('#15') && !shown.includes('+2')) {
+          seenAlone = true
+          expect(/pr-owing/.test(source)).toBe(false)
+        }
+      }
+      expect(seenAlone).toBe(true)
+      expect(/pr-owing/.test(drawBand(model({ pr: { label: null, others: 2, isOwing: true }, legs: [] }), style, 900).source)).toBe(true)
     })
 
     test(`${style}: a count that owes carries a mark, one that does not carries none`, () => {

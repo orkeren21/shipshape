@@ -83,7 +83,7 @@ type World = {
 
 // The engine beneath shipdeck: every $ call it makes, answered from memory.
 function world(on: On, w: World = {}) {
-  const seen = { model: [] as unknown[], runs: [] as unknown[], lookups: [] as unknown[], traces: [] as string[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[], mcp: [] as string[], storeReads: [] as string[], usage: 0 }
+  const seen = { model: [] as unknown[], runs: [] as unknown[], lookups: [] as unknown[], traces: [] as string[], entered: [] as string[], toasts: [] as string[], writes: [] as string[], opened: [] as string[], mcp: [] as string[], mcpArgs: [] as unknown[], storeReads: [] as string[], storeDeletes: [] as string[], usage: 0 }
   const clock = mock.clock(on, { now: NOW })
   mock.env(on, w.env ?? {})
   on('command.register', (_, e) => {
@@ -170,6 +170,7 @@ function world(on: On, w: World = {}) {
     const value = e.tool === 'get_session' ? w.self : w.listed
     if (value === undefined) throw new Error('no such server')
     seen.mcp.push(`${e.server}/${e.tool}`)
+    seen.mcpArgs.push(e.args)
     return { value: { content: [{ type: 'text', text: JSON.stringify(value) }] } } as never
   })
   on('store.keys', () => {
@@ -188,6 +189,7 @@ function world(on: On, w: World = {}) {
   })
   on('store.delete', (_, e) => {
     if (w.storeThrows) throw new Error('refused')
+    seen.storeDeletes.push(e.key)
     w.store = Object.fromEntries(Object.entries(w.store ?? {}).filter(([k]) => k !== e.key))
     return { value: undefined } as never
   })
@@ -1788,4 +1790,82 @@ test('an epic read that finds nothing new redraws nothing and reads no list', as
   await clock.advance(30_000)
   // The list's own clock reads twice in 30 s, and the epic read adds none.
   expect(seen.mcp.filter(c => c.endsWith('list_sessions'))).toHaveLength(2)
+})
+
+test('the list is read long, since a session waiting on you is by definition not recent', async ($, on) => {
+  const { clock, seen } = world(on, paneWorld())
+  await start($, clock)
+  await clock.advance(15_000)
+  expect(seen.mcpArgs).toContainEqual({ limit: 200 })
+})
+
+test('a question whose PR has closed since it asked does not lead the pane', async ($, on) => {
+  const { clock } = world(on, paneWorld({
+    listed: [{ ...ASKING, prState: 'MERGED' }],
+    store: { 'ask/local_ask': { text: 'Merge PR 15?', at: NOW, prOpen: true } },
+  }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /Merge PR 15\?/ })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('a turn with nothing published touches no key', async ($, on) => {
+  const { clock, seen } = world(on, app({ env: { CLAUDE_CODE_HOST_SESSION_ID: 'local_me' } }))
+  await start($, clock)
+  await $.turn.start({ text: '', turnId: 't1' } as never)
+  await clock.settle()
+  expect(seen.storeDeletes).toEqual([])
+})
+
+test('a stored value that is not a question is passed over', async ($, on) => {
+  const { clock } = world(on, paneWorld({ store: { 'ask/local_ask': { at: NOW } } }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /^Needs you$/ })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('an old PR record with no number reads the same in the pane as on the band', async ($, on) => {
+  const { clock } = world(on, paneWorld({ doctor: doctorJson({ seat: LANE.seat, prs: [pr('legacy', 'old', 'satisfied'), pr('15', 'feature', 'owing')] }) }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /^PR done · #15 owed$/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('the band in a very narrow pane stops shrinking at its floor', async ($, on) => {
+  const { clock } = world(on, paneWorld())
+  await start($, clock)
+  const width = async (columns: number) => {
+    const { pane } = await paneTexts($, clock, 'desktop', columns)
+    const value = Number((await pane.findAll({ type: 'Svg' }))[0]?.props.width)
+    await pane.unmount()
+    return value
+  }
+  expect(await width(10)).toBe(await width(30))
+})
+
+test('misses count in a row: a good read in between starts again', async ($, on) => {
+  const w = opened({ doctor: LANE })
+  const { clock } = world(on, w)
+  await start($, clock)
+  await clock.advance(15_000)
+  const pane = await $.ui.mount(PANE('desktop'))
+  for (const listed of [undefined, [OTHER], undefined] as const) {
+    w.listed = listed as never
+    await clock.advance(15_000)
+    expect(await pane.find({ type: 'Text', text: /epic skills/ })).toBeDefined()
+  }
+  await pane.unmount()
+})
+
+test('a pane that could not open is not remembered as opened', async ($, on) => {
+  const writes: string[] = []
+  on('state.set', (_, e, next) => { writes.push(String((e as { key?: string }).key)); return next(e) })
+  const { clock } = world(on, app({ openThrows: true }))
+  await start($, clock)
+  await $.command.run({ command: 'shipdeck', args: '', origin: { kind: 'composer' }, presentation: {} } as never)
+  await clock.settle()
+  expect(writes).not.toContain('paneOpened')
 })
