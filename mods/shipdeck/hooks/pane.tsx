@@ -67,7 +67,7 @@ function mark(state: SessionState, els: Table, surface: string) {
   return <Text color={color}>{glyph}</Text>
 }
 
-// `#15`, or `#14 merged` once it is anything but open.
+// `#15`, or `#17 draft` for a state that isn't plain open.
 function prLabel(pr: NonNullable<SessionRow['pr']>): string {
   return pr.state === 'open' ? `#${pr.number}` : `#${pr.number} ${pr.state}`
 }
@@ -117,9 +117,9 @@ function section(key: string, title: string, children: unknown, els: Table) {
 }
 
 // A hairline between sections, the one rule the pane draws. The terminal's rows
-// are spaced by their headings and gets none. A Box can't draw one: its height
+// are spaced by their headings and get none. A Box can't draw one: its height
 // is in text rows, about 20px on the desktop, and a length is refused. The app
-// scales a too-wide Svg down to fit (P36), so this is drawn wider than any pane
+// scales a too-wide Svg down to fit, so this is drawn wider than any pane
 // and lands full width.
 function divider(key: string, els: Table, surface: string, columns: number) {
   const drawing = drawnOn(surface, els)
@@ -155,7 +155,7 @@ function rulingsTree(view: PaneView, els: Table) {
   return section('rulings', 'Rulings', rows.map((r, i) => (
     <Box key={`ruling-${i}`} flexDirection="row" gap="sm">
       {r.id !== null && <Box width={idWidth} flexShrink={0}><Text size="footnote" dimColor tabular>{r.id}</Text></Box>}
-      <Text size="footnote" wrap="truncate-end">{r.title}</Text>
+      <Box flexShrink={1} minWidth={0}><Text size="footnote" wrap="truncate-end">{r.title}</Text></Box>
     </Box>
   )), els)
 }

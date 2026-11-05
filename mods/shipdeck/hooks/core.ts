@@ -137,6 +137,19 @@ async function readDecisions($: EngineInterface, path: string): Promise<string |
   }
 }
 
+// What GitHub says of one PR, lowercased: `open`, `merged` or `closed`. null when
+// it can't say, which keeps the PR: gh missing, signed out or offline must not
+// read as finished. By URL, so it holds from any folder.
+export async function readPrState($: EngineInterface, url: string): Promise<string | null> {
+  try {
+    const ran = await $.process.run(['gh', 'pr', 'view', url, '--json', 'state', '--jq', '.state'], { timeoutMs: 8_000 })
+    const state = ran.exitCode === 0 ? ran.stdout.trim().toLowerCase() : ''
+    return state || null
+  } catch {
+    return null
+  }
+}
+
 export async function readEpic($: EngineInterface, epic: string): Promise<EpicView> {
   try {
     const entries = await $.fs.list(`${epic}/roster`).catch(() => null)

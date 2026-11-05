@@ -292,9 +292,10 @@ type just before them. GitHub sets it bare; Linear in a hairline chip.
 - **No PR, nothing at this commit:** no PR and no legs. Hollow marks would read
   as owed, and stale ones are another commit's.
 - **No PR, evidence at this commit or a bound plan:** the legs, with no PR.
-- **This branch's PR has finished:** no PR and no legs, once the app's session
-  list says so. The doctor can't tell: it works offline from what the session
-  opened. The list carries one PR a session, so an older one stays counted.
+- **This branch's PR has finished:** no PR, and no legs unless something is
+  still moving: a reviewer out, a failure, a bound plan. GitHub says so, asked
+  by URL every two minutes and at each turn's end, and once for a merged PR.
+  The doctor can't tell, working offline, and not knowing keeps the PR.
 - **One PR on this branch:** `#15`, and its legs even if all hollow.
 - **Several:** `#15 +2`. The count is slate, and a 6px brass dot beside it says
   one of the others still owes evidence. Colour never goes on the digits, and
@@ -335,16 +336,18 @@ spacing, with only the state marks drawn. Top to bottom:
 4. A caption only when a read failed. `Needs you` covering only sessions that
    run shipdeck is in the README.
 
-Sections are parted by a hairline, the one rule the pane draws. It's an `Svg`
-drawn wider than any pane, because a `Box` height is in text rows and the app
-scales a too-wide `Svg` down to fit. Empty sections take their rule with them.
+Sections are parted by a hairline, the one rule the pane draws, on drawn
+surfaces only. It's an `Svg` drawn wider than any pane, because a `Box` height is
+in text rows and the app scales a too-wide `Svg` down to fit. Empty sections take
+their rule with them.
 
 A group heading is footnote, semibold, muted, in sentence case. Rows sit on a
 hanging indent from the mark, in body type:
 
 - The seat leads in semibold (medium when idle or done), and the title follows
-  on one line, cut with an ellipsis. Marks sit on that line. A session with no
-  seat starts at its title.
+  on one line, cut with an ellipsis, as a ruling's text is. Marks sit on that
+  line. A session with no seat starts at its title. Nothing marks this session's
+  own row: the band above it is already this session.
 - A row asking something leads with the question, in medium, which wraps: it
   has to be read whole. The title sits under it in muted footnote.
 - Idle and done titles are muted: what is moving should read first.

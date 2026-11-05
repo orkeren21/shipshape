@@ -71,10 +71,19 @@ export function prName(number: string): string {
 // The legs are the current commit's, so they mean this branch's PR, and the
 // rest of the session's PRs are a count. A reading with no `prs` is none.
 //
-// A PR the app says has finished is out of it: the doctor only knows what this
-// session opened, and works offline, so its record stands after a merge.
+// A PR GitHub says has finished is out of it: the doctor works offline from what
+// the session opened, so its record stands after a merge. PRs are told apart by
+// URL, because a number means nothing across repositories or for an old record.
+export function livePrs(doctor: DoctorJson, finished: readonly string[]): DoctorJson['prs'] {
+  return (doctor.prs ?? []).filter(p => !p.url || !finished.includes(p.url))
+}
+
+export function finishedUrls(states: Record<string, string>): string[] {
+  return Object.keys(states).filter(url => states[url] === 'merged' || states[url] === 'closed')
+}
+
 export function prSummary(doctor: DoctorJson, finished: readonly string[] = []): PrSummary | null {
-  const prs = (doctor.prs ?? []).filter(p => !finished.includes(p.number))
+  const prs = livePrs(doctor, finished)
   if (prs.length === 0) return null
   const mine = doctor.branch === null ? undefined : prs.findLast(p => p.branch === doctor.branch)
   const rest = prs.filter(p => p !== mine)
@@ -90,12 +99,17 @@ export function prSummary(doctor: DoctorJson, finished: readonly string[] = []):
 // done at this commit keeps the row, hollow marks included, and the plan leg
 // exists only while a plan is bound.
 //
-// Once this branch's PR has finished, its evidence is history: a green row
-// would read as work in progress. A new PR on the branch brings the row back.
+// Once this branch's PR has finished, its green row is history and would read as
+// work in progress. What is still moving keeps it: a reviewer out, a failure, a
+// bound plan. A new PR on the branch brings it back.
 function legsToDraw(doctor: DoctorJson, pr: PrSummary | null, finished: readonly string[], now: number): Leg[] {
-  if (!pr?.label && (doctor.prs ?? []).some(p => p.branch === doctor.branch && finished.includes(p.number))) return []
   const drawn = legs(doctor, now)
-  return pr?.label || drawn.some(l => (l.state !== 'missing' && l.state !== 'stale') || l.name === 'plan') ? drawn : []
+  if (pr?.label) return drawn
+  const isHistory = doctor.branch !== null && (doctor.prs ?? []).some(p => p.branch === doctor.branch && !!p.url && finished.includes(p.url))
+  const isMoving = isHistory
+    ? drawn.some(l => l.state === 'running' || l.state === 'fail' || l.name === 'plan')
+    : drawn.some(l => (l.state !== 'missing' && l.state !== 'stale') || l.name === 'plan')
+  return isMoving ? drawn : []
 }
 
 // The seat's two handoff thresholds. These are context-watch's defaults; a
@@ -123,7 +137,7 @@ export function bandModel(input: {
   notices: string[]
   refining: boolean
   now: number
-  // PR numbers the app reports as merged or closed.
+  // The URLs of PRs GitHub reports as merged or closed.
   finished?: readonly string[]
 }): BandModel {
   const { doctor, finished = [] } = input

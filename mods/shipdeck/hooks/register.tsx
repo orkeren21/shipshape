@@ -10,15 +10,15 @@ import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, PromptSubmitInput, PromptSubmitResult, Register } from 'claude-code'
 
 import type { DoctorJson } from '../types'
-import { bandModel, describe } from './band.ts'
-import { appendTrace, findCore, publishAsk, readEpic, readSelf, readSessions, runDoctor, saveOriginal, upTo } from './core.ts'
+import { bandModel, describe, finishedUrls, livePrs } from './band.ts'
+import { appendTrace, findCore, publishAsk, readEpic, readPrState, readSelf, readSessions, runDoctor, saveOriginal, upTo } from './core.ts'
 import { drawBand } from './draw.ts'
 import { doneMap, newlyDone } from './epic.ts'
 import type { Style } from './model.ts'
 import { paneTree } from './pane.tsx'
 import { assemble, checkReply, countWords, MAX_TOKENS, request, rowKey, rowText, score, skipPrefix, splitReminders, wordsBesideReminders } from './refine.ts'
 import type { Score, Split } from './refine.ts'
-import { askFromTool, finishedPrs, isPrLive } from './sessions.ts'
+import { askFromTool, isPrLive } from './sessions.ts'
 import { terminalBand } from './terminal.tsx'
 
 const PANE = 'shipdeck-epic'
@@ -27,6 +27,8 @@ const PANE_TITLE = 'Sessions'
 // at 60 rows and a get 110 ms (measured on 2.1.317 and 2.1.309), and it only runs
 // while the pane can be seen.
 const SESSIONS_MS = 15_000
+// How often an open PR is asked about. Each turn's end asks too.
+const PRS_MS = 120_000
 // Long enough for the slowest honest reading: the core lookup's 15 s, then
 // the doctor's 10 s.
 const READ_BOUND_MS = 30_000
@@ -51,6 +53,7 @@ const refineOff = atom({ plugin: 'shipdeck', key: 'refineOff' } as const, false)
 const rows = atom({ plugin: 'shipdeck', key: 'rows' } as const, [], { shape: 'rows-1' })
 const epic = atom({ plugin: 'shipdeck', key: 'epic' } as const, null, { shape: 'epic-2' })
 const sessions = atom({ plugin: 'shipdeck', key: 'sessions' } as const, null, { shape: 'sessions-1' })
+const prStates = atom({ plugin: 'shipdeck', key: 'prStates' } as const, {}, { shape: 'pr-states-1' })
 // The roster's done map and the one-toast flag outlive a reload, so a lane
 // that finished during one still raises its notice, and the warning stays one.
 // The map names its epic: another epic's first read only seeds.
@@ -68,6 +71,8 @@ let coreNote: string | null = null
 let lastDoctor: DoctorJson | null = null
 let lastDoctorAt = 0
 let isReadingDoctor = false
+let isReadingPrs = false
+let hasWarnedGh = false
 let isDoctorDirty = false
 let firstReading: Promise<void> = Promise.resolve()
 let transientFailures = 0
@@ -150,6 +155,29 @@ async function refreshEpic($: EngineInterface): Promise<void> {
   }
 }
 
+// Asked of GitHub, because neither source shipdeck holds can say: the doctor is
+// offline, and the app's list is read only with the pane open and appears to
+// carry a session's first PR. A merged PR stays merged, so it is asked once.
+async function refreshPrs($: EngineInterface): Promise<void> {
+  if (isReadingPrs) return
+  isReadingPrs = true
+  try {
+    const known = await read($, prStates)
+    for (const pr of lastDoctor?.prs ?? []) {
+      const { url } = pr
+      if (!url || known[url] === 'merged') continue
+      const state = await readPrState($, url)
+      if (state) await update($, prStates, prev => (prev[url] === state ? prev : { ...prev, [url]: state }))
+      else if (!hasWarnedGh) {
+        hasWarnedGh = true
+        void trace($, 'band', 'gh could not say what state a PR is in, so finished PRs stay on the band').catch(() => {})
+      }
+    }
+  } finally {
+    isReadingPrs = false
+  }
+}
+
 // The list is read only while the pane can be seen: a session nobody has open
 // has no surface attached, so nothing would draw (measured on 2.1.317).
 async function refreshSessions($: EngineInterface): Promise<void> {
@@ -208,7 +236,7 @@ async function bandNow($: EngineInterface) {
     notices: await read($, notices),
     refining: (await read($, refining)) > 0,
     now: await $.clock.now(),
-    finished: finishedPrs(await read($, sessions)),
+    finished: finishedUrls(await read($, prStates)),
   })
 }
 
@@ -432,6 +460,8 @@ export const register: Register = (on, options) => {
     firstReading = refreshDoctor($, true).catch(() => {})
     $.clock.every(60_000, () => void readFromMainLoop($, true).catch(() => {}))
     $.clock.every(30_000, () => void refreshEpic($).catch(() => {}))
+    $.clock.every(PRS_MS, () => void refreshPrs($).catch(() => {}))
+    void firstReading.then(() => refreshPrs($)).catch(() => {})
     $.clock.every(SESSIONS_MS, () => void refreshSessions($).catch(() => {}))
     await $.command.register({ name: 'refine', description: 'shipdeck: turn prompt refining on or off for this session', argumentHint: 'on | off' }).catch(() => {})
     await $.command.register({ name: 'shipdeck', description: 'shipdeck: open the sessions pane, or switch the band style', argumentHint: 'style github | style linear' }).catch(() => {})
@@ -499,6 +529,7 @@ export const register: Register = (on, options) => {
       } else {
         void refreshUsage($).catch(() => {})
         void readFromMainLoop($, true).catch(() => {})
+        void refreshPrs($).catch(() => {})
       }
     }
     return next(e)
@@ -587,7 +618,7 @@ export const register: Register = (on, options) => {
     const view = {
       band: await bandNow($),
       style,
-      prs: d?.prs ?? [],
+      prs: d ? livePrs(d, finishedUrls(await read($, prStates))) : [],
       sessions: await read($, sessions),
       epic: await read($, epic),
       epicDir: d?.seat?.epic ?? null,
@@ -632,7 +663,7 @@ export const register: Register = (on, options) => {
     if (opened) await update($, paneOpened, () => true).catch(() => {})
     const d = await read($, doctor)
     const why = (await read($, note)) ?? ''
-    const model = bandModel({ doctor: d, isUnavailable: why !== '', percent: await read($, percent), notices: [], refining: false, now: await $.clock.now(), finished: finishedPrs(await read($, sessions)) })
+    const model = bandModel({ doctor: d, isUnavailable: why !== '', percent: await read($, percent), notices: [], refining: false, now: await $.clock.now(), finished: finishedUrls(await read($, prStates)) })
     const pane = !opened ? 'the sessions pane could not open' : opened.isPlaced ? 'the sessions pane is open' : `the sessions pane waits for room (${opened.reason})`
     return { text: `shipdeck: ${pane}. ${describe(model)}${why ? ` (${why})` : ''}. /shipdeck style github or linear switches the band.` }
   })

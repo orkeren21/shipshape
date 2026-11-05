@@ -36,7 +36,9 @@ context only and reads `evidence unavailable`.
     plan, while the session has one bound (core 0.6.0 or later);
   - the PR those marks mean, as `#15`. Other PRs this session opened are a
     count, `#15 +2`, with a dot if one of them still owes evidence. With no
-    PR and nothing on disk the marks stay away, so nothing reads as owed;
+    PR and nothing done at this commit the marks stay away, so nothing reads
+    as owed. A merged or closed PR leaves the band: shipdeck asks `gh`, and
+    with no `gh` it stays;
   - up to two notices.
 - **Notices**: a lane reported done, and a successor card waiting. They
   show in the band until your next prompt, plus a toast, and a native
@@ -45,8 +47,9 @@ context only and reads `evidence unavailable`.
   evidence, then your sessions by state (needs you, working, idle, seats with
   no session, done) with what each is doing, its PR and how long it has rested,
   then the epic's latest rulings. Idle sessions older than a day drop off unless
-  they hold a seat, a question or a PR that moved in the last week, and twelve
-  rows show at most. Needs you covers only sessions running shipdeck. It opens
+  they hold a seat, a question, or an open PR and were active in the last week,
+  and twelve rows show at most. Needs you covers only sessions running shipdeck.
+  It opens
   by itself for an Architect, and `/shipdeck` opens it for any seat. The list
   refreshes every 15 seconds while the pane can be seen.
 

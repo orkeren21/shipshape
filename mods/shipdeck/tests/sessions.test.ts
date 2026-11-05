@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { askFromTool, finishedPrs, listedFrom, rowsFor, sessionsView, stripSeat } from '../hooks/sessions.ts'
+import { askFromTool, listedFrom, rowsFor, sessionsView, stripSeat } from '../hooks/sessions.ts'
 import type { RosterRow } from '../types'
 
 const NOW = Date.parse('2026-11-05T12:00:00Z')
@@ -13,27 +13,6 @@ const seat = (name: string, sessionId: string | null, over: Partial<RosterRow> =
 const list = (rows: Record<string, unknown>[]) => listedFrom(reply(rows)) ?? []
 const view = (rows: Record<string, unknown>[], over: Partial<Parameters<typeof sessionsView>[0]> = {}) =>
   sessionsView({ listed: list(rows), self: null, roster: [], asks: {}, now: NOW, ...over })
-
-describe('this session\'s finished PR', () => {
-  const self = (pr: Record<string, unknown>) => list([raw('me', pr)])[0] ?? null
-  const finished = (pr: Record<string, unknown>) =>
-    finishedPrs({ state: 'ok', ...view([], { self: self(pr) }), asks: 'ok' } as never)
-  test('a merged or closed one is named, whatever its case in the list', () => {
-    expect(finished({ prNumber: 10, prState: 'MERGED' })).toEqual(['10'])
-    expect(finished({ prNumber: 11, prState: 'CLOSED' })).toEqual(['11'])
-  })
-  test('an open one, or none, is not', () => {
-    expect(finished({ prNumber: 12, prState: 'OPEN' })).toEqual([])
-    expect(finished({})).toEqual([])
-  })
-  test('with no reading nothing is known to have finished', () => {
-    expect(finishedPrs(null)).toEqual([])
-  })
-  test('another session\'s merged PR says nothing about this one', () => {
-    const v = view([raw('other', { prNumber: 14, prState: 'MERGED', lastActivityAt: minutes(1) })], { self: self({ prNumber: 15, prState: 'OPEN' }) })
-    expect(finishedPrs({ state: 'ok', ...v, asks: 'ok' } as never)).toEqual([])
-  })
-})
 
 describe('reading the list', () => {
   test('the fields the app gives, with a PR when there is one', () => {
@@ -86,8 +65,8 @@ describe('which sessions show', () => {
   })
   test('an open PR holds a session for a week, and a forgotten one goes', () => {
     const rows = view([
-      raw('week', { lastActivityAt: minutes(6 * 24 * 60), prNumber: 9, prState: 'OPEN' }),
-      raw('forgotten', { lastActivityAt: minutes(101 * 24 * 60), prNumber: 382, prState: 'OPEN' }),
+      raw('week', { lastActivityAt: minutes(7 * 24 * 60 - 1), prNumber: 9, prState: 'OPEN' }),
+      raw('forgotten', { lastActivityAt: minutes(7 * 24 * 60), prNumber: 382, prState: 'OPEN' }),
     ]).rows
     expect(rows.map(r => r.key)).toEqual(['week'])
   })
@@ -144,7 +123,7 @@ describe('a question that has lapsed', () => {
     expect(view([raw('a', { prNumber: 15, prState: 'QUEUED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('needs')
     expect(view([raw('a', { prNumber: 15, prState: 'CLOSED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('idle')
   })
-  test('an idle session holding a draft stays, however old', () => {
+  test('an idle session holding a question stays past a day', () => {
     expect(view([raw('a', { prNumber: 15, prState: 'DRAFT', lastActivityAt: minutes(25 * 60) })]).rows.map(r => r.key)).toEqual(['a'])
   })
   test('one asked with no PR open stands, whatever the PR says now', () => {

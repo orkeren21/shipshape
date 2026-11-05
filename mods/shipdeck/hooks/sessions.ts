@@ -10,7 +10,7 @@ export type { Ask, ListedSession, SessionRow, SessionState }
 // quietest rows ever become the count.
 export const MAX_ROWS = 12
 // An idle session older than this leaves the list, unless it still holds
-// something: an open PR, a question, a seat.
+// something: a question, a seat, or an open PR for the week below.
 const RECENT_MS = 24 * 60 * 60 * 1000
 // An open PR holds a session this long. Past it, a row is someone's forgotten
 // branch, not work the operator is steering.
@@ -131,13 +131,6 @@ export function sessionsView(input: {
   }
   const sorted = rows.sort((a, b) => ORDER[a.state] - ORDER[b.state] || (b.activeAt ?? 0) - (a.activeAt ?? 0))
   return { rows: sorted.slice(0, MAX_ROWS), more: Math.max(0, sorted.length - MAX_ROWS) }
-}
-
-// The numbers of this session's own PR, once the app says it has finished. The
-// list carries one PR a session, so an older one of the session's stays counted.
-export function finishedPrs(view: SessionsView | null): string[] {
-  const pr = view?.state === 'ok' ? view.rows.find(r => r.isSelf)?.pr : null
-  return pr && !isPrLive(pr) ? [String(pr.number)] : []
 }
 
 // What the pane lists: the reading, or with none the seats on file, so a pane
