@@ -110,4 +110,25 @@ out="$("$seat" 2>&1)"
 assert_eq "0" "$?" "reporting with no seat still succeeds"
 assert_contains "$out" "no seat" "and says there is none"
 
+# --- an epic folder with a space in its path ----------------------------------
+#
+# The desktop app's notes folder sits under "Application Support", so a space
+# is the ordinary case there. Every reader takes the whole path or none of it.
+
+spaced="$work/Library/Application Support/Claude/side-session-notes/local_1/big-epic"
+"$seat" lane F4 --epic "$spaced" >/dev/null 2>&1
+assert_eq "0" "$?" "a spaced epic folder is accepted"
+assert_eq "$spaced" "$(field epic)" "and recorded whole"
+assert_contains "$("$seat" 2>&1)" "epic: $spaced" "and reported whole"
+
+"$seat" --handoff "$spaced/F4/lane-handoff.md" >/dev/null 2>&1
+assert_eq "$spaced" "$(field epic)" "a handoff update keeps it whole"
+assert_eq "$spaced/F4/lane-handoff.md" "$(field handoff)" "and takes a spaced handoff whole"
+
+if command -v python3 >/dev/null 2>&1; then
+  read_back="$(cd "$work" && "$SHIPSHAPE_REPO_ROOT/bin/shipshape-doctor" --json 2>/dev/null \
+    | python3 -c 'import json, sys; print(json.load(sys.stdin)["seat"]["epic"])')"
+  assert_eq "$spaced" "$read_back" "the doctor hands the pane the whole path"
+fi
+
 finish

@@ -59,13 +59,28 @@ decision goes back through a question round.
 One folder per work item holds everything the work puts on paper — this rule
 lives here and every other skill defers to it:
 
-    docs/shipshape/work/<slug>/         an ad-hoc feature
-    docs/shipshape/work/<epic-slug>/    an epic; its features' documents live
-                                        inside it, with no folders of their own
+    docs/shipshape/work/<slug>/   an ad-hoc feature
+    <epic folder>/                an epic: EPIC.md, decisions.md, roster/, and
+                                  a <lane>/ folder for each feature
+
+An epic's folder is the one place every session in it can write. Where sessions
+have a side-session notes folder, that is `<notes folder>/<epic-slug>/`: the
+desktop app refuses a worktree session's writes to the main checkout, and the
+notes folder outlives every worktree. The app names it at the foot of a started
+session's brief and lists it among that session's additional working
+directories. An Architect with none in view starts the epic at
+`docs/shipshape/work/<epic-slug>/` and moves it to the notes folder the app
+names when the first lane starts. Sessions without a notes folder keep the epic
+there, in the shared checkout, addressed by absolute path, since each worktree
+carries its own gitignored copy of that tree. Quote the path wherever it is
+used: the notes folder sits under `Application Support`.
 
 The design document starts the folder. The plan, the retro and any handoff are
 its siblings, named after it — `<design>-plan.md`, `<design>-retro.md`,
 `<design>-handoff.md` — so "where is this feature's retro" is never a search.
+In an epic they sit in `<epic folder>/<lane>/`, written there from the start
+where the lane can. A lane that drafted in its worktree's `docs/shipshape/work/`
+copies them over before its `DONE`, because a worktree takes that tree with it.
 The tree is gitignored: internal thinking, not a deliverable, never committed.
 
 Record the *why* behind each decision, not just the decision. The retro will
@@ -105,5 +120,7 @@ carefully the work gets checked.
 
 The request that started this skill authorized the design — even when it asked
 to build the thing. Present the menu, then stand by: the build starts on a
-fresh operator go, and a hook message is never that.
+fresh go, and a hook message is never that. The go is the operator's. Inside an
+approved epic it is the Architect's, because an approved scope is the approval,
+and a lane puts its questions and this menu to the Architect.
 

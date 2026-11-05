@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { doneMap, epicView, firstClause, newlyDone, parseChecked, parseRulings } from '../hooks/epic.ts'
+import { readEpic } from '../hooks/core.ts'
 
 // Synthetic files in each shape seen in real epics.
 const PLAIN_ARCHITECT = [
@@ -91,5 +92,53 @@ describe('rulings', () => {
   test('a file with no ID-led entries is read by its headings', () => {
     const text = '# Decisions\n\n## 2026-09-23 · Wrap lane go\n\n- **Ruling:** go\n\n## 2026-09-24 · Follow-up lane DONE\n'
     expect(parseRulings(text)).toEqual(['2026-09-24 · Follow-up lane DONE', '2026-09-23 · Wrap lane go'])
+  })
+})
+
+// The sample in skills/epic-architecture/SKILL.md, word for word:
+// tests/prose/test-epic-rules.sh holds the two together, since the core suite
+// has no Node to run this parser.
+const SAMPLE = [
+  '**D7** · The live sessions pane is its own PR',
+  '',
+  '- Date: 2026-11-04. Asked by F1. Ruled by Architect.',
+  "- Question: Does the live sessions pane join F1's PR?",
+  '- Ruling: No: its own PR, after F1',
+  '- Reason: F1 is already carrying fixes on their way to review',
+].join('\n')
+
+describe('the decisions.md format the skill defines', () => {
+  const entry = (n: number) => SAMPLE.replace('**D7**', `**D${n}**`)
+  test('an entry reads as its ID and title, and its body as nothing', () => {
+    expect(parseRulings(`# post-0.5: decisions\n\nAppend-only.\n\n${SAMPLE}\n`)).toEqual(['D7 · The live sessions pane is its own PR'])
+  })
+  test('newest last in the file, newest first in the pane, five at most', () => {
+    const file = [1, 2, 3, 4, 5, 6].map(entry).join('\n\n')
+    expect(parseRulings(file).map(r => r.split(' ')[0])).toEqual(['D6', 'D5', 'D4', 'D3', 'D2'])
+  })
+  test('a bold ID opening any other line reads as an entry, which is why the skill rules it out', () => {
+    expect(parseRulings(`${SAMPLE}\n- **D3** still stands\n`)[0]).toBe('D3 · still stands')
+  })
+})
+
+describe('an epic folder with a space in its path', () => {
+  const dir = '/Users/op/Library/Application Support/Claude/side-session-notes/local_1/post-0.5'
+  const files: Record<string, string> = {
+    [`${dir}/roster/architect.md`]: PLAIN_ARCHITECT,
+    [`${dir}/roster/F4.md`]: 'role: lane F4\nstatus: active',
+    [`${dir}/decisions.md`]: SAMPLE,
+  }
+  const $ = {
+    fs: {
+      list: async (path: string) => path === `${dir}/roster`
+        ? [{ name: 'architect.md', kind: 'file' }, { name: 'F4.md', kind: 'file' }]
+        : Promise.reject(new Error(`no such folder: ${path}`)),
+      read: async (path: string) => files[path] ?? Promise.reject(new Error(`no such file: ${path}`)),
+    },
+  } as never
+  test('the pane reads its seats and rulings whole', async () => {
+    const view = await readEpic($, dir)
+    expect(view?.rows.map(r => r.seat)).toEqual(['architect', 'F4'])
+    expect(view?.rulings).toEqual(['D7 · The live sessions pane is its own PR'])
   })
 })

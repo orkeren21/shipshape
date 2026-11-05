@@ -36,7 +36,7 @@ stays unarchived until this work lands.
 ## Take the seat
 
 Record the seat your predecessor held, with this handoff:
-`shipshape-seat <architect | lane ID | solo> [--epic <absolute path>]
+`shipshape-seat <architect | lane ID | solo> [--epic "<absolute path>"]
 --handoff <path>`. That gives the hooks the seat's handoff point and points a
 compacted session back at the handoff.
 
