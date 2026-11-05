@@ -40,20 +40,25 @@ would have kept it.
 
 ## Coordination
 
-Where the epic folder is, as an absolute path in the shared checkout —
-every worktree carries its own gitignored copy of that tree, and
-coordination files written in a worktree's copy never meet anyone else's.
-State that `roster/architect.md` inside it names the
-live Architect — the session announces itself there before starting work,
-and its questions go to the Architect by message rather than to the
-operator (protocol in `shipshape:coordinating-with-the-architect`). The
+Where the epic folder is, as an absolute path every lane can write, quoted
+when it holds a space (`shipshape:brainstorming` sets the place). A lane in a
+worktree writes coordination files to that path, never to its own copy of
+the tree. The one exception is the first lane of an Architect with no notes
+folder in view, whose priming names the folder at the foot of its brief
+instead (`shipshape:epic-architecture` has the steps). State that
+`roster/architect.md` inside it names the live Architect — the session
+announces itself there before starting work, and its questions go to the
+Architect by message rather than to the operator (protocol in
+`shipshape:coordinating-with-the-architect`). The
 Architect's identity as of this priming, dated, for the first announce.
 Where rulings land (`decisions.md`), and the boundary in one line: the
-Architect answers inside the operator-approved scope; scope changes and
-irreversible actions go to the operator.
+Architect decides everything but the four things a session waits for the
+operator for (`shipshape:epic-architecture`). A stop rule in a priming names
+one of those four, and a routine outcome gets a decision instead.
 
 The approval regime, stated: whether the lane starts work on its own
-announce, or announces and waits for a go before the first change. The
+announce, or announces and waits for a go before the first change, and whose
+go, since the Architect can release a build inside the approved scope. The
 operator has run both, and a priming silent on it leaves the lane to guess
 the looser one.
 
@@ -124,5 +129,5 @@ commands, which paths, what output would show it working. The session running
 
 The artifacts this feature owes, listed. The gates apply as always; anything
 beyond them goes here. Where the retro is written — next to this feature's
-design in the epic's folder — and what the Architect needs from it before
+design in `<epic folder>/<lane>/` — and what the Architect needs from it before
 dispatching whatever depends on this lane: cross-lane news first.

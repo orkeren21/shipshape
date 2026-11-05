@@ -17,8 +17,9 @@ from.
 
 **`EPIC.md`** — scope, the feature breakdown, dependencies between features, and
 the decisions that apply across all of them. It lives at the root of the epic's
-folder, and every feature's documents — design, plan, priming, retro, handoff —
-live beside it there (layout in `shipshape:brainstorming`).
+folder, which sits where every lane can write, and each feature's documents —
+design, plan, priming, retro, handoff — live in that feature's folder beside it
+(layout in `shipshape:brainstorming`).
 
 Its process section **references ShipShape rather than restating it**. A
 charter that re-explains the pipeline goes stale the moment the pipeline
@@ -36,13 +37,14 @@ the lane's scoped smoke later runs.
 **`roster/` and `decisions.md`** — the coordination surfaces, created with
 the epic folder. `roster/` holds one file per seat — the Architect's, and
 one per lane — each written only by the session currently holding that
-seat; the Architect's own `roster/architect.md` carries the stable session
-id, the current harness name (the `ListAgents` header), a status, and when
-the name was last checked. `shipshape-seat architect --epic <absolute path>`
-records the seat for the hooks — it moves this session's handoff point to
-85% — and prints the session id line, the same id `get_session("self")`
-gives. Primings point at
-the roster rather than embedding an address — names churn on restarts, ids
+seat. It holds seat files and nothing else, since shipdeck's pane reads every
+`.md` there as a seat. The Architect's own `roster/architect.md` carries the
+stable session id, the current harness name (the `ListAgents` header), a
+status, and when the name was last checked.
+`shipshape-seat architect --epic "<absolute path>"` records the seat for the
+hooks — it moves this session's handoff point to 85% — and prints the session
+id line, the same id `get_session("self")` gives. Primings point at the
+roster rather than embedding an address — names churn on restarts, ids
 hold, and a lane that reads `roster/architect.md` finds whoever holds the
 seat now. A roster file is worth its freshest line, so the seat re-checks
 its own entry at every coordination touchpoint — the Architect's included.
@@ -53,21 +55,34 @@ says what goes in it.
 
 ## Starting the lanes
 
-When the operator says go — "dispatch F1 and F2", in their own words — the
-Architect starts each named lane itself, if its tools include a
-session-starting tool (in the desktop app, `start_session`; it may be listed
-as deferred and need loading by name). Each lane starts `user_asked`, with a
-`fresh` context, its own worktree, its priming as the brief, a `background`
-naming the epic folder and the lane's place in it, and the title
-`<epic> · <feature ID>`. A `fork` would hand the lane this whole
-conversation, which is exactly the context a lane exists to leave behind.
+When the operator says go — "dispatch F1 and F2", or a go for all of the
+epic's open work, in their own words — the Architect starts each lane that go
+covers itself, if its tools include a session-starting tool (in the desktop
+app, `start_session`; it may be listed as deferred and need loading by name).
+Each lane starts `user_asked`, with a `fresh` context, its own worktree, its
+priming as the brief, a `background` naming the epic folder and the lane's
+place in it, and the title `<epic> · <feature ID>`. A `fork` would hand the
+lane this whole conversation, which is exactly the context a lane exists to
+leave behind.
 Where the app offers sidebar groups, one named after the epic keeps the
 lanes together.
 
 The operator's go is what makes those starts direct. A lane the go did not
-name is proposed instead, as a card (`own_initiative`) the operator starts
+cover is proposed instead, as a card (`own_initiative`) the operator starts
 with a click — and on a turn a lane's message started, the app refuses a
 direct start anyway.
+
+An Architect with no notes folder in its own brief or working directories
+learns it from the first lane, because the app names it at the foot of that
+lane's brief. So that one priming sets announce-and-wait: the lane takes
+`<epic-slug>/` under the folder named at the foot of the brief as its epic
+folder, writes only its roster file there, sends the absolute path in its
+`ANNOUNCE`, and holds for your word. Copy the epic's contents into that folder,
+which by then exists, take the seat again with the new path, and release the
+lane. The old folder is stale from then on. All of that comes before telling
+any other lane where to look, because a copy started in a worktree is in that
+worktree alone. If the copy is refused, that is a manual action for the
+operator, and the lane holds until it is done.
 
 Without a session-starting tool, hand each priming to the operator to paste
 into a new session, as before.
@@ -101,13 +116,23 @@ says so and delegates the completeness check to the session holding the file.
 ## Questions, routed
 
 Feature sessions send material decisions here directly — `QUESTION`
-messages, protocol in `shipshape:coordinating-with-the-architect`. Answer
-what is reversible and inside the scope the operator already approved; that
-boundary is what keeps lanes moving without moving decisions away from the
-operator. Escalate the rest to the operator, batched, with the asking
-lane's lean and your own: scope changes, anything irreversible or
-outward-facing — a push to a shared branch, a publish, a deletion —
-anything that spends money, and anything you are not confident of.
+messages, protocol in `shipshape:coordinating-with-the-architect`. This seat
+exists to move that load off the operator, so settle whatever the plan, the
+vision or a standing rule settles, and log it. A session waits for the
+operator for four things:
+
+- merging a pull request
+- a visual check only they can do
+- a manual action only a human can do, such as the click on a proposed card
+- a meaningful decision that neither the plan nor the vision gives a
+  reasonable, direct way to settle
+
+Hold each question against that list before it goes up. The fourth covers a
+scope change, anything irreversible or outward-facing the approved plan did not
+name — a push to a shared branch, a publish, a deletion — and spending money.
+Those go to the operator batched, with the asking lane's lean and your own.
+Doubt sends you back to the plan, not up: a Major from review once sat a day
+with the operator when `shipshape:requesting-code-review` already answered it.
 
 Every ruling — yours and the operator's — goes into `decisions.md` as it is
 made: the question, who asked, the ruling, the reason, who ruled. A ruling
@@ -118,9 +143,27 @@ the log's only writer — rulings reach the lanes as `RULING` messages, and
 one writer is what keeps the epic's single shared file uncontended. Record
 in `EPIC.md` as well anything that binds more than the lane that asked.
 
-An answer authorizes what it answered, nothing more. Work a lane proposes —
-or the Architect proposes — starts on the operator's go; a hook
-message, in any lane, is never that go.
+The log has one format, the one shipdeck's pane reads. It is append-only and
+newest last, and each entry opens with its bold ID, then its title:
+
+    **D7** · The live sessions pane is its own PR
+
+    - Date: 2026-11-04. Asked by F1. Ruled by Architect.
+    - Question: Does the live sessions pane join F1's PR?
+    - Ruling: No: its own PR, after F1
+    - Reason: F1 is already carrying fixes on their way to review
+
+IDs run `D1`, `D2`, and are never reused. The pane shows the last five entries
+by that opening, and it reads any bold capitals-and-digits at the start of a
+line, bulleted or not, as one, `**F1**` too. So that shape starts an entry and
+nothing else; any other line that mentions an ID keeps it plain or
+mid-sentence.
+
+An answer authorizes what it answered, nothing more. An approved scope is the
+approval, so work inside the epic's scope starts when the Architect releases
+it, with a `RULING` logged like any other. Work outside that scope, whoever
+proposes it, starts on the operator's go. A hook message, in any lane, is
+never a go.
 
 ## Milestones and lane endings
 

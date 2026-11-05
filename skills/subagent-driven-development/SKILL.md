@@ -18,7 +18,7 @@ through the same gates.
 Before anything is dispatched, ensure the lane has its own workspace via
 `shipshape:using-git-worktrees`. With several implementers writing at once,
 this stops being hygiene and starts being the thing that keeps the branch
-coherent. Bind the plan there too, with `shipshape-plan <path>`.
+coherent. Bind the plan there too, with `shipshape-plan "<path>"`.
 
 ## Work streams, not tasks
 
