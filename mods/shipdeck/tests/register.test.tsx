@@ -73,6 +73,8 @@ type World = {
   // The panes open, and the surfaces attached.
   panes?: string[]
   surfaces?: string[]
+  // A tool call that stays open until this settles, as AskUserQuestion does.
+  toolHold?: Promise<void>
 }
 
 // The engine beneath shipdeck: every $ call it makes, answered from memory.
@@ -188,7 +190,12 @@ function world(on: On, w: World = {}) {
   on('session.surfaces', () => ({ value: w.surfaces ?? ['desktop'] }) as never)
   on('config.set', (_, e) => ({ value: e.value }) as never)
   on('session.start', (_, e) => ({ cwd: e.cwd }) as never)
-  on('tool.call', () => ({ result: {} }) as never)
+  on('tool.call', async () => {
+    await w.toolHold
+    return { result: {} } as never
+  })
+  on('turn.start', (_, e) => ({ turnId: e.turnId }) as never)
+  on('session.attach', (_, e) => ({ clientId: e.clientId }) as never)
   on('turn.complete', () => ({ text: '' }) as never)
   on('prompt.submit', (_, e) => { seen.entered.push(e.text); return { text: e.text } as never })
   return { clock, seen }
@@ -1174,4 +1181,164 @@ test('/refine says on when it is on', async ($, on) => {
   await start($, clock)
   const said = await $.command.run({ command: 'refine', args: '', origin: { kind: 'composer' }, presentation: {} } as never)
   expect(said.text).toContain('prompt refining is on.')
+})
+
+// What a session waits on the operator for, and when the list is read.
+const at = (ms: number) => new Date(ms).toISOString()
+const OTHER = { sessionId: 'local_other', title: 'post-0.5 · F4: epic skills', isRunning: true, isArchived: false, lastActivityAt: at(NOW), prNumber: 16, prState: 'OPEN' }
+const SELF = { sessionId: 'local_me', title: 'This one', isRunning: true, isArchived: false, lastActivityAt: at(NOW) }
+const app = (over: Partial<World> = {}): World => ({ listed: [OTHER], self: SELF, store: {}, ...over })
+
+test('a closing question is published under the app\'s id, and the next turn clears it', async ($, on) => {
+  const w = app()
+  const { clock } = world(on, w)
+  await start($, clock)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Which look?', recap: 'done' } as never)
+  await clock.settle()
+  expect(w.store).toEqual({ 'ask/local_me': { text: 'Which look?', at: NOW } })
+  await $.turn.start({ text: 'A', turnId: 't1' } as never)
+  await clock.settle()
+  expect(w.store).toEqual({})
+})
+
+test('a closing with no question clears the last one', async ($, on) => {
+  const w = app({ store: { 'ask/local_me': { text: 'Old?', at: 1 } } })
+  const { clock } = world(on, w)
+  await start($, clock)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', recap: 'done' } as never)
+  await clock.settle()
+  expect(w.store).toEqual({})
+})
+
+test('AskUserQuestion shows while it is open and goes when it is answered', async ($, on) => {
+  let answer = () => {}
+  const w = app({ toolHold: new Promise<void>(resolve => { answer = resolve }) })
+  const { clock } = world(on, w)
+  await start($, clock)
+  const call = $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Which look?' }] } as never)
+  await clock.settle()
+  expect(w.store).toEqual({ 'ask/local_me': { text: 'Which look?', at: NOW } })
+  answer()
+  await call
+  await clock.settle()
+  expect(w.store).toEqual({})
+})
+
+test('a subagent asks nobody, and its turn starting clears nothing', async ($, on) => {
+  const w = app({ store: { 'ask/local_me': { text: 'Still waiting?', at: 1 } } })
+  const { clock } = world(on, w)
+  await start($, clock)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'From an agent?', agentId: 'agent-1' } as never)
+  await $.turn.start({ text: '', turnId: 't1', agentId: 'agent-1' } as never)
+  await clock.settle()
+  expect(w.store).toEqual({ 'ask/local_me': { text: 'Still waiting?', at: 1 } })
+})
+
+test('SHIPSHAPE_SHIPDECK=0 publishes nothing', async ($, on) => {
+  const w = app({ env: { SHIPSHAPE_SHIPDECK: '0' } })
+  const { clock } = world(on, w)
+  await start($, clock)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Which look?' } as never)
+  await $.turn.start({ text: '', turnId: 't1' } as never)
+  await clock.settle()
+  expect(w.store).toEqual({})
+})
+
+test('with no app there is no id to publish under, and the turn is none the worse', async ($, on) => {
+  const w: World = { store: {} }
+  const { clock } = world(on, w)
+  await start($, clock, 'terminal')
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Which look?' } as never)
+  await clock.settle()
+  expect(w.store).toEqual({})
+})
+
+test('a store that refuses costs the turn nothing', async ($, on) => {
+  const { clock, seen } = world(on, app({ storeThrows: true }))
+  await start($, clock)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Which look?' } as never)
+  await $.turn.start({ text: '', turnId: 't1' } as never)
+  await clock.settle()
+  expect(seen.toasts).toEqual([])
+})
+
+test('the app\'s id is asked for once, not on every publish', async ($, on) => {
+  const { clock, seen } = world(on, app({ panes: [] }))
+  await start($, clock)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'One?' } as never)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Two?' } as never)
+  await clock.settle()
+  expect(seen.mcp).toEqual(['ccd_session_mgmt/get_session'])
+})
+
+const opened = (over: Partial<World> = {}) => app({ panes: ['shipdeck-epic'], ...over })
+
+test('an open pane on an attached surface reads the list on a clock', async ($, on) => {
+  const { clock, seen } = world(on, opened())
+  await start($, clock)
+  seen.mcp.length = 0
+  await clock.advance(15_000)
+  expect(seen.mcp).toEqual(['ccd_session_mgmt/list_sessions', 'ccd_session_mgmt/get_session'])
+})
+
+test('a closed pane reads nothing', async ($, on) => {
+  const { clock, seen } = world(on, app({ panes: [] }))
+  await start($, clock)
+  await clock.advance(60_000)
+  expect(seen.mcp).toEqual([])
+})
+
+test('a session nobody has open reads nothing, however long the pane has been open', async ($, on) => {
+  const { clock, seen } = world(on, opened({ surfaces: [] }))
+  await start($, clock)
+  await clock.advance(60_000)
+  expect(seen.mcp).toEqual([])
+})
+
+test('the operator opening the session reads the list at once', async ($, on) => {
+  const w = opened({ surfaces: [] })
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  w.surfaces = ['desktop']
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:1' } as never)
+  await clock.settle()
+  expect(seen.mcp).toContain('ccd_session_mgmt/list_sessions')
+})
+
+test('opening the pane reads the list at once', async ($, on) => {
+  const { clock, seen } = world(on, app())
+  await start($, clock)
+  expect(seen.mcp).toEqual([])
+  await $.command.run({ command: 'shipdeck', args: '', origin: { kind: 'composer' }, presentation: {} } as never)
+  await clock.settle()
+  expect(seen.mcp).toContain('ccd_session_mgmt/list_sessions')
+})
+
+test('a server that never answers lets go after five seconds, and the next read still runs', async ($, on) => {
+  const w = opened({ mcpHangs: true })
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  await clock.advance(5_000)
+  w.mcpHangs = false
+  seen.mcp.length = 0
+  await clock.advance(15_000)
+  expect(seen.mcp).toContain('ccd_session_mgmt/list_sessions')
+})
+
+test('/shipdeck opens the pane for any seat and says what the band says', async ($, on) => {
+  const { clock, seen } = world(on, app())
+  await start($, clock)
+  const out = await $.command.run({ command: 'shipdeck', args: '', origin: { kind: 'composer' }, presentation: {} } as never) as unknown as { text: string }
+  expect(seen.opened).toContain('shipdeck-epic')
+  expect(out.text).toContain('the sessions pane is open')
+  expect(out.text).toContain('lane F2')
+})
+
+test('a lane reads its epic too, and only an Architect hears lanes finish', async ($, on) => {
+  const files = { '/epic/roster/f1.md': 'role: lane f1\nsession id: local_other\nstatus: active', '/epic/decisions.md': '**D1** · Ship it\n' }
+  const { clock, seen } = world(on, opened({ doctor: doctorJson({ seat: { role: 'lane', lane: 'F2', epic: '/epic', handoff: null } }), files, dirs: { '/epic/roster': ['f1.md'] } }))
+  await start($, clock)
+  files['/epic/roster/f1.md'] = 'role: lane f1\nsession id: local_other\nstatus: done'
+  await clock.advance(30_000)
+  expect(seen.toasts.some(t => t.includes('f1 done'))).toBe(false)
 })
