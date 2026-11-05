@@ -79,6 +79,8 @@ type World = {
   toolHold?: Promise<void>
   // What the engine does as a client attaches.
   onAttach?: () => void
+  // A store whose read never answers.
+  storeHangs?: boolean
 }
 
 // The engine beneath shipdeck: every $ call it makes, answered from memory.
@@ -177,7 +179,8 @@ function world(on: On, w: World = {}) {
     if (w.storeThrows) throw new Error('refused')
     return { value: Object.keys(w.store ?? {}) } as never
   })
-  on('store.get', (_, e) => {
+  on('store.get', async (_, e) => {
+    if (w.storeHangs) await new Promise(() => {})
     if (w.storeThrows) throw new Error('refused')
     seen.storeReads.push(e.key)
     return { value: w.store?.[e.key] } as never
@@ -202,7 +205,12 @@ function world(on: On, w: World = {}) {
     return { result: {} } as never
   })
   on('turn.start', (_, e) => ({ turnId: e.turnId }) as never)
-  on('session.attach', (_, e) => { w.onAttach?.(); return { clientId: e.clientId } as never })
+  on('session.attach', async (_, e) => {
+    // The engine's roster changes a macrotask on, so a read racing it loses.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    w.onAttach?.()
+    return { clientId: e.clientId } as never
+  })
   on('session.end', (_, e) => ({ sessionId: e.sessionId }) as never)
   on('turn.complete', () => ({ text: '' }) as never)
   on('prompt.submit', (_, e) => { seen.entered.push(e.text); return { text: e.text } as never })
@@ -1635,6 +1643,18 @@ test('a session that has only just stopped reads now, and a finished one carries
   await pane.unmount()
 })
 
+test('a done lane whose PR is still open says so: that merge is the operator\'s', async ($, on) => {
+  const { clock } = world(on, paneWorld({
+    listed: [{ ...ASKING, sessionId: 'local_gone', prNumber: 17, prState: 'OPEN' }],
+    store: {},
+    files: { ...ROSTER, '/epic/roster/F1.md': 'role: lane F1\nsession id: local_gone\nstatus: done' },
+  }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /^#17 open$/ })).toBeDefined()
+  await pane.unmount()
+})
+
 test('the store is read only for what sessions published', async ($, on) => {
   const { clock, seen } = world(on, paneWorld({ store: { 'ask/local_ask': { text: 'Merge PR 15?', at: NOW }, 'something-else': { text: 'not an ask' } } }))
   await start($, clock)
@@ -1662,6 +1682,15 @@ test('the terminal band with PRs elsewhere counts them, and no mark when nothing
   const term = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await term.find({ type: 'Text', text: /^2 PRs$/ })).toBeDefined()
   await term.unmount()
+})
+
+test('a roster out of reach beside a healthy decisions file still shows the rulings', async ($, on) => {
+  const { clock } = world(on, paneWorld({ dirs: {} }))
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect(await pane.find({ type: 'Text', text: /Could not read the roster in \/epic/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^The second$/ })).toBeDefined()
+  await pane.unmount()
 })
 
 test('a roster that cannot be listed says so, is not an empty epic, and takes the rulings\' word with it', async ($, on) => {
@@ -1868,4 +1897,55 @@ test('a pane that could not open is not remembered as opened', async ($, on) => 
   await $.command.run({ command: 'shipdeck', args: '', origin: { kind: 'composer' }, presentation: {} } as never)
   await clock.settle()
   expect(writes).not.toContain('paneOpened')
+})
+
+test('a question asked after the PR merged does not lapse at once', async ($, on) => {
+  const w = app({ self: { ...SELF, prNumber: 17, prState: 'MERGED' } })
+  const { clock } = world(on, w)
+  await start($, clock)
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Archive this?' } as never)
+  await clock.settle()
+  expect(w.store).toEqual({ 'ask/local_me': { text: 'Archive this?', at: NOW, prOpen: false } })
+})
+
+test('publishing reads the list through, so this session\'s own row moves at once', async ($, on) => {
+  const { clock, seen } = world(on, opened())
+  await start($, clock)
+  seen.mcp.length = 0
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Which look?' } as never)
+  await clock.settle()
+  expect(seen.mcp).toContain('ccd_session_mgmt/list_sessions')
+})
+
+test('the first miss goes to the trace, once', async ($, on) => {
+  const w = opened({ doctor: LANE })
+  const { clock, seen } = world(on, w)
+  await start($, clock)
+  await clock.advance(15_000)
+  w.listed = undefined
+  await clock.advance(30_000)
+  expect(seen.traces.filter(t => t.includes('the session list could not be read'))).toHaveLength(1)
+})
+
+test('with no earlier list to keep, the first miss says so at once', async ($, on) => {
+  const { clock, seen } = world(on, opened({ doctor: doctorJson({ seat: null }), listed: undefined }))
+  await start($, clock)
+  await clock.advance(15_000)
+  expect(seen.traces.filter(t => t.includes('the session list could not be read'))).toHaveLength(1)
+  const pane = await $.ui.mount(PANE('desktop'))
+  expect(await pane.find({ type: 'Text', text: /Could not read the session list/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('a publish that never ends lets go, and the next still lands', async ($, on) => {
+  const w = app({ env: { CLAUDE_CODE_HOST_SESSION_ID: 'local_me' }, storeHangs: true })
+  const { clock } = world(on, w)
+  await start($, clock)
+  await $.turn.start({ text: '', turnId: 't1' } as never)
+  await clock.settle()
+  await clock.advance(8_000)
+  w.storeHangs = false
+  await $.tool.call({ tool: 'mcp__ccd_turn__wrap_up', ask: 'Still there?' } as never)
+  await clock.settle()
+  expect(Object.keys(w.store ?? {})).toEqual(['ask/local_me'])
 })

@@ -382,7 +382,11 @@ describe('a narrow band', () => {
         }
       }
       expect(seenAlone).toBe(true)
-      expect(/pr-owing/.test(drawBand(model({ pr: { label: null, others: 2, isOwing: true }, legs: [] }), style, 900).source)).toBe(true)
+      const bare = model({ seat: LONG_SEAT, refining: true, notices: NOTICES, legs: legsOf('fail', 'fail', 'fail', 'fail'), pr: { label: null, others: 2, isOwing: true } })
+      for (let width = 900; width >= FLOOR; width -= 2) {
+        const { source } = drawBand(bare, style, width)
+        if (words(source).includes('2 PRs')) expect(/pr-owing/.test(source)).toBe(true)
+      }
     })
 
     test(`${style}: a count that owes carries a mark, one that does not carries none`, () => {

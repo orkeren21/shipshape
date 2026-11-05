@@ -56,7 +56,8 @@ context only and reads `evidence unavailable`.
   show. And the question's text goes into shipdeck's own store under your
   Claude configuration folder. The session's next turn, a closing with no
   question, an answer or a `/clear` removes it. The pane stops showing one
-  after a week, or once the PR the session held when it asked has closed.
+  after a week, or once the PR the session held when it asked has closed,
+  though the text stays in the store until that session's next turn.
 
   The band and the pane show the same evidence because the desktop app takes
   the band away while a next-step card is showing, and leaves panes up. That

@@ -145,8 +145,9 @@ export async function readEpic($: EngineInterface, epic: string): Promise<EpicVi
       if (entry.kind !== 'file' || !entry.name.endsWith('.md')) continue
       roster?.push({ name: entry.name, text: await $.fs.read(`${epic}/roster/${entry.name}`).catch(() => null) })
     }
-    // With the folder itself out of reach, a missing file proves nothing.
-    return epicView(roster, roster ? await readDecisions($, `${epic}/decisions.md`) : { unreadable: true })
+    // With the folder itself out of reach, a file not found proves nothing.
+    const decisions = await readDecisions($, `${epic}/decisions.md`)
+    return epicView(roster, roster || decisions !== null ? decisions : { unreadable: true })
   } catch {
     return epicView(null, { unreadable: true })
   }
@@ -157,7 +158,8 @@ export async function readEpic($: EngineInterface, epic: string): Promise<EpicVi
 // every call here fails soft into "unavailable", which the pane says plainly.
 const SESSIONS = 'ccd_session_mgmt'
 // A session waiting on the operator is by definition not recent, so the list is
-// read long and the pane's own rules do the cutting.
+// read long and the pane's own rules do the cutting. It costs nothing to: 60 rows
+// came back in 109 to 128 ms, the same as 20 (2.1.317).
 const LIST_LIMIT = 200
 const SESSION_CALL_MS = 5_000
 const ASK_KEY = 'ask/'

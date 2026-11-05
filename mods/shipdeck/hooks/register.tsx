@@ -18,13 +18,14 @@ import type { Style } from './model.ts'
 import { paneTree } from './pane.tsx'
 import { assemble, checkReply, countWords, MAX_TOKENS, request, rowKey, rowText, score, skipPrefix, splitReminders, wordsBesideReminders } from './refine.ts'
 import type { Score, Split } from './refine.ts'
-import { askFromTool } from './sessions.ts'
+import { askFromTool, isPrLive } from './sessions.ts'
 import { terminalBand } from './terminal.tsx'
 
 const PANE = 'shipdeck-epic'
 const PANE_TITLE = 'Sessions'
-// How often an open pane re-reads the session list. A list and a get cost about
-// 240 ms together (measured on 2.1.317), and it only runs while the pane can be seen.
+// How often an open pane re-reads the session list. The list took 109 to 128 ms
+// at 60 rows and a get 110 ms (measured on 2.1.317 and 2.1.309), and it only runs
+// while the pane can be seen.
 const SESSIONS_MS = 15_000
 // Long enough for the slowest honest reading: the core lookup's 15 s, then
 // the doctor's 10 s.
@@ -33,6 +34,9 @@ const READ_BOUND_MS = 30_000
 // about 0.7 s on the desktop (measured: claude plugin list, then the doctor).
 const FIRST_READING_MS = 5_000
 const MAX_UNWRITTEN = 50
+// One publish waits for the one before, so one that never ends must not hold
+// the rest: the get's 5 s, then the store.
+const PUBLISH_MS = 8_000
 
 // Change a shape tag when its value's fields change: it declines what an
 // earlier version stored, which outlives a reload.
@@ -105,8 +109,8 @@ async function writeTrace($: EngineInterface): Promise<void> {
   await appendTrace($, lastDoctor.scratch, lines)
 }
 
-// What the refiner decided, for tuning its heuristic in the field: counts and
-// reasons, never the operator's words.
+// What shipdeck decided, for tuning it in the field: counts and reasons, never
+// the operator's words.
 async function trace($: EngineInterface, who: string, decision: string): Promise<void> {
   try {
     const at = new Date(await $.clock.now()).toISOString().replace(/\.\d+Z$/, 'Z')
@@ -178,7 +182,7 @@ async function openPane($: EngineInterface) {
 // every session to read. Only moments shipdeck can see: a turn's closing
 // question and AskUserQuestion. With no app session id there is no list to be in.
 function publish($: EngineInterface, ask: { text: string } | null): Promise<void> {
-  publishing = publishing.then(() => writeAsk($, ask)).catch(() => trace($, 'pane', 'a question could not be published'))
+  publishing = publishing.then(() => upTo($, writeAsk($, ask), PUBLISH_MS)).then(() => {}, () => trace($, 'pane', 'a question could not be published'))
   return publishing
 }
 
@@ -188,7 +192,7 @@ async function writeAsk($: EngineInterface, ask: { text: string } | null): Promi
   const self = ask ? await readSelf($) : null
   hostId ??= self?.id ?? (await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')) ?? (await readSelf($))?.id ?? null
   if (!hostId) return
-  await publishAsk($, hostId, ask && { text: ask.text, at: await $.clock.now(), prOpen: self?.pr?.state === 'open' })
+  await publishAsk($, hostId, ask && { text: ask.text, at: await $.clock.now(), prOpen: !!self?.pr && isPrLive(self.pr) })
   void refreshSessions($).catch(() => {})
 }
 

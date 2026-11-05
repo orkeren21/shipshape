@@ -1,6 +1,6 @@
 ---
 name: shipdeck
-description: ShipShape's band above the prompt and pane beside the chat — seat, context, evidence and every session, at a glance.
+description: ShipShape's band above the prompt and pane beside the chat — seat, context, evidence and your sessions, at a glance.
 colors:
   ink: "oklch(0.27 0.012 60)"
   slate: "oklch(0.50 0.012 60)"
@@ -219,7 +219,7 @@ last, until it fits. The narrowest band is 240px, and everything fits there:
 7. Legs that did not pass, but did not fail, do the same.
 8. The spacing tightens: GitHub's gaps and Linear's chips.
 9. The count of other PRs goes, and its dot with it. `2 PRs`, with no PR on
-   this branch, stays until step 13.
+   this branch, keeps its dot and stays until step 13.
 10. The seat loses the word `lane` and is cut to 5 characters.
 11. The seat goes.
 12. A failed leg goes to its initial, then a reviewer's age goes.
@@ -339,8 +339,9 @@ hanging indent from the mark, in body type:
   under it in muted footnote.
 - Idle and done titles are muted: what is moving should read first.
 - The right-hand column holds the PR and the time at rest, tabular, in muted
-  footnote, and never wraps: `#15 · 2m`, `#14 merged · 3h`. Under `Done` it is
-  the bare number.
+  footnote, and never wraps: `#15 · 2m`, `#14 merged · 3h`. Under `Done` a
+  merged PR is the bare number, and any other says its state: `#17 open`, since
+  that merge is still owed.
 
 **Session marks**, 14 wide in a line-tall slot, so they centre on the first
 line:

@@ -72,9 +72,11 @@ function prLabel(pr: NonNullable<SessionRow['pr']>): string {
   return pr.state === 'open' ? `#${pr.number}` : `#${pr.number} ${pr.state}`
 }
 
-// A row under Done has said its PR is finished, and has no rest to count.
+// A row under Done has no rest to count, and its merged PR is the expected end
+// of it. An open one is not: a lane reports done before its PR merges, and that
+// merge is the operator's.
 function metaOf(r: SessionRow): string {
-  if (r.state === 'done') return r.pr ? `#${r.pr.number}` : ''
+  if (r.state === 'done') return !r.pr ? '' : r.pr.state === 'merged' ? `#${r.pr.number}` : `#${r.pr.number} ${r.pr.state}`
   const rest = r.restingFor === null ? null : r.restingFor < 60_000 ? 'now' : age(r.restingFor)
   return [r.pr && prLabel(r.pr), rest].filter(Boolean).join(' · ')
 }

@@ -16,6 +16,13 @@ const MAX_ASK = 140
 // A question nobody answered for this long is not one the pane should lead with.
 const ASK_MAX_MS = 7 * 24 * 60 * 60 * 1000
 
+// Open in the wide sense: everything but finished, draft included. The app's
+// renderer knows states the list has not yet shown, and only `merged` and
+// `closed` say a PR is done with.
+export function isPrLive(pr: { state: string }): boolean {
+  return pr.state !== 'merged' && pr.state !== 'closed'
+}
+
 const ORDER: Record<SessionState, number> = { needs: 0, working: 1, idle: 2, unknown: 3, done: 4 }
 
 function listedOf(raw: unknown): ListedSession | null {
@@ -68,10 +75,11 @@ function seatLabel(seat: RosterRow): string {
 
 // The app can merge a PR from a question's own card with no prompt sent (read
 // from the app bundle, not measured), so no turn starts to clear it. A question
-// asked with the PR open has lapsed once it is not.
+// asked with a PR open has lapsed once that PR has finished. A row with no PR
+// field says nothing, and must not cost the operator a real question.
 function liveAsk(ask: Ask | undefined, s: ListedSession, now: number): string | null {
   if (!ask || now - ask.at >= ASK_MAX_MS) return null
-  return ask.prOpen && s.pr?.state !== 'open' ? null : ask.text
+  return ask.prOpen && s.pr && !isPrLive(s.pr) ? null : ask.text
 }
 
 export function sessionsView(input: {
@@ -80,8 +88,10 @@ export function sessionsView(input: {
   roster: RosterRow[]
   asks: Record<string, Ask>
   now: number
+  // With no list read, nothing says a done seat's session has gone.
+  isListRead?: boolean
 }): { rows: SessionRow[]; more: number } {
-  const { listed, self, roster, asks, now } = input
+  const { listed, self, roster, asks, now, isListRead = true } = input
   const seatFor = new Map(roster.flatMap(r => (r.sessionId ? [[r.sessionId, r] as const] : [])))
   const live = [...(self ? [self] : []), ...listed.filter(s => s.id !== self?.id)].filter(s => !s.isArchived)
   const rows: SessionRow[] = []
@@ -90,7 +100,7 @@ export function sessionsView(input: {
     const ask = liveAsk(asks[s.id], s, now)
     const isSelf = s.id === self?.id
     const state: SessionState = ask !== null ? 'needs' : s.isRunning ? 'working' : seat?.isDone ? 'done' : 'idle'
-    const isHeld = isSelf || seat !== null || state !== 'idle' || s.pr?.state === 'open'
+    const isHeld = isSelf || seat !== null || state !== 'idle' || (s.pr !== null && isPrLive(s.pr))
     if (!isHeld && s.activeAt !== null && now - s.activeAt >= RECENT_MS) continue
     rows.push({
       key: s.id,
@@ -109,8 +119,8 @@ export function sessionsView(input: {
   // there is nothing left to show of it.
   const shown = new Set(live.map(s => s.id))
   for (const seat of roster) {
-    if (seat.isDone || (seat.sessionId && shown.has(seat.sessionId))) continue
-    rows.push({ key: `seat:${seat.seat}`, seat: seatLabel(seat), title: seat.status || 'no status', state: 'unknown', isSelf: false, pr: null, ask: null, restingFor: null, activeAt: null })
+    if ((isListRead && seat.isDone) || (seat.sessionId && shown.has(seat.sessionId))) continue
+    rows.push({ key: `seat:${seat.seat}`, seat: seatLabel(seat), title: seat.status || 'no status', state: seat.isDone ? 'done' : 'unknown', isSelf: false, pr: null, ask: null, restingFor: null, activeAt: null })
   }
   const sorted = rows.sort((a, b) => ORDER[a.state] - ORDER[b.state] || (b.activeAt ?? 0) - (a.activeAt ?? 0))
   return { rows: sorted.slice(0, MAX_ROWS), more: Math.max(0, sorted.length - MAX_ROWS) }
@@ -119,7 +129,7 @@ export function sessionsView(input: {
 // What the pane lists: the reading, or with none the seats on file, so a pane
 // outside the desktop app still shows the epic.
 export function rowsFor(view: SessionsView | null, roster: RosterRow[], now: number): { rows: SessionRow[]; more: number } {
-  return view?.state === 'ok' ? view : sessionsView({ listed: [], self: null, roster, asks: {}, now })
+  return view?.state === 'ok' ? view : sessionsView({ listed: [], self: null, roster, asks: {}, now, isListRead: false })
 }
 
 // What a tool call says about the session waiting on the operator: null when

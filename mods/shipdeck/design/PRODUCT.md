@@ -45,7 +45,8 @@ native to Claude Code, not like a widget bolted onto it.
 
 1. **Read the gates, never guess.** Every evidence mark comes from an artifact
    the bash gates read, so the band can never show green while a gate would
-   refuse. The pane's session marks come from the app's own session list.
+   refuse. The pane's session marks come from the app's session list, the
+   seat files and what each session publishes.
 2. **One glance, one answer.** Seat, context and evidence read in a second,
    left to right, in the same place every time.
 3. **State, not decoration.** Colour and motion mean a state; nothing is

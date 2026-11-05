@@ -180,7 +180,7 @@ function drawPr(r: Row, pr: PrSummary, fit: Fit): void {
     r.text(pr.label, { weight: 500 })
     if (pr.others > 0 && fit.showOtherPrs) r.gap(5).text(`+${pr.others}`, { cls: 'muted' })
   }
-  if (pr.isOwing && fit.showOtherPrs) r.gap(4).icon(6, (x, cy) => `<circle cx="${x + 3}" cy="${cy}" r="3" class="f-warn pr-owing"/>`)
+  if (pr.isOwing && (fit.showOtherPrs || pr.label === null)) r.gap(4).icon(6, (x, cy) => `<circle cx="${x + 3}" cy="${cy}" r="3" class="f-warn pr-owing"/>`)
 }
 
 // --- the two styles ---------------------------------------------------------------------

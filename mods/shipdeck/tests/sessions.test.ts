@@ -104,6 +104,16 @@ describe('a question that has lapsed', () => {
     expect(view([raw('a', { prNumber: 15, prState: 'MERGED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('idle')
     expect(view([raw('a', { prNumber: 15, prState: 'OPEN' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('needs')
   })
+  test('a row with no PR field says nothing about the PR: the question stands', () => {
+    expect(view([raw('a')], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('needs')
+  })
+  test('a draft is not finished, and neither is any state but merged or closed', () => {
+    expect(view([raw('a', { prNumber: 15, prState: 'DRAFT' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('needs')
+    expect(view([raw('a', { prNumber: 15, prState: 'CLOSED' })], { asks: asked({ prOpen: true }) }).rows[0]?.state).toBe('idle')
+  })
+  test('an idle session holding a draft stays, however old', () => {
+    expect(view([raw('a', { prNumber: 15, prState: 'DRAFT', lastActivityAt: minutes(25 * 60) })]).rows.map(r => r.key)).toEqual(['a'])
+  })
   test('one asked with no PR open stands, whatever the PR says now', () => {
     expect(view([raw('a', { prNumber: 15, prState: 'MERGED' })], { asks: asked() }).rows[0]?.state).toBe('needs')
   })
@@ -157,9 +167,10 @@ describe('what the pane lists', () => {
     const got = view([raw('a')])
     expect(rowsFor({ state: 'ok', asks: 'ok', ...got }, [seat('F9', 'x')], NOW).rows.map(r => r.key)).toEqual(['a'])
   })
-  test('with no reading, or none yet, the seats on file still draw', () => {
+  test('with no reading, or none yet, the seats on file still draw, done ones too: nothing says those sessions have gone', () => {
     for (const reading of [{ state: 'unavailable' } as const, null]) {
-      expect(rowsFor(reading, [seat('F9', 'x', { status: 'active' })], NOW).rows.map(r => [r.seat, r.state])).toEqual([['F9', 'unknown']])
+      const roster = [seat('F9', 'x', { status: 'active' }), seat('F1', 'y', { status: 'done', isDone: true })]
+      expect(rowsFor(reading, roster, NOW).rows.map(r => [r.seat, r.state])).toEqual([['F9', 'unknown'], ['F1', 'done']])
     }
   })
 })
