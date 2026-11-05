@@ -143,7 +143,7 @@ Subagent (general-purpose):
 
 **Placeholders:**
 - `[DESCRIPTION]` — brief summary of what was built
-- `[PLAN_OR_REQUIREMENTS]` — what it should do (plan file path, task text, or requirements)
+- `[PLAN_OR_REQUIREMENTS]` — what it should do (plan file path, task text, or requirements), plus what `shipshape-plan` prints when a plan is bound or was cleared
 - `[BASE_SHA]` — starting commit
 - `[HEAD_SHA]` — ending commit
 

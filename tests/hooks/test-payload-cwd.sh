@@ -245,6 +245,24 @@ assert_file "$wt_scratch/pending-capture/ov1" "under the override, a worktree's 
 has_review "$work/root/.shipshape/$session" && fail "and no report is written for it"
 main_clean "the scratch-root override"
 
+# --- a plan's paths are the session's checkout's ----------------------------------
+#
+# A fence's files name paths from the repo root, and the root the leg wants is
+# the session's. Here the worktree's copy is newer than the record and the main
+# checkout's is older, so a leg that read the hook's own directory would pass.
+
+rm -rf "$wt/.shipshape"
+pr_open
+plan="$work/plan.md"
+printf '```json:metadata\n{"id":"t1","files":["src.txt"],"verifyCommand":"true"}\n```\n' > "$plan"
+printf 'path=%s\nbranch=lane\ntasks=\nreason=\nepoch=1\n' "$plan" > "$wt_scratch/plan"
+mkdir -p "$wt_scratch/verify"
+printf 'task=t1\ncommand=true\nexit=0\nepoch=1000000000\n--- output ---\n' > "$wt_scratch/verify/t1"
+touch -t 200001010000 "$main/src.txt"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$work/t.jsonl" "$CLAIM" "$wt")" "$main")"
+assert_contains "$(hook_field "$out" reason)" "plan — stale" "a fence's files resolve in the session's checkout"
+main_clean "the plan leg"
+
 # --- every hook ------------------------------------------------------------------
 #
 # Each hook, run from the main checkout on a payload for its own event, does
@@ -260,10 +278,6 @@ export SHIPSHAPE_CONTEXT_PCT_CMD="$work/pct"
 
 at_wt() { # at_wt <payload fields> — a payload naming the session's worktree
   printf '{"session_id":"%s","cwd":%s,%s}' "$session" "$(json_string "$wt")" "$1"
-}
-fenced() { printf 'Do the thing.\n\n```json:metadata\n%s\n```\n' "$1"; }
-created() { # created <task id> <fence json>
-  at_wt "\"hook_event_name\":\"TaskCreated\",\"task_id\":\"$1\",\"task_subject\":\"a task\",\"task_description\":$(json_string "$(fenced "$2")")"
 }
 
 netted=" "
@@ -281,12 +295,6 @@ net session-start.sh "$(at_wt '"hook_event_name":"SessionStart","source":"compac
 net context-watch.sh "$(at_wt "\"hook_event_name\":\"Stop\",\"transcript_path\":$(json_string "$work/t.jsonl"),\"stop_hook_active\":false")" \
   "crossing 85%, architect"
 net review-capture.sh "$(review_payload "$wt")" "wrote review-"
-net task-capture.sh "$(created 1 '{"id":"t1","blockedBy":[]}')" "carries fence t1"
-net task-capture.sh "$(created 2 '{"id":"t2","blockedBy":["t1"]}')" "carries fence t2"
-net blockedby-gate.sh "$(at_wt '"hook_event_name":"PreToolUse","tool_name":"TaskUpdate","tool_input":{"taskId":"2","status":"in_progress"}')" \
-  "t2 refused: waiting on t1"
-net task-completion-gate.sh "$(at_wt '"hook_event_name":"TaskCompleted","task_id":"1","task_subject":"a task"')" \
-  "t1 has no verify command; closed"
 net pr-wrapper-gate.sh "$(at_wt '"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"gh pr create --title t"}')" \
   "refused a bare gh pr create"
 net merge-gate.sh "$(at_wt '"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"gh pr merge 7 --squash"}')" \

@@ -36,7 +36,7 @@ const MAX_UNWRITTEN = 50
 
 // Change a shape tag when its value's fields change: it declines what an
 // earlier version stored, which outlives a reload.
-const doctor = atom({ plugin: 'shipdeck', key: 'doctor' } as const, null, { shape: 'doctor-1' })
+const doctor = atom({ plugin: 'shipdeck', key: 'doctor' } as const, null, { shape: 'doctor-2' })
 const note = atom({ plugin: 'shipdeck', key: 'note' } as const, null)
 const percent = atom({ plugin: 'shipdeck', key: 'percent' } as const, null)
 const notices = atom({ plugin: 'shipdeck', key: 'notices' } as const, [], { shape: 'notices-1' })
@@ -516,8 +516,10 @@ export const register: Register = (on, options) => {
     let row
     if (e.surface !== 'terminal' && 'Svg' in els) {
       const { Svg } = els
-      // 8px a column is an estimate, not a measurement: the row fits this
-      // figure, and what the app does past its real width is not known.
+      // 8px a column is an estimate that errs narrow: about 752px against 664
+      // at 85 columns, the one width measured, so the slope is unknown. The row
+      // fits this figure, and past its real width the app scales the drawing
+      // down to fit, with no clip or scroll (seen in the desktop app, 2026-11-04).
       const drawing = drawBand(model, style, Math.max(240, (e.props.bodyColumns || 100) * 8 - 16))
       row = <Svg key="shipdeck-band" source={drawing.source} width={drawing.width} height={drawing.height} alt={drawing.alt} />
     } else {

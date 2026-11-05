@@ -110,7 +110,7 @@ go idle. A successor follows only when the ruling names one.
 ## Finishing the lane
 
 The lane exits through its own gates as ever — whole-branch review, CI, the
-scoped smoke, the retro (`shipshape:finishing-with-evidence`). The epic adds
+scoped smoke, any bound plan, the retro (`shipshape:finishing-with-evidence`). The epic adds
 one notice: when the retro is written, send `DONE` with its path and set
 your roster status to `done`. The Architect reads that retro before priming
 anything that depends on this lane, so the `DONE` naming it is what unblocks

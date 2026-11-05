@@ -31,7 +31,8 @@ context only and reads `evidence unavailable`.
     its second and red past it (70 and 85 for a lane or solo session, 85 and
     92 for an Architect);
   - review, CI and smoke as the doctor reports them, including a reviewer
-    still out, with its age once it passes 15 minutes;
+    still out, with its age once it passes 15 minutes, and a fourth leg, the
+    plan, while the session has one bound (core 0.6.0 or later);
   - up to two notices.
 - **Notices**: a lane reported done, and a successor card waiting. They
   show in the band until your next prompt, plus a toast, and a native

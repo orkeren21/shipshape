@@ -35,9 +35,9 @@ for name in $mentioned; do
     || fail "prose refers to '$name', but there is no executable bin/$name"
 done
 
-# And the five the design names by hand are all present, so a rename cannot
+# And the six the design names by hand are all present, so a rename cannot
 # quietly drop one.
-for required in shipshape-pr-open shipshape-ci-watch shipshape-verify shipshape-smoke shipshape-seat; do
+for required in shipshape-pr-open shipshape-ci-watch shipshape-verify shipshape-smoke shipshape-seat shipshape-plan; do
   [ -x "$bin_dir/$required" ] || fail "bin/$required is missing"
 done
 

@@ -5,7 +5,7 @@ description: Use when the implementation is complete and the branch needs to be 
 
 # Finishing with evidence
 
-Six steps, in this order. Each one produces an artifact, and the artifacts are
+Seven steps, in this order. Each one produces an artifact, and the artifacts are
 what the done gate reads — not what you say about them. The gate arms the
 moment step 1 succeeds, so there is no version of this where the steps are
 optional.
@@ -41,7 +41,26 @@ something this session can fix. A required check that has not been scheduled
 looks similar and is not the same thing — the wrapper tells them apart, so
 trust what it wrote rather than the fact that nothing failed.
 
-## 3. Smoke the changed flows
+## 3. Close the plan
+
+```bash
+shipshape-plan
+```
+
+With a plan bound, this prints every task's state and the lines that close the
+rest. Run them. Most plans verify with the whole suite, so one
+`shipshape-verify t1,t2,t3 "<command>"` usually covers the lot. A record is
+measured against its own task's files, so a fix that lands after this step costs
+one more run.
+
+A task that cannot close on this branch goes out of scope with a reason a
+reviewer can read: `shipshape-plan <path> --tasks <ids> --reason "<why>"`. The
+done gate says what was left out, and the pull request should too.
+
+If the branch has a plan and it was never bound, bind it now: a late bind costs
+one run per command. A branch with no plan has nothing to close.
+
+## 4. Smoke the changed flows
 
 ```bash
 shipshape-smoke <command exercising what you changed>
@@ -57,7 +76,7 @@ end-to-end suite has its own cadence and is never invoked per pull request.
 If a commit lands after the smoke, the smoke is stale and the gate will say so.
 Smoke last, or smoke again.
 
-## 4. Sweep the design against the diff
+## 5. Sweep the design against the diff
 
 Two lists, both minutes of work, both recorded in the retro.
 
@@ -74,7 +93,7 @@ or an explicit accepted-bet line naming the blast radius. A release cut in the
 field died at the one step its dry run never exercised, on a workflow that
 could not be re-run. Silence is how those become incidents.
 
-## 5. Write the retro
+## 6. Write the retro
 
 `shipshape:writing-retros`, next to the design document in the work item's
 folder. Before reporting done, not after — the retro is where the Minor
@@ -85,7 +104,7 @@ committed `docs/escapes.md` naming the gate that could have caught it — see
 the escapes ledger in `shipshape:writing-retros`. That column is what tunes
 the gates instead of a hunch.
 
-## 6. Report
+## 7. Report
 
 Outcome first, in plain English, for someone who saw none of the work. See
 `shipshape:plain-english-reporting`.
@@ -97,4 +116,5 @@ done. A green check list is not done, and neither is a review with no
 Criticals on its own.
 
 Done is: the review happened, CI says mergeable, the changed flows were
-exercised, and none of that evidence predates the code being shipped.
+exercised, every task of a bound plan has a passing record, and none of that
+evidence predates the code being shipped.
