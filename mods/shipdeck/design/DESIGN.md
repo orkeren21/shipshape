@@ -295,8 +295,8 @@ type just before them. GitHub sets it bare; Linear in a hairline chip.
 - **This branch's PR has finished:** this PR leaves, and the legs go unless
   something is still moving: a reviewer out, a failure, a bound plan. Evidence
   for new work on the same branch waits for its PR. GitHub says so, asked by URL
-  on returning to the session, at each turn's end, and every two minutes while a
-  surface is attached, and once for a merged PR. The doctor can't tell, working
+  at the session's start, on a client attaching, at each turn's end, and every
+  two minutes while a surface is attached, and once for a merged PR. The doctor can't tell, working
   offline, and not knowing keeps the PR. A merged or closed PR leaves even if the
   done gate still holds a record of it.
 - **One PR on this branch:** `#15`, and its legs even if all hollow.
