@@ -31,8 +31,8 @@ Work starts on an approved scope: a planning request authorizes planning, not
 the build, and a hook message is never approval. Inside that scope, wait for the
 operator only to merge, for a visual check or manual action only they can do, or
 for a meaningful decision the plan and vision leave open; in an epic the
-Architect decides the rest and can release a build. A status request is not a
-pause.
+Architect decides the rest and can release a build. Answer a status request and
+keep working.
 
 User instructions outrank skills, and skills outrank your defaults. When your
 human partner says otherwise, they are right.

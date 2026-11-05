@@ -58,11 +58,12 @@ says what goes in it.
 When the operator says go — "dispatch F1 and F2", or a go for all of the
 epic's open work, in their own words — the Architect starts each lane that go
 covers itself, if its tools include a session-starting tool (in the desktop
-app, `start_session`; it may be listed as deferred and need loading by name). Each lane starts `user_asked`, with a
-`fresh` context, its own worktree, its priming as the brief, a `background`
-naming the epic folder and the lane's place in it, and the title
-`<epic> · <feature ID>`. A `fork` would hand the lane this whole
-conversation, which is exactly the context a lane exists to leave behind.
+app, `start_session`; it may be listed as deferred and need loading by name).
+Each lane starts `user_asked`, with a `fresh` context, its own worktree, its
+priming as the brief, a `background` naming the epic folder and the lane's
+place in it, and the title `<epic> · <feature ID>`. A `fork` would hand the
+lane this whole conversation, which is exactly the context a lane exists to
+leave behind.
 Where the app offers sidebar groups, one named after the epic keeps the
 lanes together.
 
@@ -73,12 +74,14 @@ direct start anyway.
 
 An Architect with no notes folder in its own brief or working directories
 learns it from the first lane, because the app names it at the foot of that
-lane's brief. So that one priming gives the epic folder as `<epic-slug>/` under
-the folder named at the foot of the brief, and the lane's `ANNOUNCE` carries
-the absolute path. Move the epic there and take the seat again with the new
-path before telling any other lane where to look: a copy started in a worktree
-is in that worktree alone. If the move is refused, that is a manual action for
-the operator.
+lane's brief. So that one priming sets announce-and-wait: the lane takes
+`<epic-slug>/` under the folder named at the foot of the brief as its epic
+folder, writes only its roster file there, sends the absolute path in its
+`ANNOUNCE`, and holds for your word. Copy the epic's contents into that folder,
+which by then exists, take the seat again with the new path, and release the
+lane. All of that comes before telling any other lane where to look, because a
+copy started in a worktree is in that worktree alone. If the copy is refused,
+that is a manual action for the operator, and the lane holds until it is done.
 
 Without a session-starting tool, hand each priming to the operator to paste
 into a new session, as before.
@@ -124,12 +127,11 @@ operator for four things:
   reasonable, direct way to settle
 
 Hold each question against that list before it goes up. The fourth covers a
-scope change, anything irreversible or outward-facing the plan did not name —
-a push to a shared branch, a publish, a deletion — and spending money. Those
-go to the operator batched, with the asking lane's lean and your own. Doubt
-sends you back to the plan, not up: a Major from review once sat a day with the
-operator when `shipshape:requesting-code-review` already answered it. The same
-goes for a priming's stop rules, which name only these four.
+scope change, anything irreversible or outward-facing the approved plan did not
+name — a push to a shared branch, a publish, a deletion — and spending money.
+Those go to the operator batched, with the asking lane's lean and your own.
+Doubt sends you back to the plan, not up: a Major from review once sat a day
+with the operator when `shipshape:requesting-code-review` already answered it.
 
 Every ruling — yours and the operator's — goes into `decisions.md` as it is
 made: the question, who asked, the ruling, the reason, who ruled. A ruling
@@ -151,8 +153,9 @@ newest last, and each entry opens with its bold ID, then its title:
     - Reason: F1 is already carrying fixes on their way to review
 
 IDs run `D1`, `D2`, and are never reused. The pane shows the last five entries
-by that opening, so a bold ID starts an entry and nothing else; any other line
-that mentions one keeps it plain or mid-sentence.
+by that opening, and it reads any bold capitals-and-digits at the start of a
+line as one, `**F1**` too. So that shape starts an entry and nothing else; any
+other line that mentions an ID keeps it plain or mid-sentence.
 
 An answer authorizes what it answered, nothing more. An approved scope is the
 approval, so work inside the epic's scope starts when the Architect releases

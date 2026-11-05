@@ -118,6 +118,7 @@ describe('the decisions.md format the skill defines', () => {
   })
   test('a bold ID opening any other line reads as an entry, which is why the skill rules it out', () => {
     expect(parseRulings(`${SAMPLE}\n- **D3** still stands\n`)[0]).toBe('D3 · still stands')
+    expect(parseRulings(`${SAMPLE}\n- **F1** merged the band\n`)[0]).toBe('F1 · merged the band')
   })
 })
 

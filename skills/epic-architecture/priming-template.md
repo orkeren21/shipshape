@@ -43,14 +43,18 @@ would have kept it.
 Where the epic folder is, as an absolute path every lane can write, quoted
 when it holds a space (`shipshape:brainstorming` sets the place). A lane in a
 worktree writes coordination files to that path, never to its own copy of
-the tree. State that `roster/architect.md` inside it names the
-live Architect — the session announces itself there before starting work,
-and its questions go to the Architect by message rather than to the
-operator (protocol in `shipshape:coordinating-with-the-architect`). The
+the tree. The one exception is the first lane of an Architect with no notes
+folder in view, whose priming names the folder at the foot of its brief
+instead (`shipshape:epic-architecture` has the steps). State that
+`roster/architect.md` inside it names the live Architect — the session
+announces itself there before starting work, and its questions go to the
+Architect by message rather than to the operator (protocol in
+`shipshape:coordinating-with-the-architect`). The
 Architect's identity as of this priming, dated, for the first announce.
 Where rulings land (`decisions.md`), and the boundary in one line: the
 Architect decides everything but the four things a session waits for the
-operator for (`shipshape:epic-architecture`).
+operator for (`shipshape:epic-architecture`). A stop rule in a priming names
+one of those four, and a routine outcome gets a decision instead.
 
 The approval regime, stated: whether the lane starts work on its own
 announce, or announces and waits for a go before the first change, and whose

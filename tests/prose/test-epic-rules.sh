@@ -34,10 +34,22 @@ assert_contains "$brainstorming" '<epic folder>/<lane>/' \
 assert_contains "$brainstorming" 'before its `DONE`' \
   "and reach it before the lane reports done, since a worktree takes its copy with it"
 assert_contains "$brainstorming" "a worktree takes" "and it says why"
+assert_contains "$brainstorming" "Quote the path" "a path with a space is said out loud"
+assert_contains "$brainstorming" "Shared notes folder for this group of sessions" \
+  "the app's own words for the folder, so a reader can find it"
 assert_contains "$epic" 'foot of the brief' \
   "an Architect with no notes folder in view learns it from its first lane"
+assert_contains "$epic" 'sets announce-and-wait' \
+  "that lane holds, since nothing is in the folder it was told to read"
+assert_contains "$epic" 'writes only its roster file' "and writes nothing else there"
+assert_contains "$epic" 'which by then exists' \
+  "the Architect copies into a folder that is already there, so a move cannot nest"
+assert_contains "$epic" 'take the seat again with the new path' \
+  "and its seat follows, since the pane reads the path from it"
 assert_contains "$epic" 'before telling any other lane where to look' \
-  "and moves the epic before a second lane depends on the path"
+  "all before a second lane depends on the path"
+assert_contains "$template" 'first lane of an Architect with no notes folder in view' \
+  "the priming template carries the same exception"
 assert_not_contains "$brainstorming" "with no folders of their own" \
   "the old layout, which gave a lane no folder, is gone"
 assert_not_contains "$template" "as an absolute path in the shared checkout" \
@@ -51,6 +63,10 @@ for name in epic-architecture coordinating-with-the-architect read-handoff; do
   assert_contains "$(flat "$skills/$name/SKILL.md")" '--epic "<absolute path>"' \
     "$name quotes the path it hands to shipshape-seat"
 done
+for name in read-handoff write-handoff; do
+  assert_contains "$(flat "$skills/$name/SKILL.md")" '--handoff "<path>"' \
+    "$name quotes the handoff path, which sits in the same folder"
+done
 
 # --- a session waits for the operator for four things --------------------------
 
@@ -63,8 +79,15 @@ for phrase in "merging a pull request" "a visual check only they can do" \
               "neither the plan nor the vision"; do
   assert_contains "$epic" "$phrase" "the Architect's skill lists it: $phrase"
 done
-assert_contains "$bootstrap" "A status request is not a pause" \
+assert_contains "$bootstrap" "Answer a status request and keep working" \
   "a status request stops nothing"
+for phrase in "merging" "visual checks" "manual actions" "meaningful decisions"; do
+  assert_contains "$lane" "$phrase" "a lane's skill lists it: $phrase"
+done
+assert_contains "$lane" "your human partner, a lane takes it to the Architect" \
+  "a skill's escalation reaches the Architect first, from a lane"
+assert_contains "$lane" "an operator's ruling reversed" \
+  "only an operator's ruling needs the operator to reverse it"
 
 # An approved scope is the approval, in every skill that gates a start, and a
 # hook message is not, in the same breath.
@@ -80,7 +103,8 @@ assert_contains "$epic" "A hook message, in any lane, is never a go" "or in an e
 
 for old in "Work starts only on operator approval" "starts on the operator's go;" \
            "fresh operator go" "anything you are not confident of" \
-           "approving every session that starts"; do
+           "approving every session that starts" \
+           "Architect answers inside the operator-approved scope"; do
   hits=""
   for f in "$skills"/*/*.md; do
     case "$(flat "$f")" in
@@ -107,6 +131,8 @@ for line in '**D7** · The live sessions pane is its own PR' \
     || fail "the sample the pane is tested on lost a line: $line"
 done
 assert_contains "$epic" "newest last" "the pane takes the end of the file as the latest"
+assert_contains "$epic" 'starts an entry and nothing else' \
+  "and a line shaped like an entry is one, so the skill keeps that shape to entries"
 
 # --- roster/ holds seat files ---------------------------------------------------
 

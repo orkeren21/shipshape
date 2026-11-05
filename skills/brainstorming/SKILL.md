@@ -65,10 +65,12 @@ lives here and every other skill defers to it:
 
 An epic's folder is the one place every session in it can write. Where sessions
 have a side-session notes folder, that is `<notes folder>/<epic-slug>/`: the
-desktop app refuses a worktree session's writes to the main checkout, and the
-notes folder outlives every worktree. The app names it at the foot of a started
-session's brief and lists it among that session's additional working
-directories. An Architect with none in view starts the epic at
+desktop app refuses a worktree session's Write and Edit on the main checkout,
+and the notes folder sits outside every worktree. The app names it at the foot
+of a started session's brief, as "Shared notes folder for this group of
+sessions", and lists it among that session's additional working directories. A
+session can list several; a lane uses the path its priming gives. An Architect
+with none in view starts the epic at
 `docs/shipshape/work/<epic-slug>/` and moves it once its first lane's brief
 names the folder (`shipshape:epic-architecture` has the steps). Sessions with no
 notes folder keep the epic there, in the shared checkout, addressed by absolute

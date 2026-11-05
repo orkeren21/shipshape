@@ -51,8 +51,9 @@ so the successor knows to look.
 
 Next to the work item's design document: `<design>-handoff.md` (layout in
 `shipshape:brainstorming`), gitignored like everything else internal. In an
-epic that is `<epic folder>/<lane>/`, since `roster/` holds seat files only.
-Then record it with `shipshape-seat --handoff <path>`: after a compaction,
+epic a lane's goes in `<epic folder>/<lane>/` and an Architect's at the epic's
+root, since `roster/` holds seat files only.
+Then record it with `shipshape-seat --handoff "<path>"`: after a compaction,
 session-start points the session back at this file.
 
 ## Handing over
