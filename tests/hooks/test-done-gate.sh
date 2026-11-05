@@ -408,9 +408,9 @@ assert_eq "block" "$(hook_field "$out" decision)" \
 
 export SHIPSHAPE_SCRATCH_ROOT="$outer_cascade_root"
 
-# --- a stamped PR whose branch was deleted is settled ------------------------
+# --- a stamped PR with no branch tip left is settled -------------------------
 #
-# Deleted after merge, the branch has no tip left to outrun the stamp. The
+# With no tip here or on origin, nothing is left to outrun the stamp. The
 # branch is really deleted here because the bug lived in what git does with the
 # missing name: it prints the name and exits 128, and the name read as a tip.
 

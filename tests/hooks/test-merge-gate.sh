@@ -111,9 +111,9 @@ assert_eq "merge_gate_stale" "$(hook_field "$out" shipshapeCode)" "named as stal
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "stale" \
   "and the reason says the evidence no longer describes the branch"
 
-# A deleted branch has no tip left to outrun the stamp, so the stamp stands. The
-# branch is really deleted here because the bug lived in what git does with the
-# missing name: it prints the name and exits 128, and the name read as a tip.
+# With no tip here or on origin, nothing is left to outrun the stamp, so it stands.
+# The branch is really deleted here because the bug lived in what git does with
+# the missing name: it prints the name and exits 128, and the name read as a tip.
 git -C "$repo" checkout -q -b gone-lane
 git -C "$repo" commit -q --allow-empty -m "the lane's work"
 give_record 60 gone-lane
@@ -125,7 +125,9 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "a stamped PR whose branch was deleted merges"
 assert_eq "" "$(hook_field "$out" shipshapeCode)" "and is not named as stale"
 assert_contains "$(cat "$scratch/trace.log")" "gone-lane has no tip here or on origin" \
-  "and the trace says freshness went unjudged, so it does not read as a judged allow"
+  "and the trace says freshness went unjudged"
+assert_not_contains "$(cat "$scratch/trace.log")" "allowed: PR #60 satisfied" \
+  "and no judged-sounding allow follows it"
 rm -f "$scratch/pr-armed-60" "$scratch/pr-satisfied-60"
 
 # `git branch -D` is routine cleanup and leaves the PR open on the remote, so
