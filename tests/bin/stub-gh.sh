@@ -35,6 +35,7 @@ make_gh_stub() {
 
 case "${1:-} ${2:-}" in
   "pr create")
+    if [ -n "${GH_STUB_CREATE_OUTPUT_FILE:-}" ]; then cat "$GH_STUB_CREATE_OUTPUT_FILE"; exit "${GH_STUB_CREATE_EXIT:-0}"; fi
     if [ "${GH_STUB_CREATE_EXIT:-0}" != "0" ]; then
       printf '%s\n' "${GH_STUB_CREATE_OUTPUT:-gh: pull request could not be created}" >&2
       exit "${GH_STUB_CREATE_EXIT}"

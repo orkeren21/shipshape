@@ -172,14 +172,14 @@ assert_no_file "$work/.shipshape/dry-session/pr-armed" "a dry run opens nothing,
 assert_no_file "$work/.shipshape/dry-session/pr-armed-30" "and a PR its body links stays another PR's"
 
 # Long enough that a pipe into grep -q would die early and read as no match.
-long_body="$(printf 'x%.0s' $(seq 1 70000))"
-export GH_STUB_CREATE_OUTPUT="Would have created a Pull Request with:
-body:
-$long_body
-See https://github.com/acme/widget/pull/30"
+long_file="$work/long-output"
+{ printf "Would have created a Pull Request with:\nbody:\n"; head -c 200000 /dev/zero | tr "\0" x; printf "\nSee https://github.com/acme/widget/pull/30\n"; } > "$long_file"
+unset GH_STUB_CREATE_OUTPUT
+export GH_STUB_CREATE_OUTPUT_FILE="$long_file"
 export SHIPSHAPE_SESSION_ID=long-session
 "$pr_open" --title t --dry-run >/dev/null 2>&1
 assert_no_file "$work/.shipshape/long-session/pr-armed-30" "a long dry run arms nothing either"
+unset GH_STUB_CREATE_OUTPUT_FILE
 
 # The arguments can't decide: a body of "-h" still opens a PR, and a wrapper that
 # trusted the flag would let it go unrecorded.
@@ -221,6 +221,19 @@ export SHIPSHAPE_SESSION_ID=exists-session
 "$pr_open" --title t >/dev/null 2>&1
 assert_eq "4" "$?" "any other failure keeps gh's status"
 assert_no_file "$work/.shipshape/exists-session/pr-armed" "another failure that names a PR opened nothing"
+# Long output after the update failure: a pipe here would lose the PR.
+{ printf "https://github.com/acme/widget/pull/81\npull request update failed: reviewer\n"; head -c 200000 /dev/zero | tr "\0" x; printf "\n"; } > "$long_file"
+export GH_STUB_CREATE_EXIT=1 GH_STUB_CREATE_OUTPUT_FILE="$long_file" SHIPSHAPE_SESSION_ID=late-long-session
+"$pr_open" --title t >/dev/null 2>&1
+assert_file "$work/.shipshape/late-long-session/pr-armed-81" "a long failure that made a PR still arms"
+unset GH_STUB_CREATE_OUTPUT_FILE
+# The no-PR exit is gh's too, when gh failed.
+export GH_STUB_CREATE_EXIT=3 SHIPSHAPE_SESSION_ID=failed-dry-session
+export GH_STUB_CREATE_OUTPUT="Would have created a Pull Request with:
+https://github.com/acme/widget/pull/82
+pull request update failed: reviewer"
+"$pr_open" --title t --dry-run >/dev/null 2>&1
+assert_eq "3" "$?" "a run that opened nothing keeps a failing status"
 unset GH_STUB_CREATE_EXIT GH_STUB_CREATE_OUTPUT
 
 finish
