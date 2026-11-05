@@ -47,7 +47,7 @@ pull_url="$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*/pull/[0-9][0-9
 # prints the URL, and a retry says the PR exists and exits 1, so this is the one
 # chance to arm. Any other failure opened nothing, even one that names a PR.
 if [ "$status" -ne 0 ]; then
-  if [ -z "$pull_url" ] || ! printf '%s\n' "$out" | grep -q 'pull request update failed'; then
+  if [ -z "$pull_url" ] || ! grep -q 'pull request update failed' <<<"$out"; then
     shipshape_trace pr-open "gh pr create exited $status; nothing armed"
     exit "$status"
   fi
@@ -55,10 +55,11 @@ fi
 
 # Its help and a dry run exit 0 too and open nothing, and either can carry a URL.
 # Real creation prints neither line. If gh rewords them the run arms, which is
-# the safe way round.
-if printf '%s\n' "$out" | grep -qE '^(Would have created a Pull Request with:|  gh pr create \[flags\])$'; then
+# the safe way round. A here-string, not a pipe: with pipefail, grep -q leaving
+# early kills a long printf, and the pipeline reads as no match.
+if grep -qE '^(Would have created a Pull Request with:|  gh pr create \[flags\])$' <<<"$out"; then
   shipshape_trace pr-open "gh opened no pull request; nothing armed"
-  exit 0
+  exit "$status"
 fi
 
 url="${pull_url:-$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*' | tail -1)}"

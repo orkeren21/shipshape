@@ -157,9 +157,9 @@ USAGE
 LEARN MORE
   Read the manual at https://cli.github.com/manual"
 export SHIPSHAPE_SESSION_ID=help-session
-"$pr_open" --help >/dev/null 2>&1
+"$pr_open" --help=true >/dev/null 2>&1
 assert_eq "0" "$?" "help keeps gh's status"
-assert_no_file "$work/.shipshape/help-session/pr-armed" "help opens nothing, so it arms nothing"
+assert_no_file "$work/.shipshape/help-session/pr-armed" "help opens nothing, however it's spelled"
 
 export GH_STUB_CREATE_OUTPUT="Would have created a Pull Request with:
 title:	Follow up on #30
@@ -170,6 +170,16 @@ export SHIPSHAPE_SESSION_ID=dry-session
 assert_eq "0" "$?" "a dry run keeps gh's status"
 assert_no_file "$work/.shipshape/dry-session/pr-armed" "a dry run opens nothing, so it arms nothing"
 assert_no_file "$work/.shipshape/dry-session/pr-armed-30" "and a PR its body links stays another PR's"
+
+# Long enough that a pipe into grep -q would die early and read as no match.
+long_body="$(printf 'x%.0s' $(seq 1 70000))"
+export GH_STUB_CREATE_OUTPUT="Would have created a Pull Request with:
+body:
+$long_body
+See https://github.com/acme/widget/pull/30"
+export SHIPSHAPE_SESSION_ID=long-session
+"$pr_open" --title t --dry-run >/dev/null 2>&1
+assert_no_file "$work/.shipshape/long-session/pr-armed-30" "a long dry run arms nothing either"
 
 # The arguments can't decide: a body of "-h" still opens a PR, and a wrapper that
 # trusted the flag would let it go unrecorded.
@@ -204,10 +214,12 @@ export SHIPSHAPE_SESSION_ID=late-session
 assert_eq "1" "$?" "gh's failure still reaches the caller"
 assert_file "$work/.shipshape/late-session/pr-armed-79" "a PR gh made before failing is armed"
 
+export GH_STUB_CREATE_EXIT=4
 export GH_STUB_CREATE_OUTPUT="a pull request for branch feature already exists:
 https://github.com/acme/widget/pull/80"
 export SHIPSHAPE_SESSION_ID=exists-session
 "$pr_open" --title t >/dev/null 2>&1
+assert_eq "4" "$?" "any other failure keeps gh's status"
 assert_no_file "$work/.shipshape/exists-session/pr-armed" "another failure that names a PR opened nothing"
 unset GH_STUB_CREATE_EXIT GH_STUB_CREATE_OUTPUT
 
