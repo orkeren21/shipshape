@@ -155,8 +155,9 @@ newest last, and each entry opens with its bold ID, then its title:
 
 IDs run `D1`, `D2`, and are never reused. The pane shows the last five entries
 by that opening, and it reads any bold capitals-and-digits at the start of a
-line, bulleted or not, as one, `**F1**` too. So that shape starts an entry and nothing else; any
-other line that mentions an ID keeps it plain or mid-sentence.
+line, bulleted or not, as one, `**F1**` too. So that shape starts an entry and
+nothing else; any other line that mentions an ID keeps it plain or
+mid-sentence.
 
 An answer authorizes what it answered, nothing more. An approved scope is the
 approval, so work inside the epic's scope starts when the Architect releases
