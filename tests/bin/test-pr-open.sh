@@ -130,7 +130,9 @@ out="$("$pr_open" --title "cleared" 2>&1)"
 assert_contains "$out" "prose only" "a cleared plan is named as the PR opens"
 assert_contains "$out" "no plan is bound" "and a branch with none bound still hears that"
 printf 'path=/a/stub.md\n' > "$scratch/plan"
-assert_contains "$("$pr_open" --title "stub" 2>&1)" "prose only" "and it is named with another plan bound too"
+out="$("$pr_open" --title "stub" 2>&1)"
+assert_contains "$out" "prose only" "and it is named with another plan bound too"
+assert_not_contains "$out" "no plan is bound" "where the two lines stay independent"
 
 # --- gh missing --------------------------------------------------------------
 
