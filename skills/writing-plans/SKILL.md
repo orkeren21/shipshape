@@ -53,7 +53,7 @@ Write each task's fence under it in the plan, and bind the file before the
 first task starts:
 
 ```bash
-shipshape-plan <path>
+shipshape-plan "<path>"
 ```
 
 The fence survives session boundaries, and it gives the gates something
@@ -65,7 +65,7 @@ task in the plan.
 A plan that spans pull requests binds the slice each one carries:
 
 ```bash
-shipshape-plan <path> --tasks t5,t6 --reason "<why the rest is not here>"
+shipshape-plan "<path>" --tasks t5,t6 --reason "<why the rest is not here>"
 ```
 
 The tasks left out are listed with that reason wherever the leg is reported.

@@ -54,7 +54,7 @@ measured against its own task's files, so a fix that lands after this step costs
 one more run.
 
 A task that cannot close on this branch goes out of scope with a reason a
-reviewer can read: `shipshape-plan <path> --tasks <ids> --reason "<why>"`. The
+reviewer can read: `shipshape-plan "<path>" --tasks <ids> --reason "<why>"`. The
 done gate says what was left out, and the pull request should too.
 
 If the branch has a plan and it was never bound, bind it now: a late bind costs

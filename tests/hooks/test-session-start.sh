@@ -62,6 +62,15 @@ assert_contains "$text" "$epic/decisions.md" "at the epic's rulings"
 assert_contains "$text" "$epic/f2-handoff.md" "and at its handoff"
 assert_no_file "$scratch/context-nudged-70" "and the markers are cleared as well"
 
+# --- an epic folder with a space in its path ----------------------------------
+
+spaced="$work/Application Support/Claude/side-session-notes/local_1/big-epic"
+printf 'role=lane\nlane=F4\nepic=%s\nhandoff=%s/F4/lane-handoff.md\n' "$spaced" "$spaced" > "$scratch/seat"
+text="$(injected "$(start compact)")"
+assert_contains "$text" "$spaced/roster/F4.md" "a spaced epic folder reaches the seat whole"
+assert_contains "$text" "$spaced/decisions.md" "its rulings too"
+assert_contains "$text" "$spaced/F4/lane-handoff.md" "and its handoff"
+
 # --- an Architect, and a solo session -----------------------------------------
 
 printf 'role=architect\nepic=%s\n' "$epic" > "$scratch/seat"

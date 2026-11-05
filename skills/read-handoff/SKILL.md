@@ -36,8 +36,8 @@ stays unarchived until this work lands.
 ## Take the seat
 
 Record the seat your predecessor held, with this handoff:
-`shipshape-seat <architect | lane ID | solo> [--epic <absolute path>]
---handoff <path>`. That gives the hooks the seat's handoff point and points a
+`shipshape-seat <architect | lane ID | solo> [--epic "<absolute path>"]
+--handoff "<path>"`. That gives the hooks the seat's handoff point and points a
 compacted session back at the handoff.
 
 In an epic, take it visibly too. A successor lane takes over its
@@ -50,7 +50,7 @@ the succession to the lanes — the order and the duties are in
 
 ## Bind the plan again
 
-If the handoff names a bound plan, bind it here with `shipshape-plan <path>`,
+If the handoff names a bound plan, bind it here with `shipshape-plan "<path>"`,
 with the same `--tasks` and reason. Evidence stays with the session that
 earned it, so your predecessor's verify records do not count here, any more than
 its review does. That is usually one run: `shipshape-verify t1,t2,t3

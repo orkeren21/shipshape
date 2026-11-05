@@ -84,6 +84,6 @@ if [ -n "$plan_cleared" ]; then
   echo "shipshape-pr-open: a plan was cleared this session: $plan_cleared" >&2
 fi
 if [ -z "$(shipshape_plan_field "$scratch" path)" ]; then
-  echo "shipshape-pr-open: no plan is bound, so nothing holds this branch to one. If it has a plan: shipshape-plan <path>" >&2
+  echo "shipshape-pr-open: no plan is bound, so nothing holds this branch to one. If it has a plan: shipshape-plan \"<path>\"" >&2
 fi
 exit 0
