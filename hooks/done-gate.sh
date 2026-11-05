@@ -89,10 +89,13 @@ while IFS= read -r record_file; do
     settled=no
     if [ -f "$stamp" ]; then
       stamp_head="$(record_field "$stamp" head)"
-      branch_head="$(git rev-parse "$rec_branch" 2>/dev/null)"
-      # A branch git cannot resolve (deleted after merge) fails open: the
-      # stamp was earned, and there is no tip left to outrun it.
-      if [ -z "$branch_head" ] || [ "$stamp_head" = "$branch_head" ]; then
+      branch_head="$(shipshape_branch_tip "$rec_branch")"
+      # A branch with no tip here or on origin (deleted and pruned after merge)
+      # fails open: the stamp was earned, and neither ref is left to outrun it.
+      if [ -z "$branch_head" ]; then
+        shipshape_trace done-gate "PR #$rec_number: branch $rec_branch has no tip here or on origin, so the stamp stands unjudged"
+        settled=yes
+      elif [ "$stamp_head" = "$branch_head" ]; then
         settled=yes
       fi
     fi
