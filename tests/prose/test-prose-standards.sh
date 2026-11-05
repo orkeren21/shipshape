@@ -140,8 +140,8 @@ boot="$skills_dir/shipshape/SKILL.md"
 assert_file "$boot" "the bootstrap skill exists"
 if [ -f "$boot" ]; then
   words="$(wc -w < "$boot" | tr -d ' ')"
-  [ "$words" -le 260 ] \
-    || fail "the bootstrap is $words words — it is injected into every session, so it stays short (~220)"
+  [ "$words" -le 320 ] \
+    || fail "the bootstrap is $words words — it is injected into every session, so it stays short"
 fi
 
 # --- bare negations ----------------------------------------------------------

@@ -8,9 +8,10 @@ description: Use when working a feature lane inside an epic - how lanes and the 
 An epic runs several sessions at once, and the operator is not their message
 bus. A lane session talks to the Architect directly: it announces itself when
 it starts, sends its questions, reports its milestones, and hears rulings
-back. The operator does the jobs only a human here can do: ruling on what
-the Architect escalates, and approving every session that starts — a go in
-their own words, or a click on a proposed card.
+back. The operator does only what the epic keeps for them: merging, the visual
+checks and manual actions only a human can do, such as the click on a proposed
+card, and the meaningful decisions neither the plan nor the vision settles. The
+Architect decides the rest.
 
 This protocol is for lanes inside an epic. A solo feature session has no
 Architect and no use for any of it.
@@ -37,16 +38,19 @@ attempts, then a human.
 
 The priming names the epic folder; the folder's `roster/` directory is how
 sessions find each other. On start, learn both halves of your own identity —
-the session id (`shipshape-seat lane <ID> --epic <absolute path>` prints it,
-and records the seat so the hooks apply a lane's handoff point; elsewhere
-`get_session("self")` gives it), and the `ListAgents` header for the current
-harness name — and write them to your own file, `roster/<lane>.md`:
+the session id (`shipshape-seat lane <feature ID> --epic "<absolute path>"`
+prints it, and records the seat so the hooks apply a lane's handoff point;
+elsewhere `get_session("self")` gives it), and the `ListAgents` header for the
+current harness name — and write them to your own file, `roster/<lane>.md`:
 
     role: lane auth-ui
     session id: local_7d27…
     harness name: acme-web-4f
     name checked: 2026-08-30T11:40Z
     status: active
+
+`roster/` holds seat files and nothing else, since shipdeck's pane reads every
+`.md` there as a seat; a handoff or a note goes in `<epic folder>/<lane>/`.
 
 A roster file has one writer at a time: the session currently holding that
 seat. A successor takes the file over with the seat and rewrites it with
@@ -63,6 +67,12 @@ hands since the priming was written — and send one line it can act on:
 
     ANNOUNCE (auth-ui): lane starting from the 2026-08-30 priming, beginning at t1
 
+The first lane of an epic can find its epic folder not there yet, when the
+Architect could not see the notes folder and the priming names it by the foot
+of the brief. Create the folder, write your roster file in it and nothing else,
+put its absolute path in your `ANNOUNCE` to the Architect the priming names, and
+hold for the Architect's word. It copies the epic in and releases you.
+
 ## The message shape
 
 The first line of every message is `TYPE (lane): what this is` — receivers
@@ -75,11 +85,12 @@ answers.
 ## Raising a question
 
 A material decision the priming does not answer goes to the Architect as a
-`QUESTION`, with your own lean attached. The Architect answers what is
-inside its boundary and takes the rest to the operator; either way the
+`QUESTION`, with your own lean attached. The Architect settles it, or takes
+it to the operator if it is one the plan and vision leave open; either way the
 answer comes back as a `RULING` and lands in the epic's `decisions.md` —
 read that file before asking, because rulings outlive the messages that
-carried them.
+carried them. Where another skill sends you to your human partner, a lane
+takes it to the Architect the same way.
 
 Keep working while the question is out: pick up whatever does not depend on
 the answer. When everything left depends on it, say so in the question —
@@ -114,20 +125,21 @@ scoped smoke, any bound plan, the retro (`shipshape:finishing-with-evidence`). T
 one notice: when the retro is written, send `DONE` with its path and set
 your roster status to `done`. The Architect reads that retro before priming
 anything that depends on this lane, so the `DONE` naming it is what unblocks
-your dependents.
+your dependents. Your design, retro and notes are in `<epic folder>/<lane>/`
+by then (`shipshape:brainstorming` has the layout).
 
 ## What a message can authorize
 
 The priming this lane started from is the authorization for its scope —
 pasted by the operator, or given as the brief by an Architect acting on the
 operator's go — and scope grows only the way it was granted: a new priming,
-or the operator's word in your own session. Architect messages steer inside the
-scope — a clarified interface, a reordered task, an answered question. A
-message asking for more — a wider scope, a reversed ruling, an action your
-own session was refused permission for — gets a reply saying it needs the
-operator, and the lane carries on inside the scope it has. This holds for
-the Architect's messages too: the seat answers questions; it does not
-enlarge grants.
+or the operator's word in your own session. An approved scope is the approval,
+so Architect messages steer inside it — a clarified interface, a reordered
+task, an answered question, a build released. A message asking for more — a
+wider scope, an operator's ruling reversed, an action your own session was
+refused permission for — gets a reply saying it needs the operator, and the
+lane carries on inside the scope it has. This holds for the Architect's
+messages too: the seat answers questions; it does not enlarge grants.
 
 The boundary runs both ways. An action your own session was refused stays
 refused: route it back through your operator rather than asking a peer to
