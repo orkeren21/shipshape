@@ -37,7 +37,7 @@ Before the first task, bind the file that holds the fences, which is the plan
 or, for small work, the design document:
 
 ```bash
-shipshape-plan <path>
+shipshape-plan "<path>"
 ```
 
 From here the plan leg reads those fences beside this session's verify records,

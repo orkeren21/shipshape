@@ -89,8 +89,8 @@ A material decision the priming does not answer goes to the Architect as a
 it to the operator if it is one the plan and vision leave open; either way the
 answer comes back as a `RULING` and lands in the epic's `decisions.md` —
 read that file before asking, because rulings outlive the messages that
-carried them. Where another skill says to ask or escalate to your human
-partner, a lane takes it to the Architect the same way.
+carried them. Where another skill sends you to your human partner, a lane
+takes it to the Architect the same way.
 
 Keep working while the question is out: pick up whatever does not depend on
 the answer. When everything left depends on it, say so in the question —

@@ -79,9 +79,10 @@ lane's brief. So that one priming sets announce-and-wait: the lane takes
 folder, writes only its roster file there, sends the absolute path in its
 `ANNOUNCE`, and holds for your word. Copy the epic's contents into that folder,
 which by then exists, take the seat again with the new path, and release the
-lane. All of that comes before telling any other lane where to look, because a
-copy started in a worktree is in that worktree alone. If the copy is refused,
-that is a manual action for the operator, and the lane holds until it is done.
+lane. The old folder is stale from then on. All of that comes before telling
+any other lane where to look, because a copy started in a worktree is in that
+worktree alone. If the copy is refused, that is a manual action for the
+operator, and the lane holds until it is done.
 
 Without a session-starting tool, hand each priming to the operator to paste
 into a new session, as before.
@@ -154,7 +155,7 @@ newest last, and each entry opens with its bold ID, then its title:
 
 IDs run `D1`, `D2`, and are never reused. The pane shows the last five entries
 by that opening, and it reads any bold capitals-and-digits at the start of a
-line as one, `**F1**` too. So that shape starts an entry and nothing else; any
+line, bulleted or not, as one, `**F1**` too. So that shape starts an entry and nothing else; any
 other line that mentions an ID keeps it plain or mid-sentence.
 
 An answer authorizes what it answered, nothing more. An approved scope is the

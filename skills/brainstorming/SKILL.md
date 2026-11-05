@@ -71,8 +71,8 @@ of a started session's brief, as "Shared notes folder for this group of
 sessions", and lists it among that session's additional working directories. A
 session can list several; a lane uses the path its priming gives. An Architect
 with none in view starts the epic at
-`docs/shipshape/work/<epic-slug>/` and moves it once its first lane's brief
-names the folder (`shipshape:epic-architecture` has the steps). Sessions with no
+`docs/shipshape/work/<epic-slug>/` and copies it over once its first lane's
+brief names the folder (`shipshape:epic-architecture` has the steps). Sessions with no
 notes folder keep the epic there, in the shared checkout, addressed by absolute
 path, since each worktree carries its own gitignored copy of that tree. Quote
 the path wherever it is used: the notes folder sits under `Application Support`.

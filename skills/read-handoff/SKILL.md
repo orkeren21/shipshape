@@ -50,7 +50,7 @@ the succession to the lanes — the order and the duties are in
 
 ## Bind the plan again
 
-If the handoff names a bound plan, bind it here with `shipshape-plan <path>`,
+If the handoff names a bound plan, bind it here with `shipshape-plan "<path>"`,
 with the same `--tasks` and reason. Evidence stays with the session that
 earned it, so your predecessor's verify records do not count here, any more than
 its review does. That is usually one run: `shipshape-verify t1,t2,t3

@@ -42,8 +42,13 @@ assert_contains "$epic" 'foot of the brief' \
 assert_contains "$epic" 'sets announce-and-wait' \
   "that lane holds, since nothing is in the folder it was told to read"
 assert_contains "$epic" 'writes only its roster file' "and writes nothing else there"
-assert_contains "$epic" 'which by then exists' \
-  "the Architect copies into a folder that is already there, so a move cannot nest"
+assert_contains "$epic" "Copy the epic's contents into that folder, which by then exists" \
+  "the Architect copies the contents in, since a plain move nests in a folder that exists"
+assert_contains "$brainstorming" "copies it over" "and the layout rule says copy too"
+assert_contains "$epic" 'The old folder is stale from then on' "the copy left behind has a stated fate"
+assert_contains "$epic" 'holds for your word' "the Architect's skill has the lane hold"
+assert_contains "$epic" 'release the lane' "and says who ends the hold"
+assert_contains "$lane" "hold for the Architect's word" "the lane's own skill has it hold too"
 assert_contains "$epic" 'take the seat again with the new path' \
   "and its seat follows, since the pane reads the path from it"
 assert_contains "$epic" 'before telling any other lane where to look' \
@@ -54,6 +59,9 @@ assert_contains "$lane" 'put its absolute path in your `ANNOUNCE`' \
   "and how the Architect learns the path"
 assert_contains "$template" 'first lane of an Architect with no notes folder in view' \
   "the priming template carries the same exception"
+assert_contains "$template" 'A stop rule in a priming names one of those four' \
+  "a priming's stop rules stay inside the four waits"
+assert_contains "$handoff" "an Architect's at the epic's root" "an Architect's handoff has a home too"
 assert_not_contains "$brainstorming" "with no folders of their own" \
   "the old layout, which gave a lane no folder, is gone"
 assert_not_contains "$template" "as an absolute path in the shared checkout" \
@@ -71,6 +79,9 @@ for name in read-handoff write-handoff; do
   assert_contains "$(flat "$skills/$name/SKILL.md")" '--handoff "<path>"' \
     "$name quotes the handoff path, which sits in the same folder"
 done
+hits="$(grep -rnF 'shipshape-plan <path>' "$skills" 2>/dev/null || true)"
+[ -z "$hits" ] || fail "a plan sits in the same folder, so its path is quoted too:
+$(printf '%s' "$hits" | sed 's/^/          /')"
 
 # --- a session waits for the operator for four things --------------------------
 
@@ -88,7 +99,7 @@ assert_contains "$bootstrap" "Answer a status request and keep working" \
 for phrase in "merging" "visual checks" "manual actions" "meaningful decisions"; do
   assert_contains "$lane" "$phrase" "a lane's skill lists it: $phrase"
 done
-assert_contains "$lane" "your human partner, a lane takes it to the Architect" \
+assert_contains "$lane" "sends you to your human partner, a lane takes it to the Architect" \
   "a skill's escalation reaches the Architect first, from a lane"
 assert_contains "$lane" "an operator's ruling reversed" \
   "only an operator's ruling needs the operator to reverse it"
@@ -137,6 +148,8 @@ done
 assert_contains "$epic" "newest last" "the pane takes the end of the file as the latest"
 assert_contains "$epic" 'starts an entry and nothing else' \
   "and a line shaped like an entry is one, so the skill keeps that shape to entries"
+assert_contains "$epic" 'bulleted or not, as one, `**F1**` too' \
+  "the skill names the shapes the parser takes, not only D-numbers"
 
 # --- roster/ holds seat files ---------------------------------------------------
 
