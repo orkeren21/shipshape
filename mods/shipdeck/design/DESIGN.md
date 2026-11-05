@@ -295,9 +295,10 @@ type just before them. GitHub sets it bare; Linear in a hairline chip.
 - **This branch's PR has finished:** this PR leaves, and the legs go unless
   something is still moving: a reviewer out, a failure, a bound plan. Evidence
   for new work on the same branch waits for its PR. GitHub says so, asked by URL
-  every two minutes while a surface is attached and at each turn's end, and once
-  for a merged PR. The doctor can't tell, working offline, and not knowing keeps
-  the PR. A merged PR leaves even if the done gate still nudges about it.
+  on returning to the session, at each turn's end, and every two minutes while a
+  surface is attached, and once for a merged PR. The doctor can't tell, working
+  offline, and not knowing keeps the PR. A merged or closed PR leaves even if the
+  done gate still holds a record of it.
 - **One PR on this branch:** `#15`, and its legs even if all hollow.
 - **Several:** `#15 +2`. The count is slate, and a 6px brass dot beside it says
   one of the others still owes evidence. Colour never goes on the digits, and

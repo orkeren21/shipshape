@@ -523,7 +523,11 @@ export const register: Register = (on, options) => {
   // waits for the engine to put the client on its roster.
   on('session.attach', async ($, e, next) => {
     const attached = await next(e)
-    if (!isOff) void refreshSessions($).catch(() => {})
+    if (!isOff) {
+      void refreshSessions($).catch(() => {})
+      // The clock stops while nobody is attached, and a merge doesn't wait.
+      void refreshPrs($).catch(() => {})
+    }
     return attached
   })
 

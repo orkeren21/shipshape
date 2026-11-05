@@ -428,9 +428,9 @@ test('an open PR stays on the band, and is asked about again', async ($, on) => 
   await band.unmount()
 })
 
-test('gh failing or missing keeps the PR: not knowing is not finished', async ($, on) => {
-  const failing = world(on, { doctor: BRANCHED(), ghFails: true })
-  await start($, failing.clock)
+test('gh failing keeps the PR: not knowing is not finished', async ($, on) => {
+  const { clock } = world(on, { doctor: BRANCHED(), ghFails: true })
+  await start($, clock)
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(String((await band.find({ type: 'Svg' }))?.props.alt)).toContain('PR #10')
   await band.unmount()
@@ -456,15 +456,28 @@ test('a reopened PR comes back, because a closed one is still asked about', asyn
   await band.unmount()
 })
 
-test('a turn\'s end asks at once, after its reading, so a merge lands with no wait', async ($, on) => {
-  const w: World = { doctor: BRANCHED(), prState: 'OPEN' }
+test('a turn\'s end asks after its reading, so a PR that reading brings is asked about at once', async ($, on) => {
+  const w: World = { doctor: doctorJson({ branch: 'feature', prs: [] }), prState: 'MERGED' }
   const { clock, seen } = world(on, w)
   await start($, clock)
-  const before = seen.gh.length
-  w.prState = 'MERGED'
+  expect(seen.gh).toEqual([])
+  w.doctor = BRANCHED()
   await $.turn.complete({ reason: 'answer' } as never)
   await clock.settle()
-  expect(seen.gh.length).toBe(before + 1)
+  expect(seen.gh).toEqual([OWN_PR.url])
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(String((await band.find({ type: 'Svg' }))?.props.alt)).not.toContain('PR #10')
+  await band.unmount()
+})
+
+test('coming back to a session asks at once, so a merge made meanwhile has left', async ($, on) => {
+  const w: World = { doctor: BRANCHED(), prState: 'OPEN', surfaces: [] }
+  const { clock } = world(on, w)
+  await start($, clock)
+  w.prState = 'MERGED'
+  w.surfaces = ['desktop']
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:1' } as never)
+  await clock.settle()
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect(String((await band.find({ type: 'Svg' }))?.props.alt)).not.toContain('PR #10')
   await band.unmount()

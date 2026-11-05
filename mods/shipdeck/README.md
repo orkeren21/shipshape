@@ -102,9 +102,9 @@ nothing recorded.
 
 Refining sends the dictated text to Sonnet through the session's own model
 client, the same way the session sends everything else. To see whether a PR has
-finished, shipdeck runs `gh pr view` for each PR this session opened, every two
-minutes while the session is open and at each turn's end, and stops once one
-has merged.
+finished, shipdeck runs `gh pr view` for each PR this session opened: when the
+session starts or you return to it, at each turn's end, and every two minutes
+while it's on screen. It stops asking about a PR once that PR has merged.
 
 ## Settings
 

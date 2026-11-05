@@ -24,8 +24,8 @@ a running reviewer), lists the operator's sessions, and raises two notices: a
 lane reported done, and a successor card is waiting. It never gates. Success means the operator never has to ask a
 session "where are you?", and the band never disagrees with the gates about a
 live PR, because it reads the same artifacts they read. A merged or closed PR
-leaves the band even if the done gate still nudges about it: the merge is done,
-and the band is about what is happening now.
+leaves the band even if the done gate still holds a record of it: that PR is
+over, and the band is about what is happening now.
 
 ## Brand Personality
 
