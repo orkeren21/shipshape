@@ -49,8 +49,8 @@ current harness name — and write them to your own file, `roster/<lane>.md`:
     name checked: 2026-08-30T11:40Z
     status: active
 
-`roster/` holds seat files and nothing else, since shipdeck's pane reads every
-`.md` there as a seat; a handoff or a note goes in `<epic folder>/<lane>/`.
+`roster/` holds seat files and nothing else, since it is how sessions find
+each other; a handoff or a note goes in `<epic folder>/<lane>/`.
 
 A roster file has one writer at a time: the session currently holding that
 seat. A successor takes the file over with the seat and rewrites it with

@@ -133,15 +133,17 @@ refuses anything.
 
 | Hook | Event | What it does |
 |---|---|---|
-| band | `ui.render` `AbovePrompt` | The band above the prompt: seat, context gauge, evidence legs, notices. Desktop draws one SVG per row (`github` or `linear` style), with text pinned to measured widths; the terminal draws the same row as text. |
+| band | `ui.render` `AbovePrompt` | The band above the prompt: seat, context gauge, the PR the legs mean, evidence legs, notices. With no PR and nothing on disk it draws seat and context only. Desktop draws one SVG per row (`github` or `linear` style), with text pinned to measured widths; the terminal draws the same row as text. |
 | row | `ui.render` `UserMessage` | The desktop draws a prompt as typed, so a refined prompt's row is redrawn with what the session received. |
 | refiner | `prompt.submit` | Rewrites a dictated dump with Sonnet 5.5, using `refiner/instructions.md`: the `refining-prompts` skill's body verbatim (a packaging test pins it), plus a delivery section. While it is on, each decision goes to the session trace as counts and reasons, never the words. |
 | refresh | `session.start`, `tool.call`, `turn.complete`, a 60 s clock | Re-reads `$.session.usage()` and runs `shipshape-doctor --json`, at most every 5 s after `Bash`, `Agent` or `Task`. |
-| epic pane | `ui.render` `Pane` | For an Architect seat: the roster, the lanes done, the last five rulings. |
-| epic refresh | a 30 s clock | Re-reads the epic folder while the seat is `architect`; a lane whose status turns `done` raises a notice. |
+| sessions pane | `ui.render` `Pane` | This session's seat, context and evidence; then every session by state, with what it is doing, its PR and what it asks; then the epic's last five rulings. Opens by itself for an Architect. |
+| epic refresh | a 30 s clock | Re-reads the epic folder for any seat that names one; for an Architect, a lane whose status turns `done` raises a notice. |
+| session list | a 15 s clock, `session.attach`, the pane opening | Reads the app's `list_sessions` and `get_session` while the pane is open and a surface is attached. Off the desktop app, or with the server gone, the pane says so and lists the seats on file. |
+| asks | `tool.call`, `turn.start` | A closing question (`wrap_up`'s `ask`) or an `AskUserQuestion` is written to `$.store` under the session's app id, and a new turn clears it. The pane in any session reads them for "Needs you", which so covers only sessions running shipdeck. |
 | successor watch | `tool.call` | This session's own `start_session` call, proposed `own_initiative` with a brief naming `read-handoff`, raises the successor-card notice. Observed only. |
 | `/refine` | `command.run` | `on`, `off` (for this session) or the status; `on` cannot override the `refine` option or `SHIPSHAPE_REFINE=0`. |
-| `/shipdeck` | `command.run` | Opens the epic pane for an Architect, otherwise says what the band says; `style github` or `style linear` switches the style through the config row. |
+| `/shipdeck` | `command.run` | Opens the sessions pane for any seat and says what the band says; `style github` or `style linear` switches the style through the config row. |
 
 **Evidence comes from bash, once.** The band never reads an artifact
 itself. It runs the core's `shipshape-doctor --json`, passing

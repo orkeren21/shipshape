@@ -37,8 +37,8 @@ the lane's scoped smoke later runs.
 **`roster/` and `decisions.md`** — the coordination surfaces, created with
 the epic folder. `roster/` holds one file per seat — the Architect's, and
 one per lane — each written only by the session currently holding that
-seat. It holds seat files and nothing else, since shipdeck's pane reads every
-`.md` there as a seat. The Architect's own `roster/architect.md` carries the
+seat. It holds seat files and nothing else, since it is how sessions find each
+other. The Architect's own `roster/architect.md` carries the
 stable session id, the current harness name (the `ListAgents` header), a
 status, and when the name was last checked.
 `shipshape-seat architect --epic "<absolute path>"` records the seat for the

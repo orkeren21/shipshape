@@ -1,9 +1,10 @@
 # shipdeck
 
 ShipShape's companion mod, for Claude Code 2.1.309 or later. It shows what
-ShipShape's gates already know, in a band above the prompt. It also refines
-a dictated prompt before the session reads it. It reads and displays, and it
-never gates: the gates are the core plugin's, in bash.
+ShipShape's gates already know, in a band above the prompt, and every session
+you have running, in a pane beside the chat. It also refines a dictated prompt
+before the session reads it. It reads and displays, and it never gates: the
+gates are the core plugin's, in bash.
 
 ## Install
 
@@ -37,10 +38,22 @@ context only and reads `evidence unavailable`.
 - **Notices**: a lane reported done, and a successor card waiting. They
   show in the band until your next prompt, plus a toast, and a native
   notification in a terminal.
-- **The epic pane**, for an Architect seat: the roster (seat, status, how
-  long since the name was checked), the lanes done, and the latest rulings
-  from `decisions.md`. It opens by itself when the seat is taken. `/shipdeck`
-  opens it again.
+- **The sessions pane**, on the right: this session's seat, context and
+  evidence, then every session by state (needs you, working, idle, done) with
+  what it is doing, its PR and how long it has rested, then the epic's latest
+  rulings. It opens by itself for an Architect, and `/shipdeck` opens it for
+  any seat. The list refreshes every 15 seconds while the pane can be seen.
+
+  Four limits, stated plainly. It sits on the right, since a mod cannot draw
+  in the sidebar. It shows only in a session that has it open. **Needs you**
+  covers sessions running shipdeck, and only what shipdeck can see: a turn's
+  closing question and `AskUserQuestion`, so a permission prompt does not
+  show. And the question's text goes into shipdeck's own store under your
+  Claude configuration folder, until the session's next turn clears it.
+
+  The band and the pane show the same evidence because the desktop app takes
+  the band away while a next-step card is showing, and leaves panes up. That
+  comes from reading the app's code, and it has not been confirmed live.
 
 ## The refiner
 
@@ -112,7 +125,8 @@ claude plugin test mods/shipdeck
 ```
 
 The tests mount the band, the pane and the transcript row on the terminal
-and desktop surfaces, and stand in for the engine beneath the mod. The design
+and desktop surfaces, and stand in for the engine beneath the mod, the app's
+session list included. The design
 system is in `design/DESIGN.md` (tokens, icon grammar, the rules), with its
 product context in `design/PRODUCT.md`. Run Impeccable against it with
 `IMPECCABLE_CONTEXT_DIR=mods/shipdeck/design`.

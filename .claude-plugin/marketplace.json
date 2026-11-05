@@ -34,7 +34,7 @@
       "name": "shipdeck",
       "source": "./mods/shipdeck",
       "description": "ShipShape's companion mod: refines dictated prompts before the session reads them, and keeps a band above the prompt with the session's seat, context and evidence. Reads and displays; never gates. Needs Claude Code 2.1.309 or later.",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "author": {
         "name": "Or Keren"
       },

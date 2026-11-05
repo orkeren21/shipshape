@@ -13,14 +13,15 @@ prompts the operator glances at the band above the prompt box to answer
 three questions without asking the session: how full is this context, what
 seat is this, and is the branch's evidence (whole-branch review, CI, scoped
 smoke, any bound plan) done yet. The glance lasts about a second, often
-while dictating the next prompt or switching sessions.
+while dictating the next prompt or switching sessions. Beside the chat, the pane answers the
+wider question: which of my sessions needs me, and what is each one doing.
 
 ## Product Purpose
 
 shipdeck is ShipShape's companion mod. It shows what ShipShape's gates
-already know (the seat, the context fill, the evidence legs, a running
-reviewer) and raises two notices: a lane reported done, and a successor card
-is waiting. It never gates. Success means the operator never has to ask a
+already know (the seat, the context fill, the evidence legs, the PR they mean,
+a running reviewer), lists the operator's sessions, and raises two notices: a
+lane reported done, and a successor card is waiting. It never gates. Success means the operator never has to ask a
 session "where are you?", and the band never disagrees with the gates,
 because it reads the same artifacts they read.
 

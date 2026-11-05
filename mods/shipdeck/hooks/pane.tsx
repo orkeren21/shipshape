@@ -90,7 +90,7 @@ function rowTree(r: SessionRow, els: Table, surface: string) {
         </Text>
         {r.ask && <Text size="footnote" dimColor>{r.title}</Text>}
       </Box>
-      {meta !== '' && <Text size="footnote" dimColor tabular>{meta}</Text>}
+      {meta !== '' && <Box flexShrink={0}><Text size="footnote" dimColor tabular>{meta}</Text></Box>}
     </Box>
   )
 }

@@ -1,6 +1,6 @@
 ---
 name: shipdeck
-description: ShipShape's band above the prompt — seat, context and evidence at a glance.
+description: ShipShape's band above the prompt and pane beside the chat — seat, context, evidence and every session, at a glance.
 colors:
   ink: "oklch(0.27 0.012 60)"
   slate: "oklch(0.50 0.012 60)"
@@ -100,6 +100,11 @@ same row as coloured text.
 Rejected on purpose: gamified motion, SaaS dashboard chrome, emoji or
 font-glyph status, and loud traffic-light blocks.
 
+The pane is the same panel read for longer: a logbook of the operator's
+sessions, one list grouped by state, in the host's own type, with nothing
+boxed. It carries the band's row at its top, because the desktop app takes the
+band away while a next-step card is showing and leaves panes up.
+
 **Key Characteristics:**
 
 - Restrained colour: warm-tinted neutrals, one clay accent for the seat,
@@ -145,9 +150,9 @@ state lives.
 
 ### Named Rules
 
-**The State-Only Rule.** Green, brass and red appear only on a leg's icon,
-the context fill or a notice. Never on a label, a border or a background
-that is not a notice.
+**The State-Only Rule.** Green, brass and red appear only on a state mark
+(a leg's icon, a session's mark, the dot beside a PR count), the context fill
+or a notice. Never on a label, a border or a background that is not a notice.
 
 **The Seat Threshold Rule.** The context fill turns brass at the seat's
 first handoff threshold and red at its second: 70 and 85 for lanes and solo
@@ -158,8 +163,9 @@ the handoff point"). It is never colour alone.
 
 **The Terminal Exception.** The terminal has no gauge to fill, so there the
 percentage itself carries the context tone, and state glyphs stand in for
-drawn icons: ● ok, ◌ running, ◷ stale, ✕ failed, ○ not run, ⊘ waived. One
-glyph per state, so shape still tells them apart.
+drawn icons: ● ok, ◌ running, ◷ stale, ✕ failed, ○ not run, ⊘ waived. The
+pane's session marks follow: ◉ needs you, ◌ working, · idle, ? not known,
+● done. One glyph per state, so shape still tells them apart.
 
 ## Typography
 
@@ -186,7 +192,7 @@ size.
 ## Layout
 
 One row, 26px tall, left-aligned, in a fixed order: refining (when it is),
-seat, context, legs, notices. Spacing, as built and approved in the rendered
+seat, context, PR, legs, notices. Spacing, as built and approved in the rendered
 mocks:
 - An icon sits in its own slot (GitHub 19px, Linear 18px), with about 5px
   between the icon and its label.
@@ -209,9 +215,11 @@ last, until it fits. The narrowest band is 240px, and everything fits there:
    unavailable` becomes `unavailable`.
 7. Legs that did not pass, but did not fail, do the same.
 8. The spacing tightens: GitHub's gaps and Linear's chips.
-9. The seat loses the word `lane` and is cut to 5 characters.
-10. The seat goes.
-11. A failed leg goes to its initial, and last of all a reviewer's age goes.
+9. The count of other PRs goes, and its dot with it.
+10. The seat loses the word `lane` and is cut to 5 characters.
+11. The seat goes.
+12. A failed leg goes to its initial, then a reviewer's age goes.
+13. Last of all, only on the fullest row at the floor, the PR goes.
 
 Order never changes, every leg stays drawn at every width, and a failed leg
 keeps its corners to the end. What the row drops stays in the alt text.
@@ -272,6 +280,19 @@ A running reviewer older than 15 minutes shows its age beside the label
 - **Linear:** a chip with a 8px clay square, then the seat in value type.
 - Omitted when no seat is recorded.
 
+### PR
+
+The legs are the current commit's, so the band names the PR they mean, in value
+type just before them. GitHub sets it bare; Linear in a hairline chip.
+
+- **No PR, nothing on disk:** no PR and no legs. Hollow marks would read as owed.
+- **No PR, some evidence or a bound plan:** the legs, with no PR.
+- **One PR on this branch:** `#15`, and its legs even if all hollow.
+- **Several:** `#15 +2`. The count is slate, and a 6px brass dot beside it says
+  one of the others still owes evidence. Colour never goes on the digits, and
+  the pane spells them out: `#15 owed · #12 done`.
+- **PRs, none on this branch:** `2 PRs`, with the same dot.
+
 ### Notice
 
 GitHub: a green-tint pill with a 1px green edge. Linear: a green-tint chip
@@ -292,6 +313,45 @@ a `?` and `evidence unavailable` take the legs' place (`unavailable`, on a
 narrow band). Before the doctor's first answer, and outside a git repo, no
 legs are drawn at all: nothing is not the same as unavailable.
 
+### The pane
+
+Built from the host's own elements, so it takes the app's type, theme and
+spacing, with only the state marks drawn. Top to bottom:
+
+1. **This session:** the band's own row, drawn to the pane's width, then the
+   PR detail when there is more than one.
+2. **Sessions**, grouped under `Needs you`, `Working`, `Idle`, `Seats` and
+   `Done`, in that order. Each group shows only when it has rows.
+3. **Rulings:** the last five, the ID in its own column.
+4. A caption saying what `Needs you` covers.
+
+A group heading is footnote, semibold, muted, in sentence case. Rows sit on a
+hanging indent from the mark, in body type:
+
+- The seat leads in semibold (medium when idle or done), the title follows
+  and wraps. A session with no seat starts at its title.
+- A row asking something leads with the question, in medium, with the title
+  under it in muted footnote.
+- Idle and done titles are muted: what is moving should read first.
+- The right-hand column holds the PR and the time at rest, tabular, in muted
+  footnote, and never wraps: `#15 · 2m`, `#14 merged`.
+
+**Session marks**, 14 wide in a line-tall slot, so they centre on the first
+line:
+
+| State | Mark |
+|---|---|
+| needs you | brass ring with a brass centre |
+| working | brass spinner arc, the band's own |
+| idle | 5px mist dot |
+| done | filled green circle, check |
+| not known | mist circle with a `?`, the band's `unavailable` mark |
+
+**A read that failed never looks like an empty one.** `No rulings yet.` means a
+file with no entries. `Could not read the rulings in decisions.md.` means a file
+that would not open, or held text with no entry in the format. The same goes for
+the roster, the session list and the published questions.
+
 ## Do's and Don'ts
 
 ### Do:
@@ -302,14 +362,14 @@ legs are drawn at all: nothing is not the same as unavailable.
   (`@media (prefers-color-scheme: dark)`), and stop every animation under
   `prefers-reduced-motion`.
 - **Do** name every state in words in the SVG's `alt`.
-- **Do** keep the order seat, context, legs, notices, in both styles.
+- **Do** keep the order seat, context, PR, legs, notices, in both styles.
 
 ### Don't:
 
 - **Don't** use emoji or font glyphs (✓ ✗ ◷) as icons on desktop. Draw them.
 - **Don't** colour a label, a border or a background by state. State colour
   belongs to icons, fills and notices.
-- **Don't** animate anything that is not changing: only the running spinner
-  and the refining spinner move.
+- **Don't** animate anything that is not changing: only the running spinner,
+  the refining spinner and a working session's spinner move.
 - **Don't** name a local `h` in a `.tsx` module. JSX compiles to the global
   `h`, and a shadowing local breaks every element after it.

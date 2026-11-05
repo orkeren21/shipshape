@@ -113,8 +113,8 @@ same artifacts through `shipshape-doctor --json`.
 - **A band above the prompt.** It shows the session's seat and a context
   gauge that turns amber and red at the seat's own handoff points. It also
   shows the evidence legs (review, CI, smoke, and the plan while one is
-  bound), including a reviewer still running. There are two styles, `github`
-  (the default) and `linear`;
+  bound), including a reviewer still running, and names the PR they mean.
+  There are two styles, `github` (the default) and `linear`;
   `/shipdeck style linear` switches between them.
 - **A prompt refiner.** A long dictated prompt goes to Sonnet 5.5, and the
   session receives a structured version instead: goal, context,
@@ -123,8 +123,8 @@ same artifacts through `shipshape-doctor --json`.
   the session received, and the original stays in the session's scratch
   folder (until a core 0.5.0 reading gives it one, nothing is refined). Start a prompt with `raw:` to send it as typed, or run
   `/refine off` to stop refining for the session.
-- **An Architect pane.** It lists the epic's roster, the lanes that
-  reported done, and the latest rulings.
+- **A sessions pane.** It lists every session by state, with what each is
+  doing, its PR and what it needs from you, then the epic's latest rulings.
 - **Two notices:** a lane reporting done, and a successor card waiting.
 
 ```
