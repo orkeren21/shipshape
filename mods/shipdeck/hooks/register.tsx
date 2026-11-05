@@ -18,7 +18,7 @@ import type { Style } from './model.ts'
 import { paneTree } from './pane.tsx'
 import { assemble, checkReply, countWords, MAX_TOKENS, request, rowKey, rowText, score, skipPrefix, splitReminders, wordsBesideReminders } from './refine.ts'
 import type { Score, Split } from './refine.ts'
-import { askFromTool, isPrLive } from './sessions.ts'
+import { askFromTool, finishedPrs, isPrLive } from './sessions.ts'
 import { terminalBand } from './terminal.tsx'
 
 const PANE = 'shipdeck-epic'
@@ -208,6 +208,7 @@ async function bandNow($: EngineInterface) {
     notices: await read($, notices),
     refining: (await read($, refining)) > 0,
     now: await $.clock.now(),
+    finished: finishedPrs(await read($, sessions)),
   })
 }
 
@@ -631,7 +632,7 @@ export const register: Register = (on, options) => {
     if (opened) await update($, paneOpened, () => true).catch(() => {})
     const d = await read($, doctor)
     const why = (await read($, note)) ?? ''
-    const model = bandModel({ doctor: d, isUnavailable: why !== '', percent: await read($, percent), notices: [], refining: false, now: await $.clock.now() })
+    const model = bandModel({ doctor: d, isUnavailable: why !== '', percent: await read($, percent), notices: [], refining: false, now: await $.clock.now(), finished: finishedPrs(await read($, sessions)) })
     const pane = !opened ? 'the sessions pane could not open' : opened.isPlaced ? 'the sessions pane is open' : `the sessions pane waits for room (${opened.reason})`
     return { text: `shipdeck: ${pane}. ${describe(model)}${why ? ` (${why})` : ''}. /shipdeck style github or linear switches the band.` }
   })

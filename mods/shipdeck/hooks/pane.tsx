@@ -8,11 +8,11 @@
 
 import type { Elements } from 'claude-code'
 import { age, prName } from './band.ts'
-import { drawBand, sessionMark } from './draw.ts'
+import { drawBand, sectionRule, sessionMark } from './draw.ts'
 import { rulingParts } from './epic.ts'
 import type { EpicView } from './epic.ts'
 import type { BandModel, DoctorJson, Style } from './model.ts'
-import { rowsFor } from './sessions.ts'
+import { isPrLive, rowsFor } from './sessions.ts'
 import type { SessionRow, SessionState } from './sessions.ts'
 import type { SessionsView } from '../types'
 import { terminalBand } from './terminal.tsx'
@@ -78,24 +78,30 @@ function prLabel(pr: NonNullable<SessionRow['pr']>): string {
 function metaOf(r: SessionRow): string {
   if (r.state === 'done') return !r.pr ? '' : r.pr.state === 'merged' ? `#${r.pr.number}` : `#${r.pr.number} ${r.pr.state}`
   const rest = r.restingFor === null ? null : r.restingFor < 60_000 ? 'now' : age(r.restingFor)
-  return [r.pr && prLabel(r.pr), rest].filter(Boolean).join(' · ')
+  return [r.pr && isPrLive(r.pr) && prLabel(r.pr), rest].filter(Boolean).join(' · ')
 }
 
 function rowTree(r: SessionRow, els: Table, surface: string) {
   const { Box, Text } = els
   const meta = metaOf(r)
   return (
-    <Box key={`row-${r.key}`} flexDirection="row" gap="sm">
+    <Box key={`row-${r.key}`} flexDirection="row" gap="sm" alignItems="flex-start">
       {mark(r.state, els, surface)}
       <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-        <Text>
-          {r.seat && <Text weight={r.state === 'idle' || r.state === 'done' ? 'medium' : 'semibold'}>{r.seat}  </Text>}
-          {r.ask ? <Text weight="medium">{r.ask}</Text> : <Text dimColor={r.state !== 'working' && r.state !== 'needs'}>{r.title}</Text>}
-          {r.isSelf && <Text size="footnote" dimColor>  this session</Text>}
-        </Text>
-        {r.ask && <Text size="footnote" dimColor>{r.title}</Text>}
+        {r.ask ? (
+          <Text>
+            {r.seat && <Text weight="semibold">{r.seat}  </Text>}
+            <Text weight="medium">{r.ask}</Text>
+          </Text>
+        ) : (
+          <Box flexDirection="row" gap="sm" minWidth={0}>
+            {r.seat && <Box flexShrink={0}><Text weight={r.state === 'idle' || r.state === 'done' ? 'medium' : 'semibold'}>{r.seat}</Text></Box>}
+            <Box flexShrink={1} minWidth={0}><Text dimColor={r.state !== 'working'} wrap="truncate-end">{r.title}</Text></Box>
+          </Box>
+        )}
+        {r.ask && <Text size="footnote" dimColor wrap="truncate-end">{r.title}</Text>}
       </Box>
-      {meta !== '' && <Box flexShrink={0}><Text size="footnote" dimColor tabular>{meta}</Text></Box>}
+      {meta !== '' && <Box flexShrink={0} alignSelf="flex-start"><Text size="footnote" dimColor tabular>{meta}</Text></Box>}
     </Box>
   )
 }
@@ -108,6 +114,19 @@ function section(key: string, title: string, children: unknown, els: Table) {
       {children as never}
     </Box>
   )
+}
+
+// A hairline between sections, the one rule the pane draws. The terminal's rows
+// are spaced by their headings and gets none. A Box can't draw one: its height
+// is in text rows, about 20px on the desktop, and a length is refused. The app
+// scales a too-wide Svg down to fit (P36), so this is drawn wider than any pane
+// and lands full width.
+function divider(key: string, els: Table, surface: string, columns: number) {
+  const drawing = drawnOn(surface, els)
+  if (!drawing) return null
+  const { Svg } = drawing
+  const drawn = sectionRule(columns * 12)
+  return <Svg key={key} source={drawn.source} width={drawn.width} height={drawn.height} alt={drawn.alt} />
 }
 
 function bandTree(view: PaneView, els: Table, columns: number, surface: string) {
@@ -136,7 +155,7 @@ function rulingsTree(view: PaneView, els: Table) {
   return section('rulings', 'Rulings', rows.map((r, i) => (
     <Box key={`ruling-${i}`} flexDirection="row" gap="sm">
       {r.id !== null && <Box width={idWidth} flexShrink={0}><Text size="footnote" dimColor tabular>{r.id}</Text></Box>}
-      <Text size="footnote">{r.title}</Text>
+      <Text size="footnote" wrap="truncate-end">{r.title}</Text>
     </Box>
   )), els)
 }
@@ -147,7 +166,7 @@ function footTree(view: PaneView, els: Table) {
   if (sessions === null) return <Text key="foot" size="caption" dimColor>Reading sessions…</Text>
   if (sessions.state === 'unavailable') return <Text key="foot" size="caption" dimColor>Could not read the session list, which needs the Claude desktop app.</Text>
   if (sessions.asks === 'unreadable') return <Text key="foot" size="caption" dimColor>Could not read what sessions are asking.</Text>
-  return <Text key="foot" size="caption" dimColor>Needs you covers only sessions running shipdeck.</Text>
+  return null
 }
 
 export function paneTree(view: PaneView, els: Table, columns: number, surface: string) {
@@ -155,6 +174,7 @@ export function paneTree(view: PaneView, els: Table, columns: number, surface: s
   const { rows, more } = rowsFor(view.sessions, view.epic?.rows ?? [], view.now)
   const detail = prDetail(view.prs, view.band)
   const groups = GROUPS.map(g => ({ ...g, rows: rows.filter(r => r.state === g.state) })).filter(g => g.rows.length > 0)
+  const rules = rulingsTree(view, els)
   return (
     <Box flexDirection="column" gap="md">
       <Box key="this-session" flexDirection="column" gap="xs">
@@ -163,9 +183,10 @@ export function paneTree(view: PaneView, els: Table, columns: number, surface: s
       </Box>
       {view.isArchitect && !view.epicDir && <Text key="no-epic" size="footnote" dimColor>No epic folder recorded for this seat. Take the seat with shipshape-seat architect --epic "&lt;abs path&gt;".</Text>}
       {view.epic?.roster === 'unreadable' && <Text key="no-roster" size="footnote" dimColor>Could not read the roster in {view.epicDir}.</Text>}
-      {groups.map(g => section(`group-${g.state}`, g.title, g.rows.map(r => rowTree(r, els, surface)), els))}
+      {groups.flatMap(g => [divider(`rule-${g.state}`, els, surface, columns), section(`group-${g.state}`, g.title, g.rows.map(r => rowTree(r, els, surface)), els)])}
       {more > 0 && <Text key="more" size="footnote" dimColor tabular>{more} more</Text>}
-      {rulingsTree(view, els)}
+      {rules && divider('rule-rulings', els, surface, columns)}
+      {rules}
       {footTree(view, els)}
     </Box>
   )

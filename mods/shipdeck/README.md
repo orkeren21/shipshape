@@ -45,9 +45,10 @@ context only and reads `evidence unavailable`.
   evidence, then your sessions by state (needs you, working, idle, seats with
   no session, done) with what each is doing, its PR and how long it has rested,
   then the epic's latest rulings. Idle sessions older than a day drop off unless
-  they hold a seat, an open PR or a question, and twelve rows show at most. It
-  opens by itself for an Architect, and `/shipdeck` opens it for any seat. The
-  list refreshes every 15 seconds while the pane can be seen.
+  they hold a seat, a question or a PR that moved in the last week, and twelve
+  rows show at most. Needs you covers only sessions running shipdeck. It opens
+  by itself for an Architect, and `/shipdeck` opens it for any seat. The list
+  refreshes every 15 seconds while the pane can be seen.
 
   Four limits, stated plainly. It sits on the right, since a mod cannot draw
   in the sidebar. It shows only in a session that has it open. **Needs you**

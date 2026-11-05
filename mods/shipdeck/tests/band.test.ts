@@ -246,6 +246,19 @@ describe('which PR the legs mean', () => {
     expect(m.legs?.map(l => l.name)).toEqual(['review', 'CI', 'smoke', 'plan'])
     expect(modelOf(doctor({ legs: { ...HOLLOW, plan: { state: 'none', detail: null } } })).legs).toEqual([])
   })
+  test('a merged PR leaves the band, and its green legs with it', () => {
+    const d = doctor({ prs: [pr('10', 'feature', 'satisfied')] })
+    const m = bandModel({ doctor: d, isUnavailable: false, percent: 49, notices: [], refining: false, now: 0, finished: ['10'] })
+    expect(m.pr).toBeNull()
+    expect(m.legs).toEqual([])
+    expect(say(m)).not.toContain('review')
+  })
+  test('a finished PR on another branch only leaves the count', () => {
+    const d = doctor({ prs: [pr('15', 'feature'), pr('10', 'old', 'satisfied')] })
+    const m = bandModel({ doctor: d, isUnavailable: false, percent: 49, notices: [], refining: false, now: 0, finished: ['10'] })
+    expect(m.pr).toEqual({ label: '#15', others: 0, isOwing: false })
+    expect(m.legs?.length).toBeGreaterThan(0)
+  })
   test('one PR on this branch names itself, and its legs show hollow: a PR owes them', () => {
     const m = modelOf(doctor({ legs: HOLLOW, prs: [pr('15', 'feature')] }))
     expect(m.pr).toEqual({ label: '#15', others: 0, isOwing: false })

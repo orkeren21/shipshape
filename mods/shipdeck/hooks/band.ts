@@ -70,8 +70,11 @@ export function prName(number: string): string {
 
 // The legs are the current commit's, so they mean this branch's PR, and the
 // rest of the session's PRs are a count. A reading with no `prs` is none.
-export function prSummary(doctor: DoctorJson): PrSummary | null {
-  const prs = doctor.prs ?? []
+//
+// A PR the app says has finished is out of it: the doctor only knows what this
+// session opened, and works offline, so its record stands after a merge.
+export function prSummary(doctor: DoctorJson, finished: readonly string[] = []): PrSummary | null {
+  const prs = (doctor.prs ?? []).filter(p => !finished.includes(p.number))
   if (prs.length === 0) return null
   const mine = doctor.branch === null ? undefined : prs.findLast(p => p.branch === doctor.branch)
   const rest = prs.filter(p => p !== mine)
@@ -83,11 +86,16 @@ export function prSummary(doctor: DoctorJson): PrSummary | null {
 }
 
 // With no PR on this branch and nothing yet on disk, three hollow marks would
-// read as owed when nothing is. Anything that has happened keeps the row,
-// hollow marks included, and the plan leg exists only while a plan is bound.
-function legsToDraw(doctor: DoctorJson, pr: PrSummary | null, now: number): Leg[] {
+// read as owed when nothing is, and stale ones are another commit's. Anything
+// done at this commit keeps the row, hollow marks included, and the plan leg
+// exists only while a plan is bound.
+//
+// Once this branch's PR has finished, its evidence is history: a green row
+// would read as work in progress. A new PR on the branch brings the row back.
+function legsToDraw(doctor: DoctorJson, pr: PrSummary | null, finished: readonly string[], now: number): Leg[] {
+  if (!pr?.label && (doctor.prs ?? []).some(p => p.branch === doctor.branch && finished.includes(p.number))) return []
   const drawn = legs(doctor, now)
-  return pr?.label || drawn.some(l => l.state !== 'missing' || l.name === 'plan') ? drawn : []
+  return pr?.label || drawn.some(l => (l.state !== 'missing' && l.state !== 'stale') || l.name === 'plan') ? drawn : []
 }
 
 // The seat's two handoff thresholds. These are context-watch's defaults; a
@@ -115,15 +123,17 @@ export function bandModel(input: {
   notices: string[]
   refining: boolean
   now: number
+  // PR numbers the app reports as merged or closed.
+  finished?: readonly string[]
 }): BandModel {
-  const { doctor } = input
+  const { doctor, finished = [] } = input
   const inRepo = !!doctor && (doctor.branch !== null || doctor.head !== null)
-  const pr = inRepo ? prSummary(doctor) : null
+  const pr = inRepo ? prSummary(doctor, finished) : null
   return {
     seat: doctor ? seatLabel(doctor.seat) : null,
     role: doctor?.seat?.role ?? null,
     ctx: input.percent,
-    legs: doctor ? (inRepo ? legsToDraw(doctor, pr, input.now) : []) : input.isUnavailable ? null : [],
+    legs: doctor ? (inRepo ? legsToDraw(doctor, pr, finished, input.now) : []) : input.isUnavailable ? null : [],
     pr,
     notices: input.notices.slice(-2),
     refining: input.refining,

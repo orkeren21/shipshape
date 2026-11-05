@@ -324,6 +324,17 @@ const SESSION_WORDS: Record<SessionState, string> = { needs: 'needs you', workin
 
 // A session's state in the pane, in the band's grammar: a mark 14 wide, set in
 // a slot as tall as a line of body text so it centres on the first line.
+// One hairline. Neutral grey with alpha, so it sits on either theme's ground.
+export function sectionRule(width: number): Drawing {
+  const w = Math.round(width)
+  return {
+    source: `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="1" viewBox="0 0 ${w} 1"><rect width="${w}" height="1" fill="#808080" fill-opacity="0.3"/></svg>`,
+    width: w,
+    height: 1,
+    alt: 'divider',
+  }
+}
+
 export function sessionMark(state: SessionState): Drawing {
   const [cx, cy, width, height] = [7, 10, 14, 20]
   const body = {

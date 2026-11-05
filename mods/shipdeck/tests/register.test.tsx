@@ -958,7 +958,7 @@ test('a refused write of that flag still opens the pane, and costs the reading n
   await start($, clock)
   expect(seen.opened).toEqual(['shipdeck-epic'])
   const pane = await $.ui.mount({ plugin: 'shipdeck', surface: 'desktop', component: 'Pane', requestId: 'shipdeck-epic', props: { title: 'Sessions', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as never })
-  expect(await pane.find({ type: 'Text', text: /f1\s+active/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^active$/ })).toBeDefined()
   await pane.unmount()
   // A pane closed by hand must not come back with every reading.
   await clock.advance(120_000)
@@ -977,7 +977,7 @@ test('a pane that cannot open costs the reading nothing', async ($, on) => {
   expect(await bandSays($, /architect/)).toBe(true)
   // The epic read comes after the open, so this says the reading went on.
   const pane = await $.ui.mount({ plugin: 'shipdeck', surface: 'desktop', component: 'Pane', requestId: 'shipdeck-epic', props: { title: 'Sessions', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 20 }, view: {} } as never })
-  expect(await pane.find({ type: 'Text', text: /f1\s+active/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^active$/ })).toBeDefined()
   await pane.unmount()
 })
 
@@ -1499,27 +1499,35 @@ test('a row says what it is doing, its seat, its PR and how long it has rested',
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /F4\s+epic skills/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /epic skills/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /^#16$/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /Architect\s+ShipShape mods/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /ShipShape mods/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /^3m$/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /^#15 · 2m$/ })).toBeDefined()
   await pane.unmount()
 })
 
-test('a PR that is not open says what it is', async ($, on) => {
+test('a finished PR leaves an idle row; only an open one is named', async ($, on) => {
   const { clock } = world(on, paneWorld({ listed: [{ ...IDLE, prNumber: 14, prState: 'MERGED' }] }))
   await start($, clock)
   const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /^#14 merged · 3m$/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^3m$/ })).toBeDefined()
   await pane.unmount()
 })
 
-test('this session is in the list, and marked', async ($, on) => {
+test('this session is in the list', async ($, on) => {
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /This one\s+this session/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /This one/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('a title stays on one line, and the row\'s meta sits on that line', async ($, on) => {
+  const { clock } = world(on, paneWorld())
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  expect((await pane.find({ type: 'Text', text: /This one/ }))?.props.wrap).toBe('truncate-end')
   await pane.unmount()
 })
 
@@ -1527,7 +1535,7 @@ test('a seat with no session draws what its file says, and a handoff in roster/ 
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const { pane, texts } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /F5\s+waiting on F2/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^waiting on F2$/ })).toBeDefined()
   expect(texts.some(t => t.includes('F2-handoff'))).toBe(false)
   await pane.unmount()
 })
@@ -1628,7 +1636,7 @@ test('a seat file that will not open says so in its row', async ($, on) => {
   const { clock } = world(on, paneWorld({ files }))
   await start($, clock)
   const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /F5\s+unreadable/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /unreadable/ })).toBeDefined()
   await pane.unmount()
 })
 
@@ -1708,15 +1716,26 @@ test('no session server says so, and the seats on file still show', async ($, on
   await start($, clock)
   const { pane, texts } = await paneTexts($, clock)
   expect(await pane.find({ type: 'Text', text: /Could not read the session list, which needs the Claude desktop app/ })).toBeDefined()
-  expect(texts.some(t => /F4\s+active/.test(t))).toBe(true)
+  expect(texts.includes('F4') && texts.includes('active')).toBe(true)
   await pane.unmount()
 })
 
-test('the pane says plainly what Needs you covers', async ($, on) => {
+test('a working pane carries no footnote', async ($, on) => {
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const { pane } = await paneTexts($, clock)
-  expect(await pane.find({ type: 'Text', text: /Needs you covers only sessions running shipdeck/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /Needs you covers/ })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('sections are ruled apart on a drawn surface, and the rule is its own element', async ($, on) => {
+  const { clock } = world(on, paneWorld())
+  await start($, clock)
+  const { pane } = await paneTexts($, clock)
+  const rules = (await pane.findAll({ type: 'Svg' })).filter(s => s.props.alt === 'divider')
+  expect(rules.length).toBeGreaterThan(0)
+  expect(rules[0]?.props.height).toBe(1)
+  expect(Number(rules[0]?.props.width)).toBeGreaterThan(400)
   await pane.unmount()
 })
 
@@ -1762,7 +1781,7 @@ test('a session going from working to idle moves on the next read, with nobody t
   const { pane } = await paneTexts($, clock)
   const stateOf = async () => {
     const texts = (await pane.findAll({ type: 'Text' })).map(t => String(t.text ?? ''))
-    const row = texts.findIndex(t => /F4\s+epic skills/.test(t))
+    const row = texts.findIndex(t => /epic skills/.test(t))
     return { working: row > texts.indexOf('Working') && row < texts.indexOf('Idle') }
   }
   expect((await stateOf()).working).toBe(true)
@@ -1796,7 +1815,7 @@ test('seats read after the list still name their rows, with no wait for the next
   const { clock } = world(on, paneWorld())
   await start($, clock)
   const pane = await $.ui.mount(PANE('desktop'))
-  expect(await pane.find({ type: 'Text', text: /F4\s+epic skills/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /epic skills/ })).toBeDefined()
   await pane.unmount()
 })
 
