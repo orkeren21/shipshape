@@ -434,10 +434,11 @@ stamp_lane 21 gone-lane
 git -C "$gone" checkout -q -
 git -C "$gone" branch -q -D gone-lane
 
-out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$gone")"
-assert_eq "" "$(hook_field "$out" decision)" \
-  "a stamped PR whose branch was deleted does not block a completion claim"
-assert_eq "" "$(hook_field "$out" systemMessage)" "and is not nudged about as owing"
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$gone")"
+assert_eq "" "$(hook_field "$out" systemMessage)" \
+  "a stamped PR whose branch was deleted is not nudged about as owing"
+assert_contains "$(cat "$gscratch/trace.log")" "gone-lane has no tip here or on origin" \
+  "and the trace says freshness went unjudged"
 
 # The fail-open is for a branch that is gone. One that moved past its stamp owes.
 git -C "$gone" checkout -q -b moved-lane
@@ -448,6 +449,19 @@ out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" 
 nudge="$(hook_field "$out" systemMessage)"
 assert_contains "$nudge" "PR #22" "a branch that moved past its stamp still owes"
 assert_not_contains "$nudge" "PR #21" "and the deleted one is still not listed beside it"
+
+# Deleting the local branch of a PR that moved on the remote does not settle it.
+git init -q --bare "$work/gone-origin.git"
+git -C "$gone" remote add origin "$work/gone-origin.git"
+git -C "$gone" checkout -q -b pushed-lane
+stamp_lane 23 pushed-lane
+git -C "$gone" commit -q --allow-empty -m "a commit the stamp never saw"
+git -C "$gone" push -q origin pushed-lane
+git -C "$gone" checkout -q -
+git -C "$gone" branch -q -D pushed-lane
+out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CHAT")" "$gone")"
+assert_contains "$(hook_field "$out" systemMessage)" "PR #23" \
+  "a deleted branch whose tip moved on origin still owes"
 
 # So does a deleted branch that never earned a stamp.
 rm -f "$gscratch/pr-satisfied-21"

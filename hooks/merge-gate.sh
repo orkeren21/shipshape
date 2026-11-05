@@ -16,8 +16,8 @@
 # session is held to the same bar.
 #
 # Fails open, loudly, when it cannot judge: no git, no payload, kill switch
-# (SHIPSHAPE_MERGE_GATE=0), or a reasoned skip_merge_gate waiver in
-# .shipshape.yaml. Every decision is traced.
+# (SHIPSHAPE_MERGE_GATE=0), a reasoned skip_merge_gate waiver in .shipshape.yaml,
+# or a stamp whose branch has no tip here or on origin. Every decision is traced.
 #
 # Matching discipline is pr-wrapper-gate's: the `gh pr merge` invocation
 # specifically — start of line or after a separator, env assignments and path
@@ -218,11 +218,15 @@ fi
 stamp_head="$(record_field "$stamp" head)"
 stamp_branch="$(record_field "$stamp" branch)"
 branch_head=""
-[ -n "$stamp_branch" ] && branch_head="$(git rev-parse --verify --quiet "$stamp_branch" 2>/dev/null)"
+[ -n "$stamp_branch" ] && branch_head="$(shipshape_branch_tip "$stamp_branch")"
 
-# A branch git cannot resolve fails open — deleted after an earlier merge, or
-# a remote-only ref. The stamp was earned; there is no tip left to outrun it.
-# --verify is what leaves this empty; a bare rev-parse prints the name back.
+# A branch with no tip here or on origin fails open, deleted after an earlier
+# merge most often. The stamp was earned and nothing this checkout can see outran
+# it, but its freshness went unjudged, and the trace has to say so.
+if [ -z "$branch_head" ]; then
+  shipshape_trace merge-gate "PR #$number: branch ${stamp_branch:-unrecorded} has no tip here or on origin, so the stamp stands unjudged"
+fi
+
 if [ -n "$branch_head" ] && [ "$stamp_head" != "$branch_head" ]; then
   if [ "$legs_current" = yes ]; then
     shipshape_trace merge-gate "allowed: PR #$number stamp stale but legs settled live at HEAD"

@@ -334,6 +334,15 @@ printf 'head=%s\nbranch=gone-lane\n' "$head" > "$scratch/pr-satisfied-61"
 out="$(json)"
 assert_eq "satisfied" "$(jget "$out" prs.0.state)" "a stamp on a deleted branch stays satisfied"
 assert_not_contains "$(text)" "STALE" "and the text mode agrees"
+assert_contains "$(text)" "no tip here or on origin, so its freshness is not judged" \
+  "and says the stamp went unjudged, as the merge gate's trace does"
+
+# The tracking ref is the tip once the local branch is gone, as in the gates.
+moved="$(git -C "$repo" commit-tree -m "moved on origin" "$head^{tree}")"
+git -C "$repo" update-ref refs/remotes/origin/gone-lane "$moved"
+out="$(json)"
+assert_eq "stale" "$(jget "$out" prs.0.state)" "a tracking ref past the stamp is stale"
+git -C "$repo" update-ref -d refs/remotes/origin/gone-lane
 rm -f "$scratch"/pr-armed-* "$scratch"/pr-satisfied-*
 
 # A record with no url keeps its other fields in place: an empty field must

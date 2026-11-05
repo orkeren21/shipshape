@@ -124,7 +124,41 @@ out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 60")" "$repo")"
 assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "a stamped PR whose branch was deleted merges"
 assert_eq "" "$(hook_field "$out" shipshapeCode)" "and is not named as stale"
+assert_contains "$(cat "$scratch/trace.log")" "gone-lane has no tip here or on origin" \
+  "and the trace says freshness went unjudged, so it does not read as a judged allow"
 rm -f "$scratch/pr-armed-60" "$scratch/pr-satisfied-60"
+
+# `git branch -D` is routine cleanup and leaves the PR open on the remote, so
+# the fail-open is only for a branch with no tip anywhere this checkout can see.
+# A real push and a real delete, because the case rests on the tracking ref
+# outliving the branch.
+git init -q --bare "$work/origin.git"
+git -C "$repo" remote add origin "$work/origin.git"
+git -C "$repo" checkout -q -b pushed-lane
+git -C "$repo" commit -q --allow-empty -m "the work the stamp saw"
+stamped="$(git -C "$repo" rev-parse HEAD)"
+give_record 61 pushed-lane
+give_stamp 61 "$stamped" pushed-lane
+git -C "$repo" push -q origin pushed-lane
+git -C "$repo" checkout -q "$main_branch"
+git -C "$repo" branch -q -D pushed-lane
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 61")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a deleted branch still at its stamp on origin merges"
+
+git -C "$repo" checkout -q -b pushed-lane "$stamped"
+git -C "$repo" commit -q --allow-empty -m "a commit the stamp never saw"
+moved="$(git -C "$repo" rev-parse HEAD)"
+git -C "$repo" push -q origin pushed-lane
+git -C "$repo" checkout -q "$main_branch"
+git -C "$repo" branch -q -D pushed-lane
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 61")" "$repo")"
+assert_eq "merge_gate_stale" "$(hook_field "$out" shipshapeCode)" \
+  "deleting the local branch does not hide a tip that moved past the stamp"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
+  "pushed-lane now points at $(printf '%s' "$moved" | cut -c1-8)" "and the refusal names the real tip"
+git -C "$repo" remote remove origin
+rm -f "$scratch/pr-armed-61" "$scratch/pr-satisfied-61"
 
 # --- foreign: no record at all is a refusal, not a pass ----------------------
 
