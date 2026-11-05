@@ -31,10 +31,24 @@ Before the first change, ensure the work has its own workspace — use
 one. Lanes run against the same repository at the same time, and a shared
 working tree is how two of them corrupt each other's state.
 
+## Bind the plan
+
+Before the first task, bind the file that holds the fences, which is the plan
+or, for small work, the design document:
+
+```bash
+shipshape-plan <path>
+```
+
+From here the plan leg reads those fences beside this session's verify records,
+and holds the pull request until every task in scope has a passing, current
+one. A record older than the binding does not count, so binding late costs a
+run. Whatever task list the app shows is a display for your human partner: keep
+it up, and rely on the records as the evidence.
+
 ## Working the list
 
-Take tasks in dependency order. The ordering gate will refuse a task whose
-`blockedBy` is still open, which is a reminder rather than an obstacle.
+Take tasks in dependency order.
 
 For each task:
 
@@ -49,14 +63,17 @@ shipshape-verify <task-id> <the task's verifyCommand>
 ```
 
 The wrapper is transparent — same output, same exit code — and leaves the
-record the completion gate reads. Running the command bare means the task will
-not close, and the gate will say so.
+record the plan leg reads. A command run bare leaves nothing behind, and the leg
+will say so.
 
 **Answer the acceptance criteria one at a time**, each against something the
 tools actually printed. A criterion you cannot point at output for is a
 criterion that is not met yet.
 
-**Then close the task** and move on.
+**Then move on.** `shipshape-plan` with no arguments shows where every task
+stands. A later task that edits an earlier task's files makes that record stale,
+which is what the list form is for: `shipshape-verify t1,t2,t3 "<command>"` runs
+once and records all three.
 
 ## Build the fast runner early
 

@@ -11,9 +11,14 @@ export type DoctorJson = {
   head: string | null
   scratch: string
   seat: { role: string; lane: string | null; epic: string | null; handoff: string | null } | null
-  legs: { review: DoctorLeg; ci: DoctorLeg; smoke: DoctorLeg }
+  // plan is optional because format 1 is additive: a core older than 0.6.0
+  // sends no such key.
+  legs: { review: DoctorLeg; ci: DoctorLeg; smoke: DoctorLeg; plan?: DoctorLeg }
   pending: { agent: string; kind: string; since: number | null }[]
   merge_gate_waived: boolean
+  // A plan this session dropped with --clear: "<plan> — <reason> (on <branch>)".
+  // Absent from a core older than 0.6.0. Nothing draws it; it is for a reader.
+  plan_cleared?: string | null
   prs: { number: string; url: string | null; branch: string | null; state: string }[]
 }
 

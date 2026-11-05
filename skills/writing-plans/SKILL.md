@@ -47,14 +47,28 @@ code. Name the approach if it is not obvious; leave the writing to the writing.
 Order tasks by dependency, and let `blockedBy` say so. Anything genuinely
 independent can be marked as such and picked up in any order.
 
-## Emitting the tasks
+## Binding the plan
 
-Create the tasks natively, with the fence in each description and `blockedBy`
-wired between them. The fence survives session boundaries, which prose in a
-document does not, and it gives the gates something concrete to read: the
-completion gate will not close a task ahead of its dependencies or without a
-passing verify record, and the ordering gate will not start one whose
-dependencies are open.
+Write each task's fence under it in the plan, and bind the file before the
+first task starts:
+
+```bash
+shipshape-plan <path>
+```
+
+The fence survives session boundaries, and it gives the gates something
+concrete to read: from the binding on, the plan leg holds the pull request until
+every task has a passing, current `shipshape-verify` record. `blockedBy` tells
+the reader the order. Nothing gates on it; the bind warns when an entry is not a
+task in the plan.
+
+A plan that spans pull requests binds the slice each one carries:
+
+```bash
+shipshape-plan <path> --tasks t5,t6 --reason "<why the rest is not here>"
+```
+
+The tasks left out are listed with that reason wherever the leg is reported.
 
 ## Where it lives
 

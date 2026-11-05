@@ -71,6 +71,8 @@ assert_eq "false" "$(jget "$out" merge_gate_waived)" "the merge gate is not waiv
 assert_eq "missing" "$(jget "$out" legs.review.state)" "no review yet"
 assert_eq "missing" "$(jget "$out" legs.ci.state)" "no CI yet"
 assert_eq "missing" "$(jget "$out" legs.smoke.state)" "no smoke yet"
+assert_eq "none" "$(jget "$out" legs.plan.state)" "no plan bound, and the key is always there"
+assert_eq "null" "$(jget "$out" plan_cleared)" "and nothing cleared"
 [ -d "$scratch" ] && fail "--json created the scratch directory"
 
 # --- the seat comes through whole ----------------------------------------------
@@ -164,6 +166,127 @@ out="$(json)"
 assert_eq "true" "$(jget "$out" merge_gate_waived)" "a waived merge gate reads true"
 assert_contains "$(text)" "gate waived" "and the text mode says so"
 rm -f "$repo/.shipshape.yaml"
+
+# --- the plan leg ------------------------------------------------------------------
+
+plan="$work/plan.md"
+{
+  printf '```json:metadata\n{"id":"t1","files":["src.txt"],"verifyCommand":"tests/run.sh"}\n```\n'
+  printf '```json:metadata\n{"id":"t2","files":[],"verifyCommand":"tests/run.sh"}\n```\n'
+  printf '```json:metadata\n{"id":"t3","files":[],"verifyCommand":"npm test && npm run lint"}\n```\n'
+} > "$plan"
+bind() { printf 'path=%s\nbranch=%s\ntasks=%s\nreason=%s\nepoch=1\n' "$plan" "${1:-$branch}" "${2:-}" "${3:-}" > "$scratch/plan"; }
+verified() { # <id> <command> <exit> [epoch]
+  mkdir -p "$scratch/verify"
+  printf 'task=%s\ncommand=%s\nexit=%s\nepoch=%s\n--- output ---\n' "$1" "$2" "$3" "${4:-$(date -u +%s)}" > "$scratch/verify/$1"
+}
+
+leg_case plan none "no plan bound" "no plan bound"
+out="$(json)"
+assert_eq "null" "$(jget "$out" legs.plan.detail)" "with no detail"
+
+# A waiver with no plan bound waives nothing, and the band draws a leg only
+# while a plan is bound, so the two cannot read as a leg.
+printf 'skip_plan: true  # reason: the plan is a sketch\n' > "$repo/.shipshape.yaml"
+leg_case plan none "no plan bound" "a waiver with no plan bound"
+rm -f "$repo/.shipshape.yaml"
+
+bind
+leg_case plan open "open — t1, t2, t3" "tasks with no record"
+out="$(json)"
+assert_eq "t1, t2, t3" "$(jget "$out" legs.plan.detail)" "the plan's detail names the tasks"
+out="$(text)"
+assert_contains "$out" "no record" "the report gives each task's reason"
+assert_contains "$out" "shipshape-verify t1,t2 'tests/run.sh'" "and one line per command"
+assert_contains "$out" "shipshape-verify t3 'npm test && npm run lint'" "quoted to paste"
+
+verified t1 "tests/run.sh" 0
+verified t2 "tests/run.sh" 0
+verified t3 "npm test && npm run lint" 0
+leg_case plan ok "ok — every task in scope closed" "every record passing and current"
+assert_not_contains "$(text)" "shipshape-verify" "and with nothing to run the report offers nothing"
+
+verified t1 "tests/run.sh" 0 100
+touch "$repo/src.txt"
+leg_case plan stale "stale — a file of t1" "a file changed after its record"
+assert_contains "$(text)" "src.txt" "the report names the file"
+assert_contains "$(text)" "shipshape-verify t1 'tests/run.sh'" "and the line that closes it"
+verified t1 "tests/run.sh" 1
+leg_case plan failed "failed — t1" "a red record"
+verified t1 "true" 0
+leg_case plan wrong-command "wrong command — t1" "a record of another command"
+assert_contains "$(text)" "recorded: true" "the report says what ran"
+verified t1 "tests/run.sh" 0
+
+bind "another-branch"
+leg_case plan elsewhere "elsewhere — bound on another-branch, now on $branch" "a plan bound on another branch"
+assert_contains "$(text)" "--clear" "the report names the ways out"
+assert_contains "$(text)" "shipshape-plan '$plan'" "with a line to paste"
+
+bind
+mv "$plan" "$plan.gone"
+leg_case plan unreadable "unreadable — $plan" "a vanished plan"
+out="$(text)"
+assert_contains "$out" "the plan is gone" "the report says what happened"
+assert_contains "$out" "skip_plan" "and the way out, since it blocks"
+assert_contains "$out" ".shipshape.yaml" "and where that goes"
+mv "$plan.gone" "$plan"
+
+bind "" "t1,t2" "t3 ships in the next PR"
+leg_case plan ok "ok — every task in scope closed" "a scoped plan with its tasks closed"
+out="$(text)"
+assert_contains "$out" "left-out" "a left-out task shows even when the leg is ok"
+assert_contains "$out" "t3 ships in the next PR" "with the reason"
+
+# Always means always: the two states that print no task lines keep these.
+printf 'skip_plan: true  # reason: the plan is a sketch\n' > "$repo/.shipshape.yaml"
+assert_contains "$(text)" "t3 ships in the next PR" "a waived leg still shows what was left out"
+rm -f "$repo/.shipshape.yaml"
+bind "another-branch" "t1,t2" "t3 ships in the next PR"
+assert_contains "$(text)" "t3 ships in the next PR" "and so does a plan bound elsewhere"
+
+# Left-out tasks come after what closes the rest, so a reader meets the debt first.
+bind "" "t1,t2" "t3 ships in the next PR"
+rm -f "$scratch/verify/t2"
+out="$(text)"
+first="$(printf '%s\n' "$out" | grep -n 'shipshape-verify' | head -1 | cut -d: -f1)"
+last="$(printf '%s\n' "$out" | grep -n 'left-out' | head -1 | cut -d: -f1)"
+[ "${first:-0}" -lt "${last:-0}" ] || fail "the re-run lines come before the left-out tasks"
+verified t2 "tests/run.sh" 0
+
+bind
+rm -f "$scratch/verify/t2"
+printf 'skip_plan: true  # reason: the plan is a sketch\n' > "$repo/.shipshape.yaml"
+leg_case plan waived "waived — skip_plan" "a waived plan"
+assert_not_contains "$(text)" "shipshape-verify" "a waived leg offers no re-run"
+rm -f "$repo/.shipshape.yaml"
+
+before="$(find "$scratch" | sort)"
+json >/dev/null
+text >/dev/null
+assert_eq "$before" "$(find "$scratch" | sort)" "reading the plan leg wrote nothing"
+rm -rf "$scratch/plan" "$scratch/verify"
+
+# A cleared plan reads as none, and says so: the band draws nothing, and a
+# reader of the doctor still finds what was dropped.
+cleared_file="$scratch/plan-cleared"
+printf 'path=%s\nbranch=%s\nreason=prose only\n' "$plan" "$branch" > "$cleared_file"
+leg_case plan none "cleared: $plan — prose only (on $branch)" "a cleared plan"
+out="$(json)"
+assert_eq "$plan — prose only (on $branch)" "$(jget "$out" plan_cleared)" "and a field of its own carries it"
+assert_eq "null" "$(jget "$out" legs.plan.detail)" "leaving the leg's words alone"
+
+git -C "$repo" checkout -q -b other-work
+assert_contains "$(text)" "cleared: $plan — prose only (on $branch)" "another branch's doctor reads it too"
+out="$(json)"
+assert_eq "$plan — prose only (on $branch)" "$(jget "$out" plan_cleared)" "and so does its JSON"
+git -C "$repo" checkout -q "$branch"
+git -C "$repo" branch -q -D other-work
+
+# The doctor is what a reader runs, so it says so with another plan bound too.
+bind
+assert_contains "$(text)" "cleared: $plan — prose only (on $branch)" "a clearing shows beside a bound plan"
+rm -rf "$scratch/plan" "$cleared_file"
 
 # --- running reviewers ------------------------------------------------------------
 

@@ -208,6 +208,30 @@ printf 'head=%s\n\n=== $ x\nok\n=== exit 0\n\n' \
 out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 58")" "$repo")"
 assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "complete fresh evidence on the record's branch merges without waiting for a stop"
+
+# The same judgment reads the plan leg, so a bound plan holds this turn too.
+plan="$work/plan.md"
+printf '```json:metadata\n{"id":"t1","files":[],"verifyCommand":"tests/run.sh"}\n```\n' > "$plan"
+printf 'path=%s\nbranch=%s\ntasks=\nreason=\nepoch=1\n' "$plan" "$main_branch" > "$scratch/plan"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 58")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a bound plan with an open task holds the earn-then-merge turn"
+mkdir -p "$scratch/verify"
+printf 'task=t1\ncommand=tests/run.sh\nexit=0\nepoch=%s\n--- output ---\n' "$(date -u +%s)" > "$scratch/verify/t1"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 58")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "and a closed plan does not"
+
+# A stamp is the verdict: the merge gate does not re-read the plan behind it, as
+# it does the review. A "No" lands with nobody acting; a red verify is the
+# session's own act, and the next stop drops the stamp.
+give_stamp 58
+printf 'task=t1\ncommand=tests/run.sh\nexit=1\nepoch=%s\n--- output ---\n' "$(date -u +%s)" > "$scratch/verify/t1"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 58")" "$repo")"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a current stamp is not re-judged against the plan"
+
+rm -rf "$scratch/plan" "$scratch/verify" "$scratch/pr-satisfied-58"
 rm -f "$scratch/review-live.md" "$scratch/ci-status" "$scratch/smoke.log"
 
 # --- the previous wrapper's un-numbered record still works -------------------

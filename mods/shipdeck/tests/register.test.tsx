@@ -1087,7 +1087,7 @@ test("a subagent's end asks for a throttled reading, and the session's own force
 })
 
 test('a reload starts from the drawn reading, so a prompt right after it refines at once', async ($, on) => {
-  seed(on, [STORED('doctor', doctorJson(), 'doctor-1')])
+  seed(on, [STORED('doctor', doctorJson(), 'doctor-2')])
   const { clock, seen } = world(on, { doctorDelay: 20_000 })
   await start($, clock)
   const sent = submit($, DUMP)
@@ -1095,6 +1095,17 @@ test('a reload starts from the drawn reading, so a prompt right after it refines
   expect(seen.model).toHaveLength(1)
   await sent
   expect(seen.entered.at(-1)).toContain('## Goal')
+})
+
+test('a reading stored before the plan leg is declined, so nothing is drawn from it after a reload', async ($, on) => {
+  seed(on, [STORED('doctor', doctorJson(), 'doctor-1')])
+  const { clock, seen } = world(on, { doctorDelay: 20_000 })
+  await start($, clock)
+  const sent = submit($, DUMP)
+  await clock.settle()
+  expect(seen.model).toHaveLength(0)
+  await clock.advance(20_000)
+  await sent
 })
 
 test('a core that gives no reading says so once, however many dumps follow', async ($, on) => {

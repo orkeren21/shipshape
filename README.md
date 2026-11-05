@@ -2,13 +2,14 @@
 
 [![tests](https://github.com/orkeren21/shipshape/actions/workflows/tests.yml/badge.svg?branch=main&event=push)](https://github.com/orkeren21/shipshape/actions/workflows/tests.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![version 0.5.0](https://img.shields.io/badge/version-0.5.0-blue.svg)](.claude-plugin/plugin.json)
+[![version 0.6.0](https://img.shields.io/badge/version-0.6.0-blue.svg)](.claude-plugin/plugin.json)
 
 ShipShape is an opinionated take on [obra/superpowers](https://github.com/obra/superpowers),
 rebuilt for frontier models — Opus 5, Fable 5, and long 1M-token sessions. It keeps
 the review that catches real bugs, cuts the ceremony frontier models no longer need,
 and makes the finish line mechanical: a branch is done when the review, CI, and smoke
-evidence exist on disk — not when the session says so.
+evidence exist on disk, with a passing record for every task of its plan — not when the
+session says so.
 
 Named alongside Shakedown, its agent-driven end-to-end sibling (public soon):
 Shakedown proves the product works; ShipShape keeps the building of it in order.
@@ -17,7 +18,7 @@ Shakedown proves the product works; ShipShape keeps the building of it in order.
 
 | Superpowers | ShipShape | Why |
 |---|---|---|
-| Cross-platform, many harnesses | Claude Code only | Hooks, native tasks, and the plugin manifest used to full depth |
+| Cross-platform, many harnesses | Claude Code only | Hooks, session tools, and the plugin manifest used to full depth |
 | Fresh subagent per task, review after each | Direct implementation, one whole-branch review | The per-task handoff layer is where defects entered; the cross-file review is where they get caught |
 | Process lives in skill prose | Process enforced by hooks reading evidence artifacts | Prose adherence decays under time pressure; artifacts on disk don't |
 | Prose written to argue models into compliance | Brief intent and boundaries, standard enforced by tests | Frontier models follow instructions; the walls of imperatives now cost quality |
@@ -88,10 +89,14 @@ Architect rules that it should hand over. Anywhere that cannot start sessions, t
 skills hand you the priming or the handoff path to paste. Either way, a
 solo session now hands over at its handoff point rather than carrying on
 past it: it finishes the step in flight, commits, refreshes the handoff and
-waits for you. The
-three task-list hooks act only where Claude Code's own task tools exist (the
-desktop app replaces them with its plan tool), and they have not been seen
-enforcing in the field; a replacement that reads the plan file is planned.
+waits for you.
+
+A plan's tasks are held to it too. Claude Code's task tools are gated by model
+and the desktop app has its own plan tool, so the check reads the plan file,
+which depends on neither: `shipshape-plan` binds it, and the pull request is held
+until every task has a passing, current `shipshape-verify` record. One run can
+cover many tasks, and a plan that spans pull requests binds the slice each one
+carries, with a reason a reviewer reads.
 
 ```bash
 tests/run-tests.sh   # hermetic; same command CI runs on Linux and macOS
@@ -107,8 +112,9 @@ same artifacts through `shipshape-doctor --json`.
 
 - **A band above the prompt.** It shows the session's seat and a context
   gauge that turns amber and red at the seat's own handoff points. It also
-  shows the three evidence legs (review, CI, smoke), including a reviewer
-  still running. There are two styles, `github` (the default) and `linear`;
+  shows the evidence legs (review, CI, smoke, and the plan while one is
+  bound), including a reviewer still running. There are two styles, `github`
+  (the default) and `linear`;
   `/shipdeck style linear` switches between them.
 - **A prompt refiner.** A long dictated prompt goes to Sonnet 5.5, and the
   session receives a structured version instead: goal, context,

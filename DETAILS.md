@@ -34,7 +34,8 @@ record behind as a side effect. The record cannot exist without the work.
 |---|---|---|
 | `shipshape-pr-open` | `gh pr create` | `pr-armed` — arms the done gate |
 | `shipshape-ci-watch` | `gh pr checks --watch` | `ci-status` — green means *mergeable*, not "the checks that ran passed". A pull request blocked only on a human approval, with a clean check rollup, is recorded `green-pending-review` and accepted. |
-| `shipshape-verify` | a task's verify command | `verify/<task-id>` |
+| `shipshape-verify` | a task's verify command | `verify/<task-id>`, one for each id in a comma-separated list, from a single run |
+| `shipshape-plan` | nothing — records a fact | `plan` — the file whose fences the plan leg reads, the branch it was bound on, and any `--tasks` scope with its required reason. Refuses a plan the leg could not read. A record counts only from the binding on, so another plan's `t1` cannot pass this one's. `--clear` leaves a `plan-cleared` record naming what was dropped, why, and the branch it was bound on, and says where it put it. There is one for the session in each checkout, and a later `--clear` replaces it; the doctor, `shipshape-plan` and `shipshape-pr-open` show it on any branch. It stands until that same plan is bound again. Binding another plan prints the one it replaced. |
 | `shipshape-smoke` | any command | `smoke.log` |
 | `shipshape-seat` | nothing — records a fact | `seat` — whether the session is an Architect, a lane or solo, its epic folder and its handoff. context-watch picks thresholds from it; session-start re-orients a compacted session from it. Also prints the session id a roster file needs. |
 | `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Names any other checkout's folder for the same session: where older hooks in a desktop-app worktree session left their half of the evidence, or what a subagent working in its own worktree left there. Always exits 0; diagnosis is not enforcement. `--json` prints the same evaluation as one object (format 1): each leg's state in the evaluator's own word, the seat, the scratch path, reviewers still running, and the armed PRs. shipdeck draws its band from it. |
@@ -43,12 +44,9 @@ record behind as a side effect. The record cannot exist without the work.
 
 | Hook | Event | What it does |
 |---|---|---|
-| `done-gate` | `Stop` | Arms per pull request, one obligation record each, so a cascade's second PR cannot evaporate the first one's debt. Disarms a record only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD** — and stamps it `pr-satisfied-<n>` for the merge gate. A "No" from any report that landed after the newest background review was launched still blocks: that review was sent before those findings existed. A foreground review is dated when it returns, so for it the rule reaches only a "No" that landed after it returned. The soft nudge speaks when the outstanding state changes and stays silent while it does not; the hard block on a completion claim never dedupes. On a branch other than the record's it nudges but does not block, and it never disarms. |
+| `done-gate` | `Stop` | Arms per pull request, one obligation record each, so a cascade's second PR cannot evaporate the first one's debt. Disarms a record only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD** — and, with a plan bound, a passing, current verify record for every task in scope, and stamps it `pr-satisfied-<n>` for the merge gate. A "No" from any report that landed after the newest background review was launched still blocks: that review was sent before those findings existed. A foreground review is dated when it returns, so for it the rule reaches only a "No" that landed after it returned. The soft nudge speaks when the outstanding state changes and stays silent while it does not; the hard block on a completion claim never dedupes. On a branch other than the record's it nudges but does not block, and it never disarms. |
 | `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp, and, on the PR's own branch, while a review report the done gate would still count says No (a reasoned review waiver is honoured, as the done gate honours it). A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. |
 | `review-capture` | `PostToolUse`, `SubagentStop` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:` — at once for a foreground dispatch, and for a background one (in the field since late October 2026 the only kind the desktop app launches) when that agent stops, matched by its agent id and dated at its launch, so commits made while it read leave it stale. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
-| `task-capture` | `TaskCreated` | Remembers each task's metadata fence. The three task hooks act only where Claude Code's own task tools exist — the desktop app replaces them with its plan tool — and field traces show them capturing fences but never enforcing; a plan-file replacement is planned. |
-| `task-completion-gate` | `TaskCompleted` | A fenced task closes only after the tasks it is `blockedBy` have closed, and only on a fresh, passing verify record whose command matches the one the fence demanded. A fence with no `verifyCommand` is held to the ordering alone. |
-| `blockedby-gate` | `PreToolUse` | Refuses a task whose dependencies are open. |
 | `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create` and hands back the `shipshape-pr-open` form. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. |
 | `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, at the seat's handoff point: 70/85% for a lane or solo session, 85/92% for an Architect. Worded as actions, with no prohibitions to echo back; the operator gets the number in a one-line `systemMessage`, so the session has nothing to announce. |
 | `session-start` | `SessionStart` | Injects the entrypoint skill. After a compaction it clears context-watch's markers, so the climb back is nudged again, and points a seated session at its roster file, rulings and handoff. |
@@ -62,6 +60,44 @@ wrappers run (measured for a session that stays in the directory it was
 launched in). Its own directory can be another checkout: the desktop app
 launches a worktree session with `--project-config-root` at the main checkout,
 and its hooks then start there (measured with the app's Claude Code 2.1.309).
+
+**The plan leg.** A fourth evidence leg, read by the done gate, the merge gate
+and the doctor through one evaluator. `shipshape-plan` binds a plan file to the
+session, and the leg reads that file's metadata fences beside the session's
+`shipshape-verify` records. Each task is `open` (no record, or one older than the
+binding), `wrong-command`, `failed`, `stale` (a file of the task's changed after
+its record, measured against the files rather than HEAD, because the order is
+verify, then commit), `closed` (no `verifyCommand`) or `ok`; the leg reads the
+worst of them. It reads `elsewhere` when the plan was bound on another branch,
+because `git checkout -b` must not switch a gate off, and `unreadable` when the
+plan is gone or holds no fences, a fence no longer parses, two fences share an id,
+a `verifyCommand` spans lines, or a `--tasks` id left the plan. With no
+plan bound it reads `none`, which settles it. A reasoned `skip_plan` line in
+`.shipshape.yaml` waives it. Tasks a `--tasks` scope leaves out, and a plan
+dropped with `--clear`, show in the doctor and from the done gate with the reason, in
+a note once per pull request if the branch is otherwise satisfied. Not every answer from
+the gate carries this, and a branch with no pull request of its own and nothing owing
+hears nothing from it, so the doctor is the place to read it. It shows a clearing on any
+branch, labelled with its own, as `shipshape-plan` and `shipshape-pr-open` do.
+Over-reporting a note is harmless, and losing one is the failure it exists to prevent. `--json` carries
+a clearing in `plan_cleared`, beside the legs. A `verifyCommand` is one shell line,
+and one spanning lines is refused at the bind and reads `unreadable`: a line break
+changes what a shell runs. `requesting-code-review` tells the session to hand the
+scope to the whole-branch reviewer.
+
+**Retired in 0.6.0: the three task hooks.** `task-capture`,
+`task-completion-gate` and `blockedby-gate` read the fence from Claude Code's
+task events, and those tools are gated by model. In a default environment on
+2.1.317, Claude 5 models and Opus 4.8 had none of `TaskCreate`, `TaskUpdate`,
+`TaskList` or `TaskGet`; Sonnet 4.6 and Haiku 4.5 had them. The desktop app also
+tells its sessions to use its own plan tool instead, as its system prompt reads.
+The hooks worked where they ran: with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` both gates
+refused as designed. Most sessions never ran them. The fence stayed, and moved to
+the plan file, which depends on neither model nor surface. The check moved from each task's close to the finish, and it
+stayed strict about freshness: in three field plans, 20 of 23 tasks with a record
+had their files move at least twice after it, which is why one run may now cover
+many tasks. Ordering is no longer enforced. `blockedBy` is a reading aid, looked
+at only when a plan is bound, where an unknown id warns.
 
 **Retired in 0.4.0: the deflection guard.** It was a `Stop` hook that held a
 session when it proposed moving its work to a fresh session below 70% context.
@@ -119,7 +155,9 @@ worktree session the gates fall back to the main checkout's instead, and with no
 repo the band draws no legs, so no verdict is affected. The mod finds the core
 by checking three places in order: the checkout it sits in, `claude plugin list
 --json`, then the installed-plugins record. With no core found, or one older
-than 0.5.0, the legs read `evidence unavailable`, never green.
+than 0.5.0, the legs read `evidence unavailable`, never green. The plan leg is
+drawn only while a plan is bound: `none`, and the absent key a core older than
+0.6.0 leaves, draw nothing.
 
 **When the refiner runs.** It skips a slash command, a hidden prompt, a
 prompt from anyone other than the operator (another session's message, a
@@ -181,6 +219,19 @@ easy path — the artifact normally exists only because a marked reviewer
 dispatch returned — but a session that set out to forge one could. The gate
 raises the cost from "phrase it confidently" to "knowingly fabricate
 evidence", which is a different act, and that is the honest claim.
+
+The plan leg proves that the plan as it stands was verified, not that it is the
+plan that was agreed. The plan is the session's own gitignored file and the leg
+reads it live, so a task removed from it stops counting. Binding is the session's
+choice too: `shipshape-pr-open` names a missing binding on stderr, and nothing
+more. Narrowing a bound plan is reported, not refused, and the done gate's report comes
+at a stop, not at the merge: a plan cleared and merged in one turn may be read after the
+merge, or by nobody. Replacing a bound plan is not recorded, the same
+as editing one: `shipshape-plan` prints what it replaced and keeps nothing. A later
+`--clear` replaces an earlier one, and a plan file overwritten and bound again counts as
+that same plan. And `files` is
+only as good as what it lists: a file deleted after its record does not make the
+record stale, and a glob there is a name, not a pattern.
 
 ## The pipeline
 
