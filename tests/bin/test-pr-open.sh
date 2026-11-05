@@ -145,31 +145,70 @@ assert_ne "0" "$status" "with no gh on PATH the wrapper fails rather than preten
 assert_no_file "$scratch/pr-armed" "a missing gh arms nothing"
 
 # --- no pull request, no arming ----------------------------------------------
-# gh exits 0 for its help and for a dry run, and its help carries a URL. Neither
+# gh exits 0 for its help and for a dry run, and both can carry a URL. Neither
 # opened anything, and a record of one reads as a PR for the rest of the session.
+# These outputs are real gh's. The decision reads them, never the arguments.
 
-help_scratch="$work/.shipshape/help-session"
+export GH_STUB_CREATE_OUTPUT="Create a pull request on GitHub.
+
+USAGE
+  gh pr create [flags]
+
+LEARN MORE
+  Read the manual at https://cli.github.com/manual"
 export SHIPSHAPE_SESSION_ID=help-session
-export GH_STUB_PR_URL="https://cli.github.com/manual"
 "$pr_open" --help >/dev/null 2>&1
 assert_eq "0" "$?" "help keeps gh's status"
-assert_no_file "$help_scratch/pr-armed" "--help opens nothing, so it arms nothing"
-"$pr_open" -h >/dev/null 2>&1
-assert_no_file "$help_scratch/pr-armed" "-h opens nothing, so it arms nothing"
-"$pr_open" --title t --dry-run >/dev/null 2>&1
-assert_no_file "$help_scratch/pr-armed" "a dry run opens nothing, so it arms nothing"
+assert_no_file "$work/.shipshape/help-session/pr-armed" "help opens nothing, so it arms nothing"
 
-# The flag alone can't decide: a body of "-h" still opens a PR, and a wrapper that
-# trusted the flag would let any PR go unrecorded. The URL settles it.
+export GH_STUB_CREATE_OUTPUT="Would have created a Pull Request with:
+title:	Follow up on #30
+body:
+See https://github.com/acme/widget/pull/30"
+export SHIPSHAPE_SESSION_ID=dry-session
+"$pr_open" --title t --dry-run >/dev/null 2>&1
+assert_eq "0" "$?" "a dry run keeps gh's status"
+assert_no_file "$work/.shipshape/dry-session/pr-armed" "a dry run opens nothing, so it arms nothing"
+assert_no_file "$work/.shipshape/dry-session/pr-armed-30" "and a PR its body links stays another PR's"
+
+# The arguments can't decide: a body of "-h" still opens a PR, and a wrapper that
+# trusted the flag would let it go unrecorded.
+unset GH_STUB_CREATE_OUTPUT
 export GH_STUB_PR_URL="https://github.com/acme/widget/pull/77"
+export SHIPSHAPE_SESSION_ID=flag-session
 "$pr_open" --title t --body -h >/dev/null 2>&1
-assert_file "$help_scratch/pr-armed-77" "a real PR arms, whatever its arguments look like"
+assert_file "$work/.shipshape/flag-session/pr-armed-77" "a real PR arms, whatever its arguments look like"
+
+# A browser flow prints no URL here, and the PR may yet exist.
+export GH_STUB_CREATE_OUTPUT="Opening github.com/acme/widget/compare/main...feature in your browser."
+export SHIPSHAPE_SESSION_ID=web-session
+"$pr_open" --web --body -h >/dev/null 2>&1
+assert_contains "$(cat "$work/.shipshape/web-session/pr-armed" 2>/dev/null)" "number=unknown-" "an unnumbered obligation beats an evaporated one"
 
 # The PR's URL wins over any other URL gh prints after it.
-url_scratch="$work/.shipshape/url-session"
+export GH_STUB_CREATE_OUTPUT="https://github.com/acme/widget/pull/78
+See https://cli.github.com/manual"
 export SHIPSHAPE_SESSION_ID=url-session
-export GH_STUB_PR_URL="https://github.com/acme/widget/pull/78 see https://cli.github.com/manual"
 "$pr_open" --title t >/dev/null 2>&1
-assert_contains "$(cat "$url_scratch/pr-armed-78" 2>/dev/null)" "url=https://github.com/acme/widget/pull/78" "the record names the PR, not the last URL printed"
+assert_contains "$(cat "$work/.shipshape/url-session/pr-armed-78" 2>/dev/null)" "url=https://github.com/acme/widget/pull/78" "the record names the PR, not the last URL printed"
+
+# --- a PR gh made, then failed on -------------------------------------------
+# Labels, reviewers and the like come after creation. gh prints the URL, then
+# fails. The PR exists, and a retry says so and exits 1, so this is the one chance.
+
+export GH_STUB_CREATE_EXIT=1
+export GH_STUB_CREATE_OUTPUT="https://github.com/acme/widget/pull/79
+pull request update failed: could not request reviewer"
+export SHIPSHAPE_SESSION_ID=late-session
+"$pr_open" --title t --reviewer acme/team >/dev/null 2>&1
+assert_eq "1" "$?" "gh's failure still reaches the caller"
+assert_file "$work/.shipshape/late-session/pr-armed-79" "a PR gh made before failing is armed"
+
+export GH_STUB_CREATE_OUTPUT="a pull request for branch feature already exists:
+https://github.com/acme/widget/pull/80"
+export SHIPSHAPE_SESSION_ID=exists-session
+"$pr_open" --title t >/dev/null 2>&1
+assert_no_file "$work/.shipshape/exists-session/pr-armed" "another failure that names a PR opened nothing"
+unset GH_STUB_CREATE_EXIT GH_STUB_CREATE_OUTPUT
 
 finish

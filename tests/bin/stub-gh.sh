@@ -11,6 +11,8 @@
 #   GH_STUB_LOG            file the stub appends each invocation to
 #   GH_STUB_CREATE_EXIT    exit code for `gh pr create`      (default 0)
 #   GH_STUB_PR_URL         URL printed by `gh pr create`     (default .../pull/7)
+#   GH_STUB_CREATE_OUTPUT  everything `gh pr create` prints, in place of the URL,
+#                          on failure too: gh can print a URL and then fail
 #   GH_STUB_CHECKS_EXIT    exit code for `gh pr checks`      (default 0)
 #   GH_STUB_CHECKS_OUTPUT  text printed by `gh pr checks`
 #   GH_STUB_MERGE_STATE    mergeStateStatus from `gh pr view` (default CLEAN)
@@ -32,10 +34,14 @@ make_gh_stub() {
 case "${1:-} ${2:-}" in
   "pr create")
     if [ "${GH_STUB_CREATE_EXIT:-0}" != "0" ]; then
-      echo "gh: pull request could not be created" >&2
+      printf '%s\n' "${GH_STUB_CREATE_OUTPUT:-gh: pull request could not be created}" >&2
       exit "${GH_STUB_CREATE_EXIT}"
     fi
-    printf '%s\n' "${GH_STUB_PR_URL:-https://github.com/acme/widget/pull/7}"
+    if [ -n "${GH_STUB_CREATE_OUTPUT:-}" ]; then
+      printf '%s\n' "$GH_STUB_CREATE_OUTPUT"
+    else
+      printf '%s\n' "${GH_STUB_PR_URL:-https://github.com/acme/widget/pull/7}"
+    fi
     exit 0
     ;;
   "pr checks")
