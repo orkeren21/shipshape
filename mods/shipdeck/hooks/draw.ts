@@ -5,8 +5,9 @@
 // wrong estimate moves letter spacing by a hair instead of colliding or
 // clipping. Pure: a model in, an SVG string out.
 
-import { ctxTone, describe, handoffPoints } from './band.ts'
-import type { BandModel, Leg, LegState, Style, Tone } from './model.ts'
+import { ctxTone, describe, handoffPoints, prCount } from './band.ts'
+import type { BandModel, Leg, LegState, PrSummary, Style, Tone } from './model.ts'
+import type { SessionState } from '../types'
 
 const FONT = "-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',system-ui,sans-serif"
 
@@ -170,6 +171,18 @@ function linearIcon(state: LegState, x: number, cy: number): string {
 
 const labelCls = (l: Leg) => (l.state === 'missing' || l.state === 'waived' ? 'muted' : 'text')
 
+// The PR the legs mean, and the count of the rest. A dot says one of those owes
+// evidence: state colour on a mark, never on the digits.
+function drawPr(r: Row, pr: PrSummary, fit: Fit): void {
+  if (pr.label === null) {
+    r.text(prCount(pr.others), { weight: 500 })
+  } else {
+    r.text(pr.label, { weight: 500 })
+    if (pr.others > 0 && fit.showOtherPrs) r.gap(5).text(`+${pr.others}`, { cls: 'muted' })
+  }
+  if (pr.isOwing && (fit.showOtherPrs || pr.label === null)) r.gap(4).icon(6, (x, cy) => `<circle cx="${x + 3}" cy="${cy}" r="3" class="f-warn pr-owing"/>`)
+}
+
 // --- the two styles ---------------------------------------------------------------------
 type Fit = {
   showContextWord: boolean
@@ -183,9 +196,11 @@ type Fit = {
   labels: 'all' | 'not-passed' | 'failed' | 'none'
   showAge: boolean
   isTight: boolean
+  showOtherPrs: boolean
+  showPr: boolean
 }
 
-const WIDEST: Fit = { showContextWord: true, seatMax: 40, showLaneWord: true, showRefiningWord: true, showNoticeWords: true, isGaugeSmall: false, labels: 'all', showAge: true, isTight: false }
+const WIDEST: Fit = { showContextWord: true, seatMax: 40, showLaneWord: true, showRefiningWord: true, showNoticeWords: true, isGaugeSmall: false, labels: 'all', showAge: true, isTight: false, showOtherPrs: true, showPr: true }
 
 // What a narrow band gives up, in this order, each step on top of the last.
 // A word goes before the mark beside it, and a passing leg's word before one
@@ -202,10 +217,12 @@ const GIVEN_UP: Partial<Fit>[] = [
   { labels: 'not-passed' },
   { labels: 'failed' },
   { isTight: true },
+  { showOtherPrs: false },
   { showLaneWord: false, seatMax: 5 },
   { seatMax: 0 },
   { labels: 'none' },
   { showAge: false },
+  { showPr: false },
 ]
 
 function cut(s: string, max: number): string {
@@ -252,6 +269,10 @@ function github(m: BandModel, fit: Fit): Row {
     if (fit.showContextWord) R.gap(4).text('context', { cls: 'muted' })
     R.gap(groupGap)
   }
+  if (m.pr && fit.showPr) {
+    drawPr(R, m.pr, fit)
+    R.gap(fit.isTight ? 6 : 10)
+  }
   if (m.legs) for (const l of m.legs) R.icon(19, (x, cy) => githubIcon(l.state, x, cy)).text(legLabel(l, fit), { cls: labelCls(l) }).gap(legGap)
   else R.icon(19, (x, cy) => unknown(x + 7, cy)).text(unavailable(fit), { cls: 'muted' }).gap(legGap)
   for (const n of noticeMarks(m, fit)) R.gap(fit.isTight ? 0 : 2).box(r => { r.text(n, { size: 11.5, weight: 500, cls: 'okText' }) }, { padX: 8, h: 20, rx: 10, fill: 'okTint', stroke: 'ok' }).gap(6)
@@ -277,6 +298,7 @@ function linear(m: BandModel, fit: Fit): Row {
       if (fit.showContextWord) r.gap(4).text('context', { cls: 'muted' })
     }, { padX, stroke: 'line' }).gap(chipGap)
   }
+  if (m.pr && fit.showPr) { const pr = m.pr; R.box(r => drawPr(r, pr, fit), { padX, stroke: 'line' }).gap(chipGap) }
   if (m.legs) for (const l of m.legs) R.box(r => { r.icon(slot, (x, cy) => linearIcon(l.state, x, cy)).text(legLabel(l, fit), { weight: 500, cls: labelCls(l) }) }, { padX, stroke: 'line' }).gap(chipGap)
   else R.box(r => { r.icon(slot, (x, cy) => unknown(x + 6.5, cy)).text(unavailable(fit), { weight: 500, cls: 'muted' }) }, { padX, stroke: 'line' }).gap(chipGap)
   for (const n of noticeMarks(m, fit)) R.gap(fit.isTight ? 0 : 4).box(r => { r.icon(14, (x, cy) => circle(x + 4, cy, 3, 'ok')).text(n, { weight: 500, cls: 'okText' }) }, { padX, fill: 'okTint' }).gap(chipGap)
@@ -296,4 +318,20 @@ export function drawBand(m: BandModel, style: Style, maxWidth: number): Drawing 
     row = draw(m, fit)
   }
   return { ...row.svg(), alt: describe(m) }
+}
+
+const SESSION_WORDS: Record<SessionState, string> = { needs: 'needs you', working: 'working', idle: 'idle', unknown: 'state not known', done: 'done' }
+
+// A session's state in the pane, in the band's grammar: a mark 14 wide, set in
+// a slot as tall as a line of body text so it centres on the first line.
+export function sessionMark(state: SessionState): Drawing {
+  const [cx, cy, width, height] = [7, 10, 14, 20]
+  const body = {
+    needs: circle(cx, cy, 5.3, 'warn', 1.6) + circle(cx, cy, 2.3, 'warn'),
+    working: spinner(cx, cy, 5.2, 'warn', 1.8),
+    idle: circle(cx, cy, 2.6, 'faint'),
+    unknown: unknown(cx, cy),
+    done: circle(cx, cy, 6.2, 'ok') + check(cx, cy, 6.2, 'onFill', 1.5),
+  }[state]
+  return { source: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${CSS}${body}</svg>`, width, height, alt: SESSION_WORDS[state] }
 }

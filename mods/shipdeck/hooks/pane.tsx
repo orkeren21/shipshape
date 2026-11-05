@@ -1,49 +1,172 @@
-// The Architect pane: the epic's roster (seat, status, how long since its
-// name was checked), the lanes that reported done, and the latest rulings.
-// Read from the epic folder the seat names; drawn with the surface's own
-// elements, so it sits in the host's type and theme.
+// The operator's pane. This session's seat, context and evidence come first:
+// the app takes the band away while a next-step card shows and leaves panes up
+// (read from the app bundle, not confirmed live), so this is where they stay
+// in view. Then the live and recent sessions by state, then the epic's latest
+// rulings. Drawn
+// with the surface's own elements, so it sits in the host's type and theme;
+// the marks are the band's grammar, and DESIGN.md has the rules.
 
 import type { Elements } from 'claude-code'
-import { age } from './band.ts'
+import { age, prName } from './band.ts'
+import { drawBand, sessionMark } from './draw.ts'
+import { rulingParts } from './epic.ts'
 import type { EpicView } from './epic.ts'
+import type { BandModel, DoctorJson, Style } from './model.ts'
+import { rowsFor } from './sessions.ts'
+import type { SessionRow, SessionState } from './sessions.ts'
+import type { SessionsView } from '../types'
+import { terminalBand } from './terminal.tsx'
 
 type Table = Elements['terminal'] | Elements['desktop']
 
-export function paneTree(view: EpicView | null, epic: string | null, now: number, els: Table, columns: number) {
-  const { Box, Text } = els
-  if (!epic) {
-    return <Text dimColor>No epic folder recorded for this seat. Take the seat with shipshape-seat architect --epic &lt;abs path&gt;.</Text>
+export type PaneView = {
+  band: BandModel
+  style: Style
+  prs: DoctorJson['prs']
+  sessions: SessionsView | null
+  epic: EpicView | null
+  // The folder this seat's epic lives in, and whether the seat is an Architect's.
+  epicDir: string | null
+  isArchitect: boolean
+  now: number
+}
+
+const GROUPS: { state: SessionState; title: string }[] = [
+  { state: 'needs', title: 'Needs you' },
+  { state: 'working', title: 'Working' },
+  { state: 'idle', title: 'Idle' },
+  { state: 'unknown', title: 'Seats' },
+  { state: 'done', title: 'Done' },
+]
+
+// The Terminal Exception: state glyphs stand in for drawn marks there.
+const GLYPH: Record<SessionState, { glyph: string; color: string }> = {
+  needs: { glyph: '◉', color: 'warning' },
+  working: { glyph: '◌', color: 'warning' },
+  idle: { glyph: '·', color: 'subtle' },
+  unknown: { glyph: '?', color: 'subtle' },
+  done: { glyph: '●', color: 'success' },
+}
+
+const OWED: Record<string, string> = { owing: 'owed', stale: 'stale', satisfied: 'done' }
+
+// The terminal's table has an Svg that draws nothing, so the surface decides.
+function drawnOn(surface: string, els: Table): Elements['desktop'] | null {
+  return surface !== 'terminal' && 'Svg' in els ? (els as Elements['desktop']) : null
+}
+
+function mark(state: SessionState, els: Table, surface: string) {
+  const drawing = drawnOn(surface, els)
+  if (drawing) {
+    const { Svg } = drawing
+    const drawn = sessionMark(state)
+    return <Svg source={drawn.source} width={drawn.width} height={drawn.height} alt={drawn.alt} />
   }
-  if (!view) return <Text dimColor>Reading {epic}…</Text>
-  const longest = view.rows.reduce((n, r) => Math.max(n, r.seat.length), 0)
-  const seatW = Math.max(8, Math.min(18, longest, columns - 22))
-  const statusW = Math.max(10, Math.min(28, columns - seatW - 12))
+  const { Text } = els
+  const { glyph, color } = GLYPH[state]
+  return <Text color={color}>{glyph}</Text>
+}
+
+// `#15`, or `#14 merged` once it is anything but open.
+function prLabel(pr: NonNullable<SessionRow['pr']>): string {
+  return pr.state === 'open' ? `#${pr.number}` : `#${pr.number} ${pr.state}`
+}
+
+// A row under Done has no rest to count, and its merged PR is the expected end
+// of it. An open one is not: a lane reports done before its PR merges, and that
+// merge is the operator's.
+function metaOf(r: SessionRow): string {
+  if (r.state === 'done') return !r.pr ? '' : r.pr.state === 'merged' ? `#${r.pr.number}` : `#${r.pr.number} ${r.pr.state}`
+  const rest = r.restingFor === null ? null : r.restingFor < 60_000 ? 'now' : age(r.restingFor)
+  return [r.pr && prLabel(r.pr), rest].filter(Boolean).join(' · ')
+}
+
+function rowTree(r: SessionRow, els: Table, surface: string) {
+  const { Box, Text } = els
+  const meta = metaOf(r)
   return (
-    <Box flexDirection="column" gap={1}>
-      <Box key="roster" flexDirection="column">
-        <Box key="head" flexDirection="row" gap={2}>
-          <Box width={seatW}><Text dimColor>seat</Text></Box>
-          <Box width={statusW}><Text dimColor>status</Text></Box>
-          <Text dimColor>checked</Text>
-        </Box>
-        {view.rows.length === 0 && <Text key="none" dimColor>No roster files yet.</Text>}
-        {view.rows.map(r => (
-          <Box key={`row-${r.seat}`} flexDirection="row" gap={2}>
-            <Box width={seatW}><Text bold={r.isArchitect} wrap="truncate-end">{r.seat}</Text></Box>
-            <Box width={statusW}><Text {...(r.isDone ? { color: 'success' } : {})} wrap="truncate-end">{r.status || '?'}</Text></Box>
-            <Text dimColor>{r.checkedAt === null ? '?' : age(now - r.checkedAt)}</Text>
-          </Box>
-        ))}
+    <Box key={`row-${r.key}`} flexDirection="row" gap="sm">
+      {mark(r.state, els, surface)}
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+        <Text>
+          {r.seat && <Text weight={r.state === 'idle' || r.state === 'done' ? 'medium' : 'semibold'}>{r.seat}  </Text>}
+          {r.ask ? <Text weight="medium">{r.ask}</Text> : <Text dimColor={r.state !== 'working' && r.state !== 'needs'}>{r.title}</Text>}
+          {r.isSelf && <Text size="footnote" dimColor>  this session</Text>}
+        </Text>
+        {r.ask && <Text size="footnote" dimColor>{r.title}</Text>}
       </Box>
-      <Text key="done">
-        <Text dimColor>Done: </Text>
-        {view.done.length > 0 ? <Text color="success">{view.done.join(', ')}</Text> : <Text dimColor>none yet</Text>}
-      </Text>
-      <Box key="rulings" flexDirection="column">
-        <Text dimColor>Latest rulings</Text>
-        {view.rulings.length === 0 && <Text key="none" dimColor>No rulings in decisions.md yet.</Text>}
-        {view.rulings.map((r, i) => <Text key={`ruling-${i}`} wrap="truncate-end">{r}</Text>)}
+      {meta !== '' && <Box flexShrink={0}><Text size="footnote" dimColor tabular>{meta}</Text></Box>}
+    </Box>
+  )
+}
+
+function section(key: string, title: string, children: unknown, els: Table) {
+  const { Box, Text } = els
+  return (
+    <Box key={key} flexDirection="column" gap="xs">
+      <Text size="footnote" weight="semibold" dimColor>{title}</Text>
+      {children as never}
+    </Box>
+  )
+}
+
+function bandTree(view: PaneView, els: Table, columns: number, surface: string) {
+  const drawing = drawnOn(surface, els)
+  if (!drawing) return terminalBand(view.band, els as Elements['terminal'])
+  const { Svg } = drawing
+  const drawn = drawBand(view.band, view.style, Math.max(240, columns * 8))
+  return <Svg key="band" source={drawn.source} width={drawn.width} height={drawn.height} alt={drawn.alt} />
+}
+
+// The band says "#15 +2"; this is the detail it points at.
+function prDetail(prs: DoctorJson['prs'], band: BandModel): string | null {
+  if (!band.pr || band.pr.others === 0) return null
+  return (prs ?? []).map(p => `${prName(p.number)} ${OWED[p.state] ?? p.state}`).join(' · ')
+}
+
+function rulingsTree(view: PaneView, els: Table) {
+  const { Box, Text } = els
+  const { epic, epicDir } = view
+  if (!epicDir) return null
+  if (!epic) return <Text key="rulings" size="footnote" dimColor>Reading {epicDir}…</Text>
+  if (epic.decisions === 'unreadable') return section('rulings', 'Rulings', <Text key="note" size="footnote" dimColor>No rulings this pane can read in decisions.md.</Text>, els)
+  if (epic.decisions === 'empty') return section('rulings', 'Rulings', <Text key="note" size="footnote" dimColor>No rulings yet.</Text>, els)
+  const rows = epic.rulings.map(rulingParts)
+  const idWidth = Math.max(3, ...rows.map(r => r.id?.length ?? 0))
+  return section('rulings', 'Rulings', rows.map((r, i) => (
+    <Box key={`ruling-${i}`} flexDirection="row" gap="sm">
+      {r.id !== null && <Box width={idWidth} flexShrink={0}><Text size="footnote" dimColor tabular>{r.id}</Text></Box>}
+      <Text size="footnote">{r.title}</Text>
+    </Box>
+  )), els)
+}
+
+function footTree(view: PaneView, els: Table) {
+  const { Text } = els
+  const { sessions } = view
+  if (sessions === null) return <Text key="foot" size="caption" dimColor>Reading sessions…</Text>
+  if (sessions.state === 'unavailable') return <Text key="foot" size="caption" dimColor>Could not read the session list, which needs the Claude desktop app.</Text>
+  if (sessions.asks === 'unreadable') return <Text key="foot" size="caption" dimColor>Could not read what sessions are asking.</Text>
+  return <Text key="foot" size="caption" dimColor>Needs you covers only sessions running shipdeck.</Text>
+}
+
+export function paneTree(view: PaneView, els: Table, columns: number, surface: string) {
+  const { Box, Text } = els
+  const { rows, more } = rowsFor(view.sessions, view.epic?.rows ?? [], view.now)
+  const detail = prDetail(view.prs, view.band)
+  const groups = GROUPS.map(g => ({ ...g, rows: rows.filter(r => r.state === g.state) })).filter(g => g.rows.length > 0)
+  return (
+    <Box flexDirection="column" gap="md">
+      <Box key="this-session" flexDirection="column" gap="xs">
+        {bandTree(view, els, columns, surface)}
+        {detail && <Text key="prs" size="footnote" dimColor tabular>{detail}</Text>}
       </Box>
+      {view.isArchitect && !view.epicDir && <Text key="no-epic" size="footnote" dimColor>No epic folder recorded for this seat. Take the seat with shipshape-seat architect --epic "&lt;abs path&gt;".</Text>}
+      {view.epic?.roster === 'unreadable' && <Text key="no-roster" size="footnote" dimColor>Could not read the roster in {view.epicDir}.</Text>}
+      {groups.map(g => section(`group-${g.state}`, g.title, g.rows.map(r => rowTree(r, els, surface)), els))}
+      {more > 0 && <Text key="more" size="footnote" dimColor tabular>{more} more</Text>}
+      {rulingsTree(view, els)}
+      {footTree(view, els)}
     </Box>
   )
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { bandModel, ctxTone, describe as say, legs, parseDoctor, seatLabel } from '../hooks/band.ts'
+import { bandModel, ctxTone, describe as say, legs, parseDoctor, prSummary, seatLabel } from '../hooks/band.ts'
 import { drawBand, measure } from '../hooks/draw.ts'
 import type { BandModel, Leg, LegState } from '../hooks/model.ts'
 import type { DoctorJson } from '../types'
@@ -223,6 +223,76 @@ describe('drawing', () => {
   })
 })
 
+describe('which PR the legs mean', () => {
+  const HOLLOW = { review: { state: 'missing', detail: null }, ci: { state: 'missing', detail: null }, smoke: { state: 'missing', detail: null } }
+  const pr = (number: string, branch: string | null, state = 'owing') => ({ number, url: null, branch, state })
+  const modelOf = (d: DoctorJson) => bandModel({ doctor: d, isUnavailable: false, percent: 37, notices: [], refining: false, now: NOW })
+
+  test('no PR and no evidence draws seat and context only: hollow marks would read as owed', () => {
+    const m = modelOf(doctor({ legs: HOLLOW }))
+    expect(m.legs).toEqual([])
+    expect(m.pr).toBeNull()
+    expect(say(m)).toBe('lane F2; context 37%')
+  })
+  test('no PR but some evidence keeps the legs, the hollow ones with it', () => {
+    expect(modelOf(doctor()).legs?.map(l => l.state)).toEqual(['ok', 'missing', 'missing'])
+    expect(modelOf(doctor()).pr).toBeNull()
+  })
+  test('a reviewer out is evidence, with no PR yet', () => {
+    expect(modelOf(doctor({ legs: HOLLOW, pending: [{ agent: 'a', kind: 'review', since: NOW / 1000 }] })).legs?.[0]?.state).toBe('running')
+  })
+  test('a bound plan is evidence even while it reads open: its leg only exists while one is bound', () => {
+    const m = modelOf(doctor({ legs: { ...HOLLOW, plan: { state: 'open', detail: null } } }))
+    expect(m.legs?.map(l => l.name)).toEqual(['review', 'CI', 'smoke', 'plan'])
+    expect(modelOf(doctor({ legs: { ...HOLLOW, plan: { state: 'none', detail: null } } })).legs).toEqual([])
+  })
+  test('one PR on this branch names itself, and its legs show hollow: a PR owes them', () => {
+    const m = modelOf(doctor({ legs: HOLLOW, prs: [pr('15', 'feature')] }))
+    expect(m.pr).toEqual({ label: '#15', others: 0, isOwing: false })
+    expect(m.legs?.map(l => l.state)).toEqual(['missing', 'missing', 'missing'])
+    expect(say(m)).toBe('lane F2; context 37%; PR #15; review not run; CI not run; smoke not run')
+  })
+  test('several: this branch\'s PR, then a count of the rest', () => {
+    const prs = [pr('12', 'old', 'satisfied'), pr('15', 'feature'), pr('9', 'older', 'satisfied')]
+    expect(prSummary(doctor({ prs }))).toEqual({ label: '#15', others: 2, isOwing: false })
+  })
+  test('the count owes when any of the others does, stale or owing', () => {
+    expect(prSummary(doctor({ prs: [pr('15', 'feature', 'satisfied'), pr('9', 'old', 'owing')] })).isOwing).toBe(true)
+    expect(prSummary(doctor({ prs: [pr('15', 'feature', 'satisfied'), pr('9', 'old', 'stale')] })).isOwing).toBe(true)
+  })
+  test('this branch\'s own state is the legs\' to say, not the count\'s', () => {
+    expect(prSummary(doctor({ prs: [pr('15', 'feature', 'owing'), pr('9', 'old', 'satisfied')] })).isOwing).toBe(false)
+  })
+  test('PRs but none on this branch name no PR, and the legs mean nothing for them', () => {
+    const m = modelOf(doctor({ legs: HOLLOW, prs: [pr('12', 'old'), pr('9', 'older', 'satisfied')] }))
+    expect(m.pr).toEqual({ label: null, others: 2, isOwing: true })
+    expect(m.legs).toEqual([])
+    expect(say(m)).toBe('lane F2; context 37%; 2 PRs on other branches, evidence owed')
+  })
+  test('a word for one PR elsewhere, and for the others beside this one', () => {
+    expect(say(modelOf(doctor({ legs: HOLLOW, prs: [pr('12', 'old', 'satisfied')] })))).toContain('1 PR on another branch')
+    expect(say(modelOf(doctor({ prs: [pr('15', 'feature'), pr('12', 'old')] })))).toContain('PR #15, 1 other, evidence owed')
+    expect(say(modelOf(doctor({ prs: [pr('15', 'feature'), pr('12', 'old', 'satisfied'), pr('9', 'older', 'satisfied')] })))).toContain('PR #15, 2 others')
+  })
+  test('a detached head matches no record that has no branch', () => {
+    expect(prSummary(doctor({ branch: null, prs: [pr('12', null)] })).label).toBeNull()
+  })
+  test('an old record with no number reads as a PR', () => {
+    expect(prSummary(doctor({ prs: [pr('legacy', 'feature')] })).label).toBe('PR')
+    expect(say(modelOf(doctor({ prs: [pr('legacy', 'feature')] })))).toContain('; PR;')
+  })
+  test('with two records on this branch the later one is meant', () => {
+    expect(prSummary(doctor({ prs: [pr('12', 'feature', 'satisfied'), pr('15', 'feature')] })).label).toBe('#15')
+  })
+  test('a reading with no prs field is a session with no PRs', () => {
+    const { prs: _, ...old } = doctor()
+    expect(prSummary(old as DoctorJson)).toBeNull()
+  })
+  test('outside a repo nothing names a PR', () => {
+    expect(modelOf(doctor({ branch: null, head: null, prs: [pr('12', 'old')] })).pr).toBeNull()
+  })
+})
+
 describe('a narrow band', () => {
   const STYLES = ['github', 'linear'] as const
   const STATES: LegState[] = ['ok', 'running', 'stale', 'fail', 'missing', 'waived']
@@ -241,7 +311,9 @@ describe('a narrow band', () => {
   // other three is drawn sixteen times, so it meets every entry here. The widest
   // case gets a test of its own below.
   const PLAN: (LegState | null)[] = [null, 'ok', 'stale', 'fail', 'missing', 'waived']
-  const model = (over: Partial<BandModel> = {}): BandModel => ({ seat: 'lane F2', role: 'lane', ctx: 37, legs: legsOf('ok', 'ok', 'ok'), notices: [], refining: false, ...over })
+  // The PR takes a turn the same way, offset so it meets each plan entry.
+  const PRS: BandModel['pr'][] = [null, { label: '#15', others: 0, isOwing: false }, { label: '#1234', others: 12, isOwing: true }, { label: null, others: 12, isOwing: true }, { label: '#15', others: 3, isOwing: false }]
+  const model = (over: Partial<BandModel> = {}): BandModel => ({ seat: 'lane F2', role: 'lane', ctx: 37, legs: legsOf('ok', 'ok', 'ok'), notices: [], refining: false, pr: null, ...over })
   // The words of a drawing, left to right.
   const words = (source: string): string[] => [...source.matchAll(/<text [^>]*>([^<]*)<\/text>/g)].map(r => r[1] as string)
   const LABEL = /^(review|R|CI|C|smoke|S|plan|P)( · \S+)?$/
@@ -252,14 +324,16 @@ describe('a narrow band', () => {
         let turn = 0
         for (const review of STATES) for (const ci of STATES) for (const smoke of STATES) {
           for (const seat of [null, LONG_SEAT]) for (const ctx of [null, 100]) for (const refining of [false, true]) for (const notices of [[], NOTICES]) {
-            const plan = PLAN[turn++ % PLAN.length] as LegState | null
+            const plan = PLAN[turn % PLAN.length] as LegState | null
+            const pr = PRS[turn++ % PRS.length] ?? null
             const legs = legsOf(review, ci, smoke, plan)
-            const d = drawBand(model({ seat, ctx, refining, notices, legs }), style, width)
+            const d = drawBand(model({ seat, ctx, refining, notices, legs, pr }), style, width)
             const failed = legs.filter(l => l.state === 'fail').length
-            const label = `${review}/${ci}/${smoke}/${plan} seat=${!!seat} ctx=${ctx} refining=${refining} notices=${notices.length}`
+            const label = `${review}/${ci}/${smoke}/${plan} seat=${!!seat} ctx=${ctx} refining=${refining} notices=${notices.length} pr=${JSON.stringify(pr)}`
             if (d.width > width) wrong.push(`${label}: ${d.width}px`)
             if (words(d.source).filter(w => LABEL.test(w)).length !== legs.length) wrong.push(`${label}: a leg went`)
             if ((d.source.match(/<polygon/g) ?? []).length !== failed) wrong.push(`${label}: a failure went`)
+            if (pr?.label && width > FLOOR && !words(d.source).includes(pr.label)) wrong.push(`${label}: the PR went`)
           }
         }
         expect(wrong.slice(0, 5)).toEqual([])
@@ -272,12 +346,66 @@ describe('a narrow band', () => {
       expect(words(d.source)).toContain('unavailable')
     })
 
+    test(`${style}: the PR sits beside the legs it means, and its count goes before the seat does`, () => {
+      const pr = { label: '#15', others: 2, isOwing: true }
+      const wide = words(drawBand(model({ pr }), style, 900).source)
+      expect(wide.indexOf('#15')).toBeGreaterThan(wide.indexOf('37%'))
+      expect(wide.indexOf('#15')).toBeLessThan(wide.indexOf('review'))
+      expect(wide).toContain('+2')
+      const seen = new Set<string>()
+      for (let width = 900; width >= FLOOR; width -= 4) {
+        const w = words(drawBand(model({ pr }), style, width).source)
+        seen.add(`${w.includes('+2')}/${w.some(t => t === 'F2' || t.startsWith('lane'))}`)
+      }
+      expect(seen.has('false/true')).toBe(true)
+      expect(seen.has('true/false')).toBe(false)
+    })
+
+    test(`${style}: the PR is the last thing to go, and only from the fullest row at the floor`, () => {
+      const pr = { label: '#15', others: 0, isOwing: false }
+      const legs = legsOf('fail', 'fail', 'fail', 'fail')
+      const full = drawBand(model({ seat: LONG_SEAT, legs, ctx: 100, refining: true, notices: NOTICES, pr }), style, FLOOR)
+      expect(words(full.source)).not.toContain('#15')
+      expect(full.alt).toContain('PR #15')
+      expect(words(drawBand(model({ seat: LONG_SEAT, legs: legsOf('ok', 'ok', 'ok'), pr }), style, FLOOR).source)).toContain('#15')
+    })
+
+    test(`${style}: the owed dot goes with the count, and stays with a count that has no PR beside it`, () => {
+      const m = model({ seat: LONG_SEAT, refining: true, notices: NOTICES, legs: legsOf('fail', 'fail', 'fail', 'fail'), pr: { label: '#15', others: 2, isOwing: true } })
+      let seenAlone = false
+      for (let width = 900; width >= FLOOR; width -= 2) {
+        const { source } = drawBand(m, style, width)
+        const shown = words(source)
+        if (shown.includes('#15') && !shown.includes('+2')) {
+          seenAlone = true
+          expect(/pr-owing/.test(source)).toBe(false)
+        }
+      }
+      expect(seenAlone).toBe(true)
+      const bare = model({ seat: LONG_SEAT, refining: true, notices: NOTICES, legs: legsOf('fail', 'fail', 'fail', 'fail'), pr: { label: null, others: 2, isOwing: true } })
+      for (let width = 900; width >= FLOOR; width -= 2) {
+        const { source } = drawBand(bare, style, width)
+        if (words(source).includes('2 PRs')) expect(/pr-owing/.test(source)).toBe(true)
+      }
+    })
+
+    test(`${style}: a count that owes carries a mark, one that does not carries none`, () => {
+      const dots = (isOwing: boolean) => (drawBand(model({ pr: { label: '#15', others: 2, isOwing } }), style, 900).source.match(/class="f-warn pr-owing"/g) ?? []).length
+      expect(dots(true)).toBe(1)
+      expect(dots(false)).toBe(0)
+    })
+
+    test(`${style}: no PR here but some elsewhere says how many`, () => {
+      expect(words(drawBand(model({ pr: { label: null, others: 2, isOwing: false }, legs: [] }), style, 900).source)).toContain('2 PRs')
+      expect(words(drawBand(model({ pr: { label: null, others: 1, isOwing: false }, legs: [] }), style, 900).source)).toContain('1 PR')
+    })
+
     test(`${style}: four legs at their widest fit everything else at every width`, () => {
       // A failed leg keeps its word longest and a reviewer's age goes last, so
       // a failed plan beside any state of the other three is the widest row.
       for (const width of [784, 464, 304, FLOOR]) for (const state of STATES) {
         const four = legsOf(state, state, state, 'fail')
-        const d = drawBand(model({ seat: LONG_SEAT, legs: four, ctx: 100, refining: true, notices: NOTICES }), style, width)
+        const d = drawBand(model({ seat: LONG_SEAT, legs: four, ctx: 100, refining: true, notices: NOTICES, pr: { label: '#1234', others: 12, isOwing: true } }), style, width)
         expect(d.width).toBeLessThan(width + 1)
         expect(words(d.source).filter(w => LABEL.test(w))).toHaveLength(4)
       }

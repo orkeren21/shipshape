@@ -4,7 +4,7 @@
 // DESIGN.md's "draw icons" rule. Shape still differs per state.
 
 import type { Elements } from 'claude-code'
-import { ctxTone } from './band.ts'
+import { ctxTone, prCount } from './band.ts'
 import type { BandModel, LegState } from './model.ts'
 
 const GLYPH: Record<LegState, string> = { ok: '●', running: '◌', stale: '◷', fail: '✕', missing: '○', waived: '⊘' }
@@ -20,6 +20,13 @@ export function terminalBand(m: BandModel, els: Elements['terminal']) {
       {m.ctx !== null && (
         <Text key="ctx" color={TONE[ctxTone(m.ctx, m.role)]}>
           {m.ctx}% <Text color="subtle">context</Text>
+        </Text>
+      )}
+      {m.pr && (
+        <Text key="pr">
+          {m.pr.label ?? prCount(m.pr.others)}
+          {m.pr.label !== null && m.pr.others > 0 && <Text color="subtle"> +{m.pr.others}</Text>}
+          {m.pr.isOwing && <Text color="warning"> ●</Text>}
         </Text>
       )}
       {m.legs

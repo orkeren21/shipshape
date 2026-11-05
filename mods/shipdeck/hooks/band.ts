@@ -2,7 +2,7 @@
 // figure to the band's model. No reading here: the doctor already applied
 // the gates' own rules, and this only maps its words to marks.
 
-import type { BandModel, DoctorJson, Leg, LegState, Tone } from './model.ts'
+import type { BandModel, DoctorJson, Leg, LegState, PrSummary, Tone } from './model.ts'
 
 const REVIEW: Record<string, LegState> = {
   ok: 'ok', missing: 'missing', empty: 'missing', stale: 'stale',
@@ -63,6 +63,33 @@ export function legs(doctor: DoctorJson, now: number): Leg[] {
   return drawn
 }
 
+// An old record carries no number.
+export function prName(number: string): string {
+  return /^\d+$/.test(number) ? `#${number}` : 'PR'
+}
+
+// The legs are the current commit's, so they mean this branch's PR, and the
+// rest of the session's PRs are a count. A reading with no `prs` is none.
+export function prSummary(doctor: DoctorJson): PrSummary | null {
+  const prs = doctor.prs ?? []
+  if (prs.length === 0) return null
+  const mine = doctor.branch === null ? undefined : prs.findLast(p => p.branch === doctor.branch)
+  const rest = prs.filter(p => p !== mine)
+  return {
+    label: mine ? prName(mine.number) : null,
+    others: rest.length,
+    isOwing: rest.some(p => p.state !== 'satisfied'),
+  }
+}
+
+// With no PR on this branch and nothing yet on disk, three hollow marks would
+// read as owed when nothing is. Anything that has happened keeps the row,
+// hollow marks included, and the plan leg exists only while a plan is bound.
+function legsToDraw(doctor: DoctorJson, pr: PrSummary | null, now: number): Leg[] {
+  const drawn = legs(doctor, now)
+  return pr?.label || drawn.some(l => l.state !== 'missing' || l.name === 'plan') ? drawn : []
+}
+
 // The seat's two handoff thresholds. These are context-watch's defaults; a
 // session that overrides them with SHIPSHAPE_CONTEXT_THRESHOLDS* is drawn by
 // the defaults still.
@@ -91,14 +118,27 @@ export function bandModel(input: {
 }): BandModel {
   const { doctor } = input
   const inRepo = !!doctor && (doctor.branch !== null || doctor.head !== null)
+  const pr = inRepo ? prSummary(doctor) : null
   return {
     seat: doctor ? seatLabel(doctor.seat) : null,
     role: doctor?.seat?.role ?? null,
     ctx: input.percent,
-    legs: doctor ? (inRepo ? legs(doctor, input.now) : []) : input.isUnavailable ? null : [],
+    legs: doctor ? (inRepo ? legsToDraw(doctor, pr, input.now) : []) : input.isUnavailable ? null : [],
+    pr,
     notices: input.notices.slice(-2),
     refining: input.refining,
   }
+}
+
+export function prCount(others: number): string {
+  return `${others} ${others === 1 ? 'PR' : 'PRs'}`
+}
+
+function prWords(pr: PrSummary): string {
+  const owed = pr.isOwing ? ', evidence owed' : ''
+  if (pr.label === null) return `${prCount(pr.others)} on ${pr.others === 1 ? 'another branch' : 'other branches'}${owed}`
+  const name = pr.label.startsWith('#') ? `PR ${pr.label}` : pr.label
+  return pr.others === 0 ? name : `${name}, ${pr.others} ${pr.others === 1 ? 'other' : 'others'}${owed}`
 }
 
 // One line saying the same as the drawing, for alt text and for /shipdeck.
@@ -113,6 +153,7 @@ export function describe(m: BandModel): string {
     const tone = ctxTone(m.ctx, m.role)
     parts.push(`context ${m.ctx}%${tone === 'bad' ? ', past the handoff point' : tone === 'warn' ? ', at the handoff point' : ''}`)
   }
+  if (m.pr) parts.push(prWords(m.pr))
   if (m.legs) for (const l of m.legs) parts.push(`${l.name} ${word[l.state]}${l.age ? ` for ${l.age}` : ''}`)
   else parts.push('evidence unavailable')
   parts.push(...m.notices)

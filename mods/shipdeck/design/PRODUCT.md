@@ -13,14 +13,15 @@ prompts the operator glances at the band above the prompt box to answer
 three questions without asking the session: how full is this context, what
 seat is this, and is the branch's evidence (whole-branch review, CI, scoped
 smoke, any bound plan) done yet. The glance lasts about a second, often
-while dictating the next prompt or switching sessions.
+while dictating the next prompt or switching sessions. Beside the chat, the pane answers the
+wider question: which of my sessions needs me, and what is each one doing.
 
 ## Product Purpose
 
 shipdeck is ShipShape's companion mod. It shows what ShipShape's gates
-already know (the seat, the context fill, the evidence legs, a running
-reviewer) and raises two notices: a lane reported done, and a successor card
-is waiting. It never gates. Success means the operator never has to ask a
+already know (the seat, the context fill, the evidence legs, the PR they mean,
+a running reviewer), lists the operator's sessions, and raises two notices: a
+lane reported done, and a successor card is waiting. It never gates. Success means the operator never has to ask a
 session "where are you?", and the band never disagrees with the gates,
 because it reads the same artifacts they read.
 
@@ -42,9 +43,10 @@ native to Claude Code, not like a widget bolted onto it.
 
 ## Design Principles
 
-1. **Read the gates, never guess.** Every mark comes from an artifact the
-   bash gates read, so the band can never show green while a gate would
-   refuse.
+1. **Read the gates, never guess.** Every evidence mark comes from an artifact
+   the bash gates read, so the band can never show green while a gate would
+   refuse. The pane's session marks come from the app's session list, the
+   seat files and what each session publishes.
 2. **One glance, one answer.** Seat, context and evidence read in a second,
    left to right, in the same place every time.
 3. **State, not decoration.** Colour and motion mean a state; nothing is
@@ -52,7 +54,7 @@ native to Claude Code, not like a widget bolted onto it.
 4. **Native first.** It uses the host's type, theme and rhythm, and works on
    the terminal as text and on desktop as drawings.
 5. **Quiet until it matters.** A missing leg is grey, a failure is red, and
-   a notice is the only thing that asks for attention.
+   only a notice or a session waiting on the operator asks for attention.
 
 ## Accessibility & Inclusion
 
