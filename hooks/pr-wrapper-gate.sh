@@ -17,7 +17,8 @@
 # Over-matching is its own failure mode: a gate that blocks unrelated work gets
 # switched off, and then the real thing goes unguarded too. So this matches
 # text shaped like the start of a `gh pr create` invocation, not wherever the
-# words appear. It reads text, not shell; the limits are noted at the match.
+# words appear. DETAILS.md lists measured examples of what that refuses and
+# what it misses.
 
 set -uo pipefail
 
@@ -35,22 +36,15 @@ command_line="$(shipshape_field tool_input.command)"
 
 # `gh pr create` as an invocation: at the start of a line or after a shell
 # separator, optionally behind a path, environment assignments, `command` or
-# `time`, and followed by whitespace or the end of the line. A commit message
-# that mentions the words mid-sentence is not one; limits below.
+# `time`, and followed by whitespace or the end of the line. That reads text,
+# not shell, so it refuses some mentions and misses some invocations.
 #
-# `new` is create's alias, and -R/--repo is `pr`'s one flag, so it is named on
-# either side of `pr`. Some of create's own flags reach it from there too, as
-# in `gh pr --title t create`, `gh pr -fd create` and
-# `gh pr --fill --draft create`, and this does not catch them. Measured on
-# gh 2.96.0 with --help: `gh pr create --help` lists the alias, `gh pr --help`
-# lists only -R/--repo, and every spelling named here prints create's help.
-#
-# Text, not shell: a heredoc or commit-message line that starts with the command
-# reads as one, and so does a quoted mention after a separator, `(` included,
-# as in `-m "fix (gh pr new alias)"`. A string for `eval` or `bash -c`, or in
-# backticks, is read the same way: refused where gh follows a separator inside
-# it, missed where gh opens it. Quoted words and other prefixes are missed too;
-# DETAILS.md names examples.
+# `new` is create's alias and -R/--repo is `pr`'s one flag, so both are named,
+# -R on either side of `pr`. Measured on gh 2.96.0: `gh pr create --help` lists
+# the alias, `gh pr --help` lists only -R/--repo, and `gh -R o/r pr new --help`
+# and `gh pr -R o/r new --help` print create's help. Some of create's own flags
+# also reach it from before `create` (`gh pr --title t create --help` prints
+# create's help), and those are not matched.
 repo_flag='(-R|--repo)([[:space:]]+|=)?[^[:space:];&|()]+[[:space:]]+'
 gh_pr_create="gh[[:space:]]+(($repo_flag)*)pr[[:space:]]+(($repo_flag)*)(create|new)"
 invocation='(^|[;&|(]|&&|\|\|)[[:space:]]*((command|time)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$gh_pr_create"'([[:space:]]+|$)'
@@ -71,12 +65,11 @@ esac
 # Hand back the caller's own arguments so the correction is a paste rather than
 # a retyping: everything after `create`, and any -R before it (groups 5 and 9 of
 # `invocation`), because without it the paste opens the pull request against
-# whichever repo is checked out. The sed matches the whole invocation, anchors
-# and all, so a title that mentions `gh pr new` is not mistaken for it, unless
-# the mention follows a separator (`--title "a; gh pr new b"`): sed takes the
-# last match on the line, and the hand-back starts from there. It works line by
-# line, so the other lines of a multi-line command come back too, less their
-# leading whitespace.
+# whichever repo is checked out. sed reads line by line and takes the last
+# match on each line. So a mention in a title that also matches is where the
+# hand-back starts (`--title "a; gh pr new b" --fill` hands back `b" --fill`),
+# and the other lines of a multi-line command come back too, less their leading
+# whitespace.
 args="$(printf '%s' "$command_line" \
   | sed -E -e "s#.*${invocation}#\\5\\9#" \
   | sed -e 's/^[[:space:]]*//')"

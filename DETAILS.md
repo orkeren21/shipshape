@@ -247,21 +247,25 @@ doctor's report say it went unjudged. A local branch moved back to its stamp wit
 The name resolves as git resolves any name, so a tag sharing it outranks the branch.
 
 `pr-wrapper-gate` reads a command as text, not as shell: it is a tripwire on the ordinary
-spelling, not a parser. It refuses text shaped like the start of the command and followed
-by a space or the line's end: at the start of a line or after a separator, behind a path,
-environment assignments, `command` or `time`. So it also refuses a heredoc or
-commit-message line that starts with the command, and a quoted mention after a separator,
-`(` included, such as `-m "fix (gh pr new alias)"`. A string for `eval` or `bash -c`, or
-in backticks, is refused where gh follows a separator inside it and missed where gh opens
-it. Ways past it include any other word in front (`env`, `exec`, `time -p`, a shell
-keyword such as `then`); gh opening backticks, even inside a double-quoted commit message,
-where the shell runs them; a quoted or escaped word (`"gh"`, `\gh`, `gh pr "create"`); a
-line continuation inside the three words or straight after them; a redirect against
-`create` (`gh pr create>pr.log`); some of create's own flags before `create`
-(`gh pr --title t create`, `gh pr -fd create`, `gh pr --fill --draft create`); `gh api`;
-and a tool other than Bash. A command that names `shipshape-pr-open` anywhere is let
-through. The gate closes the ordinary path, and the done gate's arming is as complete as
-that.
+spelling, not a parser. It matches `gh pr create` or `gh pr new` at the start of a line or
+after a separator, behind a path, environment assignments, `command` or `time`, and
+followed by whitespace or the line's end. Reading text, it refuses some mentions and misses
+some invocations. Measured examples:
+
+- Refused, though gh would not run: `git commit -m "fix (gh pr new alias)"`, and a
+  commit message whose second line is `gh pr new is the alias`.
+- Refused, and gh would run: `eval "git push; gh pr create --fill"` and
+  `` x=`git push; gh pr create --fill` ``.
+- Missed: `env`, `exec`, `time -p` or `then` in front; `eval "gh pr create --fill"`,
+  `eval "git push; gh pr create" --fill` and `bash -c 'gh pr create --fill'`;
+  `` url=`gh pr create --fill` ``, and the same backticks inside a double-quoted commit
+  message, which the shell runs; `"gh" pr create`, `\gh pr create` and `gh pr "create"`;
+  a line continuation inside the three words or straight after them;
+  `gh pr create>pr.log --fill`; `gh pr --title t create`, `gh pr -fd create` and
+  `gh pr --fill --draft create`; `gh api`; and a tool other than Bash.
+- Let through on purpose: any command that names `shipshape-pr-open`.
+
+The gate closes the ordinary path, and the done gate's arming is as complete as that.
 
 ## The pipeline
 
