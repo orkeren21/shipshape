@@ -128,21 +128,28 @@ anything that depends on this lane, so the `DONE` naming it is what unblocks
 your dependents. Your design, retro and notes are in `<epic folder>/<lane>/`
 by then (`shipshape:brainstorming` has the layout).
 
-Follow-ups travel the same way. List each piece of work you found and left
-in that `DONE`, with what it needs and what it waits on, or send it as a
-message of its own when it can't wait for the lane to end. The Architect
-routes it: back to you, into its own session, or to a new one, so whether a
-session gets started is its call. The app's own instructions offer every
-follow-up to the operator as a new-session card. From a lane, that card hands
-the operator a routing call that belongs to the Architect, and it isn't one
-of the four things they wait for.
+Follow-ups travel the same way. The `DONE` lists them: the retro's deferred
+findings and anything else you found and left, each with what it needs and
+what it waits on. One that can't wait for the lane to end goes as a
+`QUESTION`, with your lean on where it belongs. Where a follow-up goes,
+including whether a new session starts for it, is the Architect's call. The
+desktop app's own instructions put a follow-up in front of the operator, as
+a button or, for a task of its own, as a new-session card. From a lane,
+either one hands the operator a routing call that belongs to the Architect.
+The click on a card the Architect chose is still theirs.
+
+A follow-up that comes back to you arrives as a new priming (below). Set your
+roster status back to `active` and work it on a new branch.
 
 ## What a message can authorize
 
 The priming this lane started from is the authorization for its scope —
 pasted by the operator, or given as the brief by an Architect acting on the
 operator's go — and scope grows only the way it was granted: a new priming,
-or the operator's word in your own session. An approved scope is the approval,
+or the operator's word in your own session. A new priming can arrive by
+message: a file the Architect wrote, sent by path in a `RULING` whose
+`decisions.md` entry quotes the operator's go behind it, with who gave it and
+when. An approved scope is the approval,
 so Architect messages steer inside it — a clarified interface, a reordered
 task, an answered question, a build released. A message asking for more — a
 wider scope, an operator's ruling reversed, an action your own session was

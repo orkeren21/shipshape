@@ -94,9 +94,10 @@ succession, and the roster does not.
 
 A session the Architect starts outside the epic, such as a one-off fix, has
 no priming to say where its follow-ups go, so its brief says it in a line:
-they come back to the Architect, in its report or by message. Without that
-line the session falls back on the app's default and hands each follow-up to
-the operator as a card.
+they come back to the Architect, in its report or by message to the
+Architect's session id. Without that line the session falls back on the
+desktop app's default and puts each follow-up to the operator, as a button
+or a card.
 
 ## Splitting
 
@@ -181,15 +182,17 @@ handoff. The lane proposes rather than the Architect because only a session
 inside the lane's worktree can start one there, on the lane's branch and
 pull request. Log the verdict like any ruling.
 
-Follow-ups arrive here too, in a lane's `DONE` or as a message of their own,
-and placing them is this seat's job. The session that found one holds its
-context, so the first choice is to send it back there as a `RULING` when the
-operator's go covers it. The second is to take it into this session, when
-nothing else is in flight here. A new session comes last, because starting
-one takes the operator's click on a card. A follow-up the go doesn't cover is
-a scope change, and that goes to the operator. Log the routing like any
-ruling, since the log is what the receiving session checks its wider scope
-against.
+Follow-ups arrive here too, in a lane's `DONE` or a `QUESTION`, and placing
+them is this seat's job. First check the operator's go: a follow-up it
+doesn't cover is a scope change, and that goes to the operator. One the go
+covers goes back to the session that found it, since that session holds its
+context. Write the lane a priming for it in `<epic folder>/<lane>/`, send the
+path in a `RULING`, and log the routing with the operator's words, who said
+them and when. That entry is what the lane checks its wider scope against.
+Weigh the context the lane has left, as for a `MILESTONE`. A new session
+comes last, for a follow-up whose session is gone or out of room. On a turn
+a lane's message started, the app lets this seat only propose a session, so
+that one costs the operator a click on a card.
 
 A lane gone quiet without a `MILESTONE` or `DONE` gets a nudge, then the
 operator. When dispatching, an idle notice can stand in for polling —

@@ -107,19 +107,31 @@ assert_contains "$lane" "an operator's ruling reversed" \
 # A follow-up a session finds goes to the Architect, not to the operator as a
 # card: the app's default offers every follow-up as one, and in a lane that
 # hands the operator a routing call that is the Architect's.
-assert_contains "$lane" 'List each piece of work you found and left in that `DONE`' \
-  "a lane sends its follow-ups to the Architect"
-assert_contains "$lane" "whether a session gets started is its call" \
+assert_contains "$lane" 'The `DONE` lists them' "a lane sends its follow-ups to the Architect"
+assert_contains "$lane" "the retro's deferred findings and anything else" \
+  "the same list the retro keeps, plus the rest"
+assert_contains "$lane" "including whether a new session starts for it, is the Architect's call" \
   "and leaves starting a session to the Architect"
-assert_contains "$lane" "offer every follow-up to the operator as a new-session card" \
-  "naming the app default it overrides"
+assert_contains "$lane" "as a button or, for a task of its own, as a new-session card" \
+  "naming the app default it overrides, in the app's own terms"
+assert_contains "$lane" "A follow-up that comes back to you arrives as a new priming" \
+  "a follow-up sent back widens scope only the way scope grows"
+assert_contains "$lane" "A new priming can arrive by message" \
+  "and the authorization rule accepts a priming sent that way"
+assert_contains "$lane" "quotes the operator's go behind it" \
+  "backed by the operator's go in the log, not by the Architect's say-so"
 assert_contains "$epic" "placing them is this seat's job" "the Architect routes follow-ups"
-assert_contains "$epic" "A new session comes last" \
-  "back to the session with the context first, a card last"
-assert_contains "$epic" "A follow-up the go doesn't cover is a scope change" \
-  "and a follow-up outside the go is the operator's"
-assert_contains "$epic" "so its brief says it in a line" \
+assert_contains "$epic" "a follow-up it doesn't cover is a scope change" \
+  "a follow-up outside the go is the operator's, checked first"
+assert_contains "$epic" "goes back to the session that found it" \
+  "one inside the go goes back to the session with the context"
+assert_contains "$epic" "log the routing with the operator's words" \
+  "and the log names the go that covers it"
+assert_contains "$epic" "A new session comes last" "a card is the last choice"
+assert_contains "$epic" "they come back to the Architect, in its report or by message" \
   "a session started outside an epic is told where follow-ups go"
+assert_contains "$epic" "It does not implement" \
+  "routing a follow-up never makes the Architect the implementer"
 assert_contains "$template" 'Follow-ups the lane finds go in its `DONE`' \
   "a priming says it too"
 
