@@ -53,7 +53,9 @@ the succession to the lanes — the order and the duties are in
 If the handoff names a bound plan, bind it here with `shipshape-plan "<path>"`,
 with the same `--tasks` and reason. Evidence stays with the session that
 earned it, so your predecessor's verify records do not count here, any more than
-its review does. That is usually one run: `shipshape-verify t1,t2,t3
+its review does. The branch's review count is the exception: it carries over
+from the handoff, against the review cap in `shipshape:requesting-code-review`.
+Re-earning the verify records is usually one run: `shipshape-verify t1,t2,t3
 "<command>"`. A task that cannot be run again goes out of scope with `--tasks`
 and a reason. If the handoff says a plan was cleared, the gates here will not
 know, so say so in the pull request.

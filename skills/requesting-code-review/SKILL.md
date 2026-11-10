@@ -93,7 +93,8 @@ severities. Filtering is your job, not the reviewer's.
 
 ## Acting on the findings
 
-**Critical and Major block.** Fix them.
+**Critical and Major block.** Fix them; the reviews that follow are capped
+(step 4 below).
 
 **Minor goes to the retro** as a follow-up. Not silently dropped, and not fixed
 reflexively at the end of a branch either.
@@ -115,5 +116,14 @@ see `shipshape:receiving-code-review`.
    Escalate to your human partner in plain English: what is broken, why it
    matters, and what the options are. Two full rounds failing to converge is
    information about the change, not a reason to keep looping.
+
+4. **The review cap.** Count every review of this branch that reports back:
+   scoped re-reviews, unmarked ones and a predecessor session's included, the
+   conformance lane not. Every review counts, whatever changed before it.
+   Start at most four on your own. Before starting each review past the
+   fourth, escalate as in step 3, saying what changed since the last review
+   and what the next would cover. In the field, one branch ran eight reviews in
+   three and a half hours: after the first found a code bug, six in a row found
+   sentences in the gate's comments and docs that a probe proved false.
 
 The escalation goes in the retro either way, as does reaching round two at all.
