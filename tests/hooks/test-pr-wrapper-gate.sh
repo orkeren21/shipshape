@@ -210,17 +210,29 @@ for payload in 'not json' '{}' ''; do
   assert_eq "0" "$(hook_status)" "an unusable payload fails open"
 done
 
-# An empty pattern would match every command. With a lib that lacks the gh
-# pattern, the gate stands down rather than refuse `npm test`.
-old_tree="$work/old-tree"; mkdir -p "$old_tree/hooks" "$old_tree/lib"
-cp "$HOOKS_DIR/pr-wrapper-gate.sh" "$old_tree/hooks/"
-sed -e '/^shipshape_gh_pr_words()/,/^}/d' -e '/^shipshape_gh_pr_invocation()/,/^}/d' \
-  "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$old_tree/lib/shipshape-common.sh"
-out="$(cd "$repo" && bash_payload 'npm test' | bash "$old_tree/hooks/pr-wrapper-gate.sh" 2>/dev/null)"
-assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "a lib without the gh pattern fails open"
-
-assert_contains "$(cat "$scratch/trace.log" 2>/dev/null)" "pr-wrapper-gate" \
+assert_contains "$(cat "$scratch/trace.log" 2>/dev/null)" "refused a bare gh pr create" \
   "the gate records what it refused"
+
+# A lib without the gh functions would leave a pattern that matches every
+# command, or one with no gh words in it. Either way the gate stands down:
+# exit 0, no refusal, and a trace line. Each run has a session of its own, so
+# its trace is not mistaken for the refusal's above.
+words_fn='/^shipshape_gh_pr_words()/,/^}/d'
+invocation_fn='/^shipshape_gh_pr_invocation()/,/^}/d'
+for strip in words invocation both; do
+  tree="$work/lib-without-$strip"; mkdir -p "$tree/hooks" "$tree/lib"
+  cp "$HOOKS_DIR/pr-wrapper-gate.sh" "$tree/hooks/"
+  case "$strip" in
+    words) sed -e "$words_fn" ;;
+    invocation) sed -e "$invocation_fn" ;;
+    both) sed -e "$words_fn" -e "$invocation_fn" ;;
+  esac < "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$tree/lib/shipshape-common.sh"
+  out="$(cd "$repo" && printf '{"session_id":"stripped-%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cd x; ls"}}' "$strip" \
+    | bash "$tree/hooks/pr-wrapper-gate.sh" 2>/dev/null; echo "exit=$?")"
+  assert_eq "exit=0" "${out##*$'\n'}" "a lib without $strip exits 0"
+  assert_not_contains "$out" '"deny"' "a lib without $strip refuses nothing"
+  assert_contains "$(cat "$repo/.shipshape/stripped-$strip/trace.log" 2>/dev/null)" \
+    "no gh pattern in lib; failing open" "a lib without $strip is traced"
+done
 
 finish

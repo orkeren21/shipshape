@@ -44,13 +44,13 @@ command_line="$(shipshape_field tool_input.command)"
 # create's help. Some of create's own flags also reach it from before `create`
 # (`gh pr --title t create --help` prints create's help), and those are not
 # matched.
-invocation="$(shipshape_gh_pr_invocation 'create|new' 2>/dev/null)"
-
-# An empty pattern matches every command. A lib without it fails open.
-if [ -z "$invocation" ]; then
+# A lib without the pattern functions would leave a pattern that matches every
+# command, or one with no gh words in it. The gate fails open instead.
+if ! declare -F shipshape_gh_pr_words shipshape_gh_pr_invocation >/dev/null; then
   shipshape_trace pr-wrapper-gate "no gh pattern in lib; failing open"
   exit 0
 fi
+invocation="$(shipshape_gh_pr_invocation 'create|new')"
 
 # A here-string, not a pipe: with pipefail, grep -q leaving at an early match
 # kills a long printf, and the pipeline reads as no match. A 200 KB command got

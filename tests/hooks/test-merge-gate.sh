@@ -212,6 +212,62 @@ out="$(run_hook merge-gate.sh "$(merge_payload "sleep 30; gh -R o/r pr merge 444
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "444" \
   "a -R merge after another command is judged on its own number"
 
+# --- the PR the merge names --------------------------------------------------
+#
+# gh takes a number, a URL or a branch (gh 2.96.0: `[<number> | <url> |
+# <branch>]`). The gate fell back to the current branch's PR whenever it could
+# not read a bare number or a /pull/ URL, so each of these was judged as the
+# stamped 57 and allowed. Now each is judged on 58, which owes its evidence.
+
+for cmd in \
+  'gh pr merge "58"' \
+  "gh pr merge '#58'" \
+  '(gh pr merge 58)' \
+  'x=$(gh pr merge 58)' \
+  'gh pr merge -t 57 58' \
+  'gh pr merge --squash --subject 57 58' \
+  'gh pr merge -b 57 58' \
+  'gh pr merge -sb 57 58'
+do
+  out="$(run_hook merge-gate.sh "$(merge_payload "$cmd")" "$repo")"
+  assert_eq "merge_gate_unsatisfied" "$(hook_field "$out" shipshapeCode)" "judged as PR 58: [$cmd]"
+done
+
+# A branch resolves through the obligation records.
+give_record 62 feature-62
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge feature-62")" "$repo")"
+assert_eq "merge_gate_unsatisfied" "$(hook_field "$out" shipshapeCode)" \
+  "a branch selector is judged as the PR recorded for that branch"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "#62" \
+  "and the refusal names it"
+
+# PR 64 is stamped on a branch other than the current one, so an allow names it
+# only if the gate read it, not if it fell back to the current branch's 57.
+give_record 64 lane-64
+give_stamp 64 "$main_head" lane-64
+for cmd in 'gh pr merge lane-64' 'gh pr merge --subject "x y" 64' 'gh pr merge 64 --body "a (b)"'; do
+  out="$(run_hook merge-gate.sh "$(merge_payload "$cmd")" "$repo")"
+  assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" "allowed: [$cmd]"
+  assert_contains "$(tail -1 "$scratch/trace.log")" "PR #64" "and judged as PR 64: [$cmd]"
+done
+
+# A selector that resolves to no record is refused, as a numbered PR with no
+# record is, and the refusal says how to go on.
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge no-such-branch")" "$repo")"
+assert_eq "merge_gate_unresolved" "$(hook_field "$out" shipshapeCode)" \
+  "a selector that matches no record is refused"
+reason="$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)"
+assert_contains "$reason" "no-such-branch" "the refusal names what the merge named"
+assert_contains "$reason" "by number" "and says to merge by number"
+assert_contains "$reason" "operator" "or to hand the merge to the operator"
+
+# A quote left open on the merge's line may hide the selector on a later line.
+# Falling back to the current branch's PR would be a guess, so it is refused.
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge --body \"line one
+line two\" 58")" "$repo")"
+assert_eq "merge_gate_unparseable" "$(hook_field "$out" shipshapeCode)" \
+  "a quote open past the merge's line is refused, not guessed"
+
 # --- a long command is still read --------------------------------------------
 #
 # With the command piped into grep -q under pipefail, grep leaving at the match
@@ -265,10 +321,12 @@ $second")" "$repo")"
     "a compound across lines: [gh pr merge 57 / $second]"
 done
 
-# The new spellings of a stamped PR are judged on that PR, and allowed.
-for cmd in 'command gh pr merge 57' 'time gh pr merge 57' 'GH_TOKEN=x command gh pr merge 57'; do
+# The new spellings of a stamped PR are judged on that PR, and allowed. PR 64
+# is stamped on another branch, so the trace names it only if it was read.
+for cmd in 'command gh pr merge 64' 'time gh pr merge 64' 'GH_TOKEN=x command gh pr merge 64'; do
   out="$(run_hook merge-gate.sh "$(merge_payload "$cmd")" "$repo")"
-  assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" "allowed, as PR 57: [$cmd]"
+  assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" "allowed: [$cmd]"
+  assert_contains "$(tail -1 "$scratch/trace.log")" "PR #64" "and judged as PR 64: [$cmd]"
 done
 
 # Tokens on other lines belong to other invocations: `sleep 30` is not PR 30.
@@ -418,16 +476,27 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
 out="$(run_hook merge-gate.sh 'this is not json' "$repo")"
 assert_eq "0" "$(hook_status)" "an unreadable payload fails open"
 
-# An empty pattern would match every command, and every multi-line one would
-# read as a compound merge. With a lib that lacks the gh pattern, the gate
-# stands down instead.
-old_tree="$work/old-tree"; mkdir -p "$old_tree/hooks" "$old_tree/lib"
-cp "$HOOKS_DIR/merge-gate.sh" "$old_tree/hooks/"
-sed -e '/^shipshape_gh_pr_words()/,/^}/d' -e '/^shipshape_gh_pr_invocation()/,/^}/d' \
-  "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$old_tree/lib/shipshape-common.sh"
-out="$(cd "$repo" && merge_payload 'ls
-ls' | bash "$old_tree/hooks/merge-gate.sh" 2>/dev/null)"
-assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "a lib without the gh pattern fails open"
+# A lib without the gh functions would leave a pattern that matches every
+# command, so every multi-line one would read as a compound merge. Either way
+# the gate stands down: exit 0, no refusal, and a trace line, each run in a
+# session of its own.
+words_fn='/^shipshape_gh_pr_words()/,/^}/d'
+invocation_fn='/^shipshape_gh_pr_invocation()/,/^}/d'
+for strip in words invocation both; do
+  tree="$work/lib-without-$strip"; mkdir -p "$tree/hooks" "$tree/lib"
+  cp "$HOOKS_DIR/merge-gate.sh" "$tree/hooks/"
+  case "$strip" in
+    words) sed -e "$words_fn" ;;
+    invocation) sed -e "$invocation_fn" ;;
+    both) sed -e "$words_fn" -e "$invocation_fn" ;;
+  esac < "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$tree/lib/shipshape-common.sh"
+  out="$(cd "$repo" && printf '{"session_id":"stripped-%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":%s}}' \
+      "$strip" "$(json_string 'ls
+ls')" | bash "$tree/hooks/merge-gate.sh" 2>/dev/null; echo "exit=$?")"
+  assert_eq "exit=0" "${out##*$'\n'}" "a lib without $strip exits 0"
+  assert_not_contains "$out" '"deny"' "a lib without $strip refuses nothing"
+  assert_contains "$(cat "$repo/.shipshape/stripped-$strip/trace.log" 2>/dev/null)" \
+    "no gh pattern in lib; failing open" "a lib without $strip is traced"
+done
 
 finish
