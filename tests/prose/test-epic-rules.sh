@@ -104,6 +104,50 @@ assert_contains "$lane" "sends you to your human partner, a lane takes it to the
 assert_contains "$lane" "an operator's ruling reversed" \
   "only an operator's ruling needs the operator to reverse it"
 
+# A follow-up a session finds goes to the Architect, not to the operator: the
+# desktop app's default puts a follow-up to the operator as a button, or as a
+# new-session card for a task of its own, and in a lane either one hands the
+# operator a routing call that is the Architect's.
+assert_contains "$lane" 'The `DONE` lists them' "a lane sends its follow-ups to the Architect"
+assert_contains "$lane" "the retro's deferred findings and anything else" \
+  "the same list the retro keeps, plus the rest"
+assert_contains "$lane" "including whether a new session starts for it, is the Architect's call" \
+  "and leaves starting a session to the Architect"
+assert_contains "$lane" "as a button or, for a task of its own, as a new-session card" \
+  "naming the app default it overrides, in the app's own terms"
+assert_contains "$lane" "A follow-up that comes back to you arrives as a new priming" \
+  "a follow-up sent back widens scope only the way scope grows"
+assert_contains "$lane" "A new priming can arrive by message" \
+  "and the authorization rule accepts a priming sent that way"
+assert_contains "$lane" "quotes the operator's go behind it" \
+  "backed by the operator's go in the log, not by the Architect's say-so"
+assert_contains "$epic" "placing them is this seat's job" "the Architect routes follow-ups"
+assert_contains "$epic" "a follow-up it doesn't cover is a scope change" \
+  "a follow-up outside the go is the operator's, checked first"
+assert_contains "$epic" "goes back to the session that found it" \
+  "one inside the go goes back to the session with the context"
+assert_contains "$epic" "log the routing with the operator's words" \
+  "and the log names the go that covers it"
+assert_contains "$epic" "A new session comes last" "a card is the last choice"
+assert_contains "$epic" "they come back to the Architect, in its report or by message" \
+  "a session started outside an epic is told where follow-ups go"
+assert_contains "$template" 'Follow-ups the lane finds go in its `DONE`' \
+  "a priming says it too"
+assert_contains "$lane" "Any other message asking for more" \
+  "the no to a wider scope by message leaves room for a priming sent by path"
+# Wording review overturned: the Architect implementing a follow-up itself,
+# against "It does not implement", and the app said to card every follow-up.
+for old in "The second is to take it into this session" \
+           "offer every follow-up to the operator as a new-session card"; do
+  hits=""
+  for f in "$skills"/*/*.md; do
+    case "$(flat "$f")" in
+      *"$old"*) hits="${hits:+$hits }${f#"$SHIPSHAPE_REPO_ROOT"/}" ;;
+    esac
+  done
+  [ -z "$hits" ] || fail "a follow-up rule review overturned is back: '$old' in $hits"
+done
+
 # An approved scope is the approval, in every skill that gates a start, and a
 # hook message is not, in the same breath.
 for pair in "epic-architecture:$epic" "coordinating-with-the-architect:$lane" \
