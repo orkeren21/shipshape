@@ -85,42 +85,41 @@ assert_eq "1" "$homes" "the round policy is stated in exactly one skill"
 
 review="$(cat "$skills/requesting-code-review/SKILL.md")"
 assert_contains "$review" "whole-branch-review:" "the dispatch marker the capture hook watches for is documented"
-assert_contains "$(printf '%s' "$review" | tr 'A-Z' 'a-z')" "escalate" \
-  "the terminal state says what happens when rounds stop converging"
+step3="$(sed -n '/^3\. \*\*If round two/,/^4\. /p' "$skills/requesting-code-review/SKILL.md" | tr -s ' \n' ' ')"
+assert_contains "$step3" "Escalate to your human partner in plain English" \
+  "step 3 itself says what happens when rounds stop converging, since step 4 points at it"
 
 # The review cap. Uncapped, every fix commit staled the last review and every
-# new review found something new: one branch ran nine review dispatches, eight
-# reporting, in three and a half hours. Four is where the session stops
-# deciding alone, not a ceiling the gate can't meet: the gate wants a review
-# newer than every commit, so reviews after the fourth run on the escalation's
-# answer. The count is per branch and survives a handoff, and a review goes
-# uncounted only when nothing of the branch's own changed since a passing one.
+# new review found something new: one branch ran eight reviews in three and a
+# half hours. Four is where the session stops deciding alone, not a ceiling the
+# gate can't meet: the gate wants a review newer than every commit, so each
+# review past the fourth runs on an escalation's answer. The count is per
+# branch and survives a handoff. Every review counts: each list of exceptions
+# tried here was stretched by the next review.
 review_flat="$(printf '%s' "$review" | tr -s ' \n' ' ')"
 handoff_flat="$(tr -s ' \n' ' ' < "$skills/write-handoff/SKILL.md")"
 read_handoff_flat="$(tr -s ' \n' ' ' < "$skills/read-handoff/SKILL.md")"
 step4="$(sed -n '/^4\. \*\*The review cap\.\*\*/,/^The escalation goes in the retro/p' \
   "$skills/requesting-code-review/SKILL.md" | tr -s ' \n' ' ')"
 assert_contains "$step4" "The review cap" "step 4 is found, so the scans below read it"
-assert_contains "$review_flat" "Count every review of this branch that reports back, scoped re-reviews and a predecessor session's included, marked or not; the conformance lane isn't counted." \
+assert_contains "$step4" "Count every review of this branch that reports back: scoped re-reviews, unmarked ones and a predecessor session's included, the conformance lane not." \
   "the cap counts per branch, every reviewer, across a handoff"
+assert_contains "$step4" "Every review counts, whatever changed before it." "with no exceptions"
+assert_contains "$step4" "Start at most four on your own." "four is where the session stops deciding alone"
+assert_contains "$step4" "Before starting each review past the fourth, escalate as in step 3, saying what changed since the last review and what the next would cover." \
+  "and each review past it waits on its own answer"
+assert_contains "$step4" "one branch ran eight reviews in three and a half hours" \
+  "the field example keeps its measured numbers"
 assert_contains "$handoff_flat" "how many reviews the branch has had against the review cap" \
   "a handoff carries the count"
 assert_contains "$read_handoff_flat" "The branch's review count is the exception: it carries over" \
   "and the successor's own skill says it carries over"
-assert_contains "$review_flat" "the fourth is the last one you start on your own" \
-  "four is where the session stops deciding alone"
-assert_contains "$review_flat" "Before starting a fifth, whatever the fourth found, escalate as in step 3; every review after the fourth runs on the escalation's answer." \
-  "past the fourth, every review waits on an answer"
-# The whole exceptions sentence, so a widened list fails.
-assert_contains "$review_flat" "A review isn't counted only when the last review found nothing blocking and since then the branch has changed in no way but these: main merged in or rebased onto, with no conflict but the version lines; the version number moved; or nothing at all, as when a successor re-earns its predecessor's review. Any other change, a commit to comments or docs included, is the branch's own." \
-  "the uncounted reviews are a closed list, keyed on what changed"
-assert_contains "$review_flat" "nine review dispatches, eight of which reported, in three and a half hours" \
-  "the field example keeps its measured numbers"
-assert_contains "$review_flat" "within the review cap (step 4 below)" \
-  "and the blocking rule points at the cap instead of contradicting it"
-for carve in "rides along" "wording alone" "its own count" "reset" "docs-only fix"; do
+assert_contains "$review_flat" "Fix them; the reviews that follow are capped (step 4 below)." \
+  "the blocking rule points at the cap, which limits reviews, not fixes"
+for carve in "rides along" "wording alone" "its own count" "reset" "docs-only" \
+             "isn't counted" "not counted" "uncounted" "doesn't count" "free" "starts over"; do
   assert_not_contains "$step4" "$carve" \
-    "no carve-out or reset in the cap: '$carve' (a false sentence about a gate is a defect)"
+    "no exception, carve-out or reset in the cap: '$carve'"
 done
 
 # The marker in the skill has to be the one the hook actually matches.

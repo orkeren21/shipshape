@@ -93,7 +93,8 @@ severities. Filtering is your job, not the reviewer's.
 
 ## Acting on the findings
 
-**Critical and Major block.** Fix them, within the review cap (step 4 below).
+**Critical and Major block.** Fix them; the reviews that follow are capped
+(step 4 below).
 
 **Minor goes to the retro** as a follow-up. Not silently dropped, and not fixed
 reflexively at the end of a branch either.
@@ -116,20 +117,13 @@ see `shipshape:receiving-code-review`.
    matters, and what the options are. Two full rounds failing to converge is
    information about the change, not a reason to keep looping.
 
-4. **The review cap.** Count every review of this branch that reports back,
-   scoped re-reviews and a predecessor session's included, marked or not; the
-   conformance lane isn't counted. Each fix commit makes the last review stale,
-   and each new review can find something new, so the fourth is the last one
-   you start on your own. Before starting a fifth, whatever the fourth found,
-   escalate as in step 3; every review after the fourth runs on the
-   escalation's answer. A review isn't counted only when the last review found
-   nothing blocking and since then the branch has changed in no way but these:
-   main merged in or rebased onto, with no conflict but the version lines; the
-   version number moved; or nothing at all, as when a successor re-earns its
-   predecessor's review. Any other change, a commit to comments or docs
-   included, is the branch's own. In the field, one branch ran nine review
-   dispatches, eight of which reported, in three and a half hours: after the
-   first found a code bug, six in a row found sentences in the gate's comments
-   and docs that a probe proved false.
+4. **The review cap.** Count every review of this branch that reports back:
+   scoped re-reviews, unmarked ones and a predecessor session's included, the
+   conformance lane not. Every review counts, whatever changed before it.
+   Start at most four on your own. Before starting each review past the
+   fourth, escalate as in step 3, saying what changed since the last review
+   and what the next would cover. In the field, one branch ran eight reviews in
+   three and a half hours: after the first found a code bug, six in a row found
+   sentences in the gate's comments and docs that a probe proved false.
 
 The escalation goes in the retro either way, as does reaching round two at all.
