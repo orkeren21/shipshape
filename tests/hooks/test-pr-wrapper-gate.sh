@@ -102,6 +102,20 @@ assert_contains "$(handback_for 'gh -R a/b pr -R o/r create --fill')" "shipshape
   "both positions survive, in order, so gh resolves them as it would have"
 assert_contains "$(handback_for 'command gh pr create --fill')" "shipshape-pr-open --fill" \
   "the prefix is dropped with the rest of the old command"
+assert_contains "$(handback_for 'gh -R o/r pr create --title "gh pr new is the alias" --fill')" \
+  'shipshape-pr-open -R o/r --title "gh pr new is the alias" --fill' \
+  "a title that mentions the command is still the caller's title"
+
+# --- a long command is still read --------------------------------------------
+#
+# With the command piped into grep -q under pipefail, grep leaving at the match
+# killed the writer, the pipeline read as no match, and a body this size went
+# through. 200 KB is well past a pipe's buffer on macOS and Linux alike.
+
+long_body="$(head -c 200000 /dev/zero | tr '\0' x)"
+assert_eq "deny" "$(decision_for "gh pr create --title t --body-file - <<'EOF'
+$long_body
+EOF")" "refused: a 200 KB body in a heredoc"
 
 # --- what it must not catch --------------------------------------------------
 #
