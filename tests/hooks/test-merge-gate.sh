@@ -216,8 +216,9 @@ assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason
 #
 # gh takes a number, a URL or a branch (gh 2.96.0: `[<number> | <url> |
 # <branch>]`). The gate fell back to the current branch's PR whenever it could
-# not read a bare number or a /pull/ URL, so each of these was judged as the
-# stamped 57 and allowed. Now each is judged on 58, which owes its evidence.
+# not read a bare number or a /pull/ URL, and read a flag's value as the PR, so
+# each of these was judged as the stamped 57 and allowed. Now each is judged on
+# 58, which owes its evidence.
 
 for cmd in \
   'gh pr merge "58"' \
@@ -250,6 +251,55 @@ for cmd in 'gh pr merge lane-64' 'gh pr merge --subject "x y" 64' 'gh pr merge 6
   assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" "allowed: [$cmd]"
   assert_contains "$(tail -1 "$scratch/trace.log")" "PR #64" "and judged as PR 64: [$cmd]"
 done
+
+# The arguments are read as the shell reads them. A `#` that starts a word is a
+# comment, so bash merges the current branch's PR and the gate judges that one,
+# not 64. `-s=t` is squash with a value, not -s then -t. Each flag that takes a
+# value has its value skipped, in every spelling. An escaped quote stays inside
+# its value. A redirection, quoted operators and a heredoc are not selectors,
+# so these ordinary merges pass on the PR gh merges.
+judged_as() { # judged_as <pr> <command> <label> — allowed, and the trace names <pr>
+  out="$(run_hook merge-gate.sh "$(merge_payload "$2")" "$repo")"
+  assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" "allowed: $3"
+  assert_contains "$(tail -1 "$scratch/trace.log")" "PR #$1" "and judged as PR $1: $3"
+}
+judged_as 57 'gh pr merge --squash #64' "an unquoted #64 is a comment"
+judged_as 57 'gh pr merge -s -d #lane-64' "and so is #lane-64"
+judged_as 57 'gh pr merge --squash --delete-branch 2>&1 | tail -5' "2>&1 and a pipe"
+judged_as 57 'gh pr merge --squash 2>/dev/null' "a redirection with its target attached"
+judged_as 57 'gh pr merge --squash > /tmp/merge.out' "a redirection with its target apart"
+judged_as 57 "gh pr merge --squash --body-file - <<'EOF'
+the body
+EOF" "a heredoc"
+judged_as 57 'gh pr merge --squash
+echo 58' "a number on a later line"
+judged_as 64 'gh pr merge --squash --subject "Fix \"quoted\" thing" 64' "an escaped quote in a value"
+judged_as 64 'gh pr merge --squash --subject "Fix A & B" 64' "& inside quotes"
+judged_as 64 'gh pr merge --squash --subject "fix: a; b" 64' "; inside quotes"
+judged_as 64 'gh pr merge --squash --subject "a | b" 64' "| inside quotes"
+judged_as 64 "gh pr merge --squash --subject 'it is (b)' 64" "parentheses inside quotes"
+
+for cmd in \
+  'gh pr merge -s=t 58' \
+  'gh pr merge --squash -d=F 58' \
+  'gh pr merge -sd=t 58' \
+  'gh pr merge --squash 2>&1 58' \
+  'gh pr merge --squash &> /tmp/out 58' \
+  'gh pr merge --squash --subject "x\" 64 \"y" 58' \
+  'gh pr merge --squash --subject "$(date) 64" 58'
+do
+  out="$(run_hook merge-gate.sh "$(merge_payload "$cmd")" "$repo")"
+  assert_eq "merge_gate_unsatisfied" "$(hook_field "$out" shipshapeCode)" "judged as PR 58: [$cmd]"
+done
+for flag in -A --author-email -b --body -F --body-file -t --subject --match-head-commit -R --repo; do
+  out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge $flag 57 58")" "$repo")"
+  assert_eq "merge_gate_unsatisfied" "$(hook_field "$out" shipshapeCode)" "the value of $flag is skipped"
+done
+
+# A selector the gate cannot evaluate names no PR it can judge.
+out="$(run_hook merge-gate.sh "$(merge_payload 'gh pr merge "$PR" --squash')" "$repo")"
+assert_eq "merge_gate_unresolved" "$(hook_field "$out" shipshapeCode)" \
+  "a selector held in a variable is refused"
 
 # A selector that resolves to no record is refused, as a numbered PR with no
 # record is, and the refusal says how to go on.
