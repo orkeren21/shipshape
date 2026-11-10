@@ -88,6 +88,20 @@ assert_contains "$review" "whole-branch-review:" "the dispatch marker the captur
 assert_contains "$(printf '%s' "$review" | tr 'A-Z' 'a-z')" "escalate" \
   "the terminal state says what happens when rounds stop converging"
 
+# Scoped re-reviews count against the stop too. Uncapped, every fix commit
+# staled the last review and every new review found something new: one branch
+# took seven reviews, five on the wording of comments and docs.
+review_flat="$(printf '%s' "$review" | tr -s ' \n' ' ')"
+assert_contains "$review_flat" "Count every review, scoped re-reviews included" \
+  "the cap counts scoped re-reviews"
+assert_contains "$review_flat" "at most four reviews in all" "and states its number"
+assert_contains "$review_flat" "If the fourth still finds something blocking, stop and escalate" \
+  "and what happens at it"
+assert_contains "$review_flat" "rides along with the next code fix" \
+  "a Major about wording alone doesn't buy a review round of its own"
+assert_contains "$review_flat" "within the round cap below" \
+  "and the blocking rule points at the cap instead of contradicting it"
+
 # The marker in the skill has to be the one the hook actually matches.
 hook_marker="$(grep -oE 'whole-branch-review:' "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh" | head -1)"
 assert_eq "whole-branch-review:" "$hook_marker" "the hook matches the marker the skill tells sessions to use"

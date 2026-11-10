@@ -93,7 +93,8 @@ severities. Filtering is your job, not the reviewer's.
 
 ## Acting on the findings
 
-**Critical and Major block.** Fix them.
+**Critical and Major block.** Fix them, within the round cap below, which
+also says where a Major about wording alone goes.
 
 **Minor goes to the retro** as a follow-up. Not silently dropped, and not fixed
 reflexively at the end of a branch either.
@@ -115,5 +116,16 @@ see `shipshape:receiving-code-review`.
    Escalate to your human partner in plain English: what is broken, why it
    matters, and what the options are. Two full rounds failing to converge is
    information about the change, not a reason to keep looping.
+
+4. **Count every review, scoped re-reviews included.** Each fix commit makes
+   the last review stale, and each new review can find something new, so a
+   branch gets at most four reviews in all. If the fourth still finds something
+   blocking, stop and escalate as in step 3. In the field, one branch spent
+   seven reviews, five of them on the wording of comments and docs, and its
+   session ran for hours.
+
+A Major about the wording of a comment or doc, not about what the code does,
+rides along with the next code fix. With no code fix pending, it goes to the
+retro: a commit made for wording alone buys a whole review round.
 
 The escalation goes in the retro either way, as does reaching round two at all.
