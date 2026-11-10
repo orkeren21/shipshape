@@ -34,11 +34,12 @@ shipshape_enabled PR_WRAPPER_GATE || exit 0
 command_line="$(shipshape_field tool_input.command)"
 [ -n "$command_line" ] || exit 0
 
-# `gh pr create` as an invocation: at the start of a line or after a shell
-# separator or `(`, optionally behind `command`, `time`, environment
-# assignments or a path, none with whitespace inside, and followed by
-# whitespace or the end of the line. That reads text, not shell, so it refuses
-# some mentions and misses some invocations.
+# `gh pr create` as an invocation. `invocation` below is the exact rule. In
+# words: the command at the start of a line or after a separator or `(`,
+# behind optional prefixes such as `command`, `time`, `GH_TOKEN=x` or
+# `/opt/homebrew/bin/`, and followed by whitespace or the end of the line.
+# That reads text, not shell, so it refuses some mentions and misses some
+# invocations.
 #
 # `new` is create's alias and -R/--repo is `pr`'s one flag, so both are named,
 # -R on either side of `pr`. Measured on gh 2.96.0: `gh pr create --help` lists
