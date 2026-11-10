@@ -116,19 +116,20 @@ see `shipshape:receiving-code-review`.
    matters, and what the options are. Two full rounds failing to converge is
    information about the change, not a reason to keep looping.
 
-4. **The review cap.** Count every review of this branch dispatched with the
-   `whole-branch-review:` marker, scoped re-reviews included, and a predecessor
-   session's too; the conformance lane isn't counted. Each fix commit makes the
-   last review stale, and each new review can find something new, so the fourth
-   is the last one you start on your own. If it still finds something blocking,
-   stop and escalate as in step 3; every review after the fourth runs on the
-   escalation's answer. Only these aren't counted, because nothing of the
-   branch's own changed since a review passed: one after main merged in with no
-   conflict to resolve, one after only the version number moved, and a
-   successor session's first, before it changes anything. A commit that changes
-   only comments or docs is the branch's own. In the field, one branch ran eight
-   reviews in three and a half hours: after the first found a code bug, six in a
-   row found sentences in the gate's comments and docs that a probe proved
-   false.
+4. **The review cap.** Count every review of this branch that reports back,
+   scoped re-reviews and a predecessor session's included, marked or not; the
+   conformance lane isn't counted. Each fix commit makes the last review stale,
+   and each new review can find something new, so the fourth is the last one
+   you start on your own. Before starting a fifth, whatever the fourth found,
+   escalate as in step 3; every review after the fourth runs on the
+   escalation's answer. A review isn't counted only when the last review found
+   nothing blocking and since then the branch has changed in no way but these:
+   main merged in or rebased onto, with no conflict but the version lines; the
+   version number moved; or nothing at all, as when a successor re-earns its
+   predecessor's review. Any other change, a commit to comments or docs
+   included, is the branch's own. In the field, one branch ran nine review
+   dispatches, eight of which reported, in three and a half hours: after the
+   first found a code bug, six in a row found sentences in the gate's comments
+   and docs that a probe proved false.
 
 The escalation goes in the retro either way, as does reaching round two at all.
