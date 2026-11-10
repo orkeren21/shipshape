@@ -19,9 +19,11 @@
 # (SHIPSHAPE_MERGE_GATE=0), a reasoned skip_merge_gate waiver in .shipshape.yaml,
 # or a stamp whose branch has no tip here or on origin. Every decision is traced.
 #
-# Matching discipline is pr-wrapper-gate's: the `gh pr merge` invocation
-# specifically — start of line or after a separator, env assignments and path
-# prefixes allowed — never a commit message or grep pattern that mentions it.
+# It reads the command as text, with the pattern pr-wrapper-gate reads it with:
+# shipshape_gh_pr_invocation in lib/shipshape-common.sh is the exact rule, and
+# gives examples of it in words. Reading text, it refuses some mentions and
+# misses some invocations. DETAILS.md lists measured examples for
+# pr-wrapper-gate.
 
 set -uo pipefail
 
@@ -36,6 +38,11 @@ shipshape_enabled MERGE_GATE || exit 0
 
 command_line="$(shipshape_field tool_input.command)"
 [ -n "$command_line" ] || exit 0
+
+# `gh pr merge` in words, with -R allowed on either side of `pr`, and the same
+# where a command starts. gh has no alias for merge.
+merge_words="$(shipshape_gh_pr_words merge)"
+invocation="$(shipshape_gh_pr_invocation merge)"
 
 # A backslash-newline continuation moves this command's tokens onto lines the
 # per-line parser below cannot safely attribute — folding them back was tried
@@ -55,7 +62,7 @@ case "$command_line" in
     # still never parses continuations; regex-matching shell keeps its known
     # boundary (`gh "pr" merge` and friends evade any of this), and the
     # matching discipline shared with pr-wrapper-gate accepts that openly.
-    if printf '%s' "$command_line" | tr '\\\n' '  ' | grep -qE 'gh[[:space:]]+pr[[:space:]]+merge'; then
+    if printf '%s' "$command_line" | tr '\\\n' '  ' | grep -qE "$merge_words"; then
       shipshape_trace merge-gate "denied: merge command uses line continuations; cannot be judged safely"
       shipshape_emit_deny "This command mentions gh pr merge and uses backslash-newline continuations, which this gate cannot attribute safely. Write the merge as a single line — gh pr merge <number> [flags] — so it can be judged." \
         merge_gate_unparseable "gh pr merge <number> --squash"
@@ -64,9 +71,10 @@ case "$command_line" in
     ;;
 esac
 
-printf '%s' "$command_line" | grep -qE \
-  '(^|[;&|(]|&&|\|\|)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)' \
-  || exit 0
+# A here-string, not a pipe: with pipefail, grep -q leaving at an early match
+# kills a long printf, and the pipeline reads as no match. A merge with a
+# 200 KB body got through that way.
+grep -qE "$invocation" <<<"$command_line" || exit 0
 
 if shipshape_waived merge_gate; then
   shipshape_trace merge-gate "waived: $(shipshape_waiver_line merge_gate)"
@@ -90,11 +98,8 @@ fi
 # has no single answer, and judging only one of them lets the others ship
 # unevidenced — the reviewed failure mode was exactly that, phrased as an
 # ordinary cascade cleanup. Refusing is cheaper than being wrong.
-invocations="$(printf '%s\n' "$command_line" | grep -cE \
-  '(^|[;&|(]|&&|\|\|)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)')"
-merge_line="$(printf '%s\n' "$command_line" | grep -E \
-  '(^|[;&|(]|&&|\|\|)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)' \
-  | head -1)"
+invocations="$(grep -cE "$invocation" <<<"$command_line")"
+merge_line="$(grep -E -m1 "$invocation" <<<"$command_line")"
 # The same-line occurrence count reads the raw line, quotes included. A
 # --body that mentions "gh pr merge" therefore false-trips this — stripping
 # quoted regions first was tried, and an ordinary apostrophe in a body let the
@@ -102,7 +107,7 @@ merge_line="$(printf '%s\n' "$command_line" | grep -E \
 # Over-counting into a refusal costs a rephrased body; under-counting ships an
 # unevidenced merge. The count errs toward the refusal.
 if [ "$invocations" -gt 1 ] \
-  || [ "$(printf '%s' "$merge_line" | grep -o 'gh[[:space:]][[:space:]]*pr[[:space:]][[:space:]]*merge' | grep -c .)" -gt 1 ]; then
+  || [ "$(grep -oE "$merge_words" <<<"$merge_line" | grep -c .)" -gt 1 ]; then
   shipshape_trace merge-gate "denied: multiple merge mentions in one command"
   shipshape_emit_deny "This command mentions gh pr merge more than once. The gate judges one pull request per merge — its evidence, its stamp, its verdict — and a compound merge would let the unjudged ones ship. Merge one PR per command; if the extra mention is prose in a quoted body, rephrase the body.$unreasoned_note" \
     merge_gate_compound "gh pr merge <one-pr-number>"
@@ -114,7 +119,7 @@ fi
 # a different invocation, and reading a PR number out of `sleep 30` would be
 # this gate judging work it was never asked about.
 args="$(printf '%s' "$merge_line" \
-  | sed -e 's/.*gh[[:space:]][[:space:]]*pr[[:space:]][[:space:]]*merge//' \
+  | sed -E -e "s#.*${merge_words}##" \
   | sed -e 's/[;&|].*$//')"
 number=""
 for tok in $args; do
