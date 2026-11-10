@@ -248,11 +248,15 @@ The name resolves as git resolves any name, so a tag sharing it outranks the bra
 
 `pr-wrapper-gate` reads a command as text, not as shell. It refuses the command where one
 starts: at the start of a line or after a separator, behind a path, environment
-assignments, `command` or `time`. So a heredoc or commit-message line that starts with it
-is refused too, and a pull request opened any other way is not: `eval`, `bash -c`,
-`gh api`, a shell keyword such as `then` in front, or a tool other than Bash. A command
-that names `shipshape-pr-open` anywhere is let through. The gate closes the ordinary
-path, and the done gate's arming is as complete as that.
+assignments, `command` or `time`. So it also refuses a heredoc or commit-message line that
+starts with the command, and a quoted mention after a separator, such as
+`-m "fix; gh pr new is the alias"`. A string for `eval` or `bash -c` is refused where gh follows a
+separator inside it and missed where gh opens it. Other ways past it: any other word in
+front (`env`, `exec`, `time -p`, a shell keyword such as `then`), a quoted or escaped `gh`,
+a line continuation, create's own value flags before `create` (`gh pr --title t create`),
+`gh api`, or a tool other than Bash. A command that names `shipshape-pr-open` anywhere is
+let through. The gate closes the ordinary path, and the done gate's arming is as complete
+as that.
 
 ## The pipeline
 

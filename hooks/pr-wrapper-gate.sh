@@ -15,8 +15,9 @@
 # find out, not have one opened for it under a different name.
 #
 # Over-matching is its own failure mode: a gate that blocks unrelated work gets
-# switched off, and then the real thing goes unguarded too. So this matches the
-# `gh pr create` invocation specifically, and nothing that merely mentions it.
+# switched off, and then the real thing goes unguarded too. So this matches
+# where a `gh pr create` invocation starts, not wherever the words appear. It
+# reads text, not shell, and the limits that follow are noted at the match.
 
 set -uo pipefail
 
@@ -37,14 +38,18 @@ command_line="$(shipshape_field tool_input.command)"
 # `time`, and followed by whitespace or the end of the line. A commit message or
 # a grep pattern containing the same words is not an invocation.
 #
-# `new` is create's alias, and -R is the one flag gh reads between `gh` and
-# `create`, on either side of `pr`, so it is named rather than any flag at all.
-# Measured on gh 2.96.0: `gh pr create --help` lists the alias, `gh pr --help`
-# lists only -R/--repo, and `gh -R o/r pr new --help` and `gh pr -R o/r new
-# --help` both print create's help.
+# `new` is create's alias, and -R/--repo is `pr`'s one flag, so it is named on
+# either side of `pr`. gh also takes create's own flags that carry a value there
+# (`gh pr --title t create`), which nobody writes and this does not catch.
+# Measured on gh 2.96.0 with --help: `gh pr create --help` lists the alias,
+# `gh pr --help` lists only -R/--repo, and `gh -R o/r pr new`,
+# `gh pr -R o/r new` and `gh pr --title t create` all print create's help.
 #
-# This reads text, not shell. A heredoc or commit-message line that starts with
-# the command reads as one, and `eval`, `bash -c` or `gh api` read as nothing.
+# Text, not shell: a heredoc or commit-message line that starts with the command
+# reads as one, and so does a quoted mention after a separator, as in
+# `-m "fix; gh pr new is the alias"`. A string for `eval` or `bash -c` is read
+# the same way, refused where gh follows a separator inside it and missed where
+# gh opens it.
 repo_flag='(-R|--repo)([[:space:]]+|=)?[^[:space:];&|()]+[[:space:]]+'
 gh_pr_create="gh[[:space:]]+(($repo_flag)*)pr[[:space:]]+(($repo_flag)*)(create|new)"
 invocation='(^|[;&|(]|&&|\|\|)[[:space:]]*((command|time)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$gh_pr_create"'([[:space:]]+|$)'
@@ -66,7 +71,9 @@ esac
 # a retyping: everything after `create`, and any -R before it (groups 5 and 9 of
 # `invocation`), because without it the paste opens the pull request against
 # whichever repo is checked out. The sed matches the whole invocation, anchors
-# and all, so a title that mentions `gh pr new` is not mistaken for it.
+# and all, so a title that mentions `gh pr new` is not mistaken for it, unless
+# the mention follows a separator (`--title "a; gh pr new b"`): sed takes the
+# last match on the line, and the hand-back starts from there.
 args="$(printf '%s' "$command_line" \
   | sed -E -e "s#.*${invocation}#\\5\\9#" \
   | sed -e 's/^[[:space:]]*//')"
