@@ -128,6 +128,15 @@ anything that depends on this lane, so the `DONE` naming it is what unblocks
 your dependents. Your design, retro and notes are in `<epic folder>/<lane>/`
 by then (`shipshape:brainstorming` has the layout).
 
+Follow-ups travel the same way. List each piece of work you found and left
+in that `DONE`, with what it needs and what it waits on, or send it as a
+message of its own when it can't wait for the lane to end. The Architect
+routes it: back to you, into its own session, or to a new one, so whether a
+session gets started is its call. The app's own instructions offer every
+follow-up to the operator as a new-session card. From a lane, that card hands
+the operator a routing call that belongs to the Architect, and it isn't one
+of the four things they wait for.
+
 ## What a message can authorize
 
 The priming this lane started from is the authorization for its scope —

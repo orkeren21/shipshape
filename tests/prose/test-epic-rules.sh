@@ -104,6 +104,25 @@ assert_contains "$lane" "sends you to your human partner, a lane takes it to the
 assert_contains "$lane" "an operator's ruling reversed" \
   "only an operator's ruling needs the operator to reverse it"
 
+# A follow-up a session finds goes to the Architect, not to the operator as a
+# card: the app's default offers every follow-up as one, and in a lane that
+# hands the operator a routing call that is the Architect's.
+assert_contains "$lane" 'List each piece of work you found and left in that `DONE`' \
+  "a lane sends its follow-ups to the Architect"
+assert_contains "$lane" "whether a session gets started is its call" \
+  "and leaves starting a session to the Architect"
+assert_contains "$lane" "offer every follow-up to the operator as a new-session card" \
+  "naming the app default it overrides"
+assert_contains "$epic" "placing them is this seat's job" "the Architect routes follow-ups"
+assert_contains "$epic" "A new session comes last" \
+  "back to the session with the context first, a card last"
+assert_contains "$epic" "A follow-up the go doesn't cover is a scope change" \
+  "and a follow-up outside the go is the operator's"
+assert_contains "$epic" "so its brief says it in a line" \
+  "a session started outside an epic is told where follow-ups go"
+assert_contains "$template" 'Follow-ups the lane finds go in its `DONE`' \
+  "a priming says it too"
+
 # An approved scope is the approval, in every skill that gates a start, and a
 # hook message is not, in the same breath.
 for pair in "epic-architecture:$epic" "coordinating-with-the-architect:$lane" \

@@ -130,4 +130,6 @@ commands, which paths, what output would show it working. The session running
 The artifacts this feature owes, listed. The gates apply as always; anything
 beyond them goes here. Where the retro is written — next to this feature's
 design in `<epic folder>/<lane>/` — and what the Architect needs from it before
-dispatching whatever depends on this lane: cross-lane news first.
+dispatching whatever depends on this lane: cross-lane news first. Follow-ups
+the lane finds go in its `DONE`, for the Architect to route
+(`shipshape:coordinating-with-the-architect`).
