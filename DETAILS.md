@@ -247,10 +247,11 @@ doctor's report say it went unjudged. A local branch moved back to its stamp wit
 The name resolves as git resolves any name, so a tag sharing it outranks the branch.
 
 `pr-wrapper-gate` reads a command as text, not as shell: it is a tripwire on the ordinary
-spelling, not a parser. It matches `gh pr create` or `gh pr new` at the start of a line or
-after a separator, behind a path, environment assignments, `command` or `time`, and
-followed by whitespace or the line's end. Reading text, it refuses some mentions and misses
-some invocations. Measured examples:
+spelling, not a parser. It matches `gh pr create` or `gh pr new`, with any `-R`/`--repo`
+on either side of `pr`, at the start of a line or after a separator or `(`, optionally
+behind `command`, `time`, environment assignments or a path, none with whitespace inside,
+and followed by whitespace or the line's end. Reading text, it refuses some mentions and
+misses some invocations. Measured examples:
 
 - Refused, though gh would not run: `git commit -m "fix (gh pr new alias)"`, and a
   commit message whose second line is `gh pr new is the alias`.
@@ -262,10 +263,13 @@ some invocations. Measured examples:
   message, which the shell runs; `"gh" pr create`, `\gh pr create` and `gh pr "create"`;
   a line continuation inside the three words or straight after them;
   `gh pr create>pr.log --fill`; `gh pr --title t create`, `gh pr -fd create` and
-  `gh pr --fill --draft create`; `gh api`; and a tool other than Bash.
-- Let through on purpose: any command that names `shipshape-pr-open`.
+  `gh pr --fill --draft create`; `X="a b" gh pr create --fill` and
+  `"my tools/gh" pr create --fill`.
+- Let through on purpose: any command that contains `shipshape-pr-open`.
 
-The gate closes the ordinary path, and the done gate's arming is as complete as that.
+Other ways to open a pull request never reach the match: `gh api`, and any tool other than
+Bash, since the hook is registered for Bash alone. The gate closes the ordinary path, and
+the done gate's arming is as complete as that.
 
 ## The pipeline
 

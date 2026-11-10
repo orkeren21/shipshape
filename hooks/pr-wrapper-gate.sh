@@ -35,9 +35,10 @@ command_line="$(shipshape_field tool_input.command)"
 [ -n "$command_line" ] || exit 0
 
 # `gh pr create` as an invocation: at the start of a line or after a shell
-# separator, optionally behind a path, environment assignments, `command` or
-# `time`, and followed by whitespace or the end of the line. That reads text,
-# not shell, so it refuses some mentions and misses some invocations.
+# separator or `(`, optionally behind `command`, `time`, environment
+# assignments or a path, none with whitespace inside, and followed by
+# whitespace or the end of the line. That reads text, not shell, so it refuses
+# some mentions and misses some invocations.
 #
 # `new` is create's alias and -R/--repo is `pr`'s one flag, so both are named,
 # -R on either side of `pr`. Measured on gh 2.96.0: `gh pr create --help` lists
@@ -65,11 +66,11 @@ esac
 # Hand back the caller's own arguments so the correction is a paste rather than
 # a retyping: everything after `create`, and any -R before it (groups 5 and 9 of
 # `invocation`), because without it the paste opens the pull request against
-# whichever repo is checked out. sed reads line by line and takes the last
-# match on each line. So a mention in a title that also matches is where the
-# hand-back starts (`--title "a; gh pr new b" --fill` hands back `b" --fill`),
-# and the other lines of a multi-line command come back too, less their leading
-# whitespace.
+# whichever repo is checked out. On each line that matches, sed replaces
+# everything up to and including the last match with that match's -R groups,
+# so `gh pr create --title "a; gh pr new b" --fill` hands back `b" --fill`.
+# Every line then loses its leading whitespace, and lines that do not match
+# come back otherwise unchanged.
 args="$(printf '%s' "$command_line" \
   | sed -E -e "s#.*${invocation}#\\5\\9#" \
   | sed -e 's/^[[:space:]]*//')"
