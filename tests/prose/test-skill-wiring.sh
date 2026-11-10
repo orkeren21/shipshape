@@ -90,17 +90,25 @@ assert_contains "$(printf '%s' "$review" | tr 'A-Z' 'a-z')" "escalate" \
 
 # Scoped re-reviews count against the stop too. Uncapped, every fix commit
 # staled the last review and every new review found something new: one branch
-# took seven reviews, five on the wording of comments and docs.
+# ran seven reviews over hours. Four is where the session stops deciding alone,
+# not a ceiling the gate can't meet: the gate wants a review newer than every
+# commit, so a fifth runs on the escalation's answer, and a review that only
+# re-earns evidence for passed code isn't counted.
 review_flat="$(printf '%s' "$review" | tr -s ' \n' ' ')"
-assert_contains "$review_flat" "Count every review, scoped re-reviews included" \
+assert_contains "$review_flat" "Count every whole-branch review, scoped re-reviews included" \
   "the cap counts scoped re-reviews"
-assert_contains "$review_flat" "at most four reviews in all" "and states its number"
-assert_contains "$review_flat" "If the fourth still finds something blocking, stop and escalate" \
-  "and what happens at it"
-assert_contains "$review_flat" "rides along with the next code fix" \
-  "a Major about wording alone doesn't buy a review round of its own"
-assert_contains "$review_flat" "within the round cap below" \
+assert_contains "$review_flat" 'the `review-*.md` reports in the session scratch; the conformance lane isn'"'"'t counted' \
+  "and says what a review is, by the file the hook writes"
+assert_contains "$review_flat" "the fourth is the last one you start on your own" \
+  "four is where the session stops deciding alone"
+assert_contains "$review_flat" "stop and escalate as in step 3, and a fifth runs on the answer" \
+  "with a way through the gate after the escalation"
+assert_contains "$review_flat" "only re-earns evidence for code an earlier review passed isn't counted" \
+  "a main merge, a version reorder or a successor doesn't spend the cap"
+assert_contains "$review_flat" "within the review cap below" \
   "and the blocking rule points at the cap instead of contradicting it"
+assert_not_contains "$review_flat" "rides along with the next code fix" \
+  "a false sentence about a gate is a defect, so no wording carve-out defers it"
 
 # The marker in the skill has to be the one the hook actually matches.
 hook_marker="$(grep -oE 'whole-branch-review:' "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh" | head -1)"
