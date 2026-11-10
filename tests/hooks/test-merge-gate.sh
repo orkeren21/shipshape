@@ -36,7 +36,9 @@ give_stamp() { # give_stamp <number> [head] [branch]
 
 # --- not a merge is not this gate's business ---------------------------------
 
-for cmd in "git merge main" "echo gh pr merge is a command" "gh pr view 57"; do
+for cmd in "git merge main" "echo gh pr merge is a command" "gh pr view 57" \
+  "gh -R o/r pr view 57" "gh pr -R o/r checks 57" "command -v gh" "time npm test" \
+  "echo \"time gh pr merge 57\"" "git commit -m \"gh -R o/r pr merge is judged too\""; do
   out="$(run_hook merge-gate.sh "$(merge_payload "$cmd")" "$repo")"
   assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
     "no deny for: $cmd"
@@ -186,6 +188,50 @@ assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "a bare merge from a branch with no record is refused"
 git -C "$repo" checkout -q "$main_branch"
 
+# --- the other spellings of the same command ---------------------------------
+#
+# gh reads -R on either side of `pr`, and `command` and `time` sit in front of
+# the invocation. Each of these merges, so each is judged: with no record, each
+# is refused, and the refusal names the PR the merge would have shipped.
+
+for cmd in \
+  'gh -R o/r pr merge 444' \
+  'gh pr -R o/r merge 444' \
+  'command gh pr merge 444' \
+  'time gh pr merge 444'
+do
+  out="$(run_hook merge-gate.sh "$(merge_payload "$cmd")" "$repo")"
+  assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" "refused: [$cmd]"
+  assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "444" \
+    "and judged as PR 444: [$cmd]"
+done
+
+# The number is read after the words, -R and all. Read from the start of the
+# line instead, `sleep 30` would be judged as the PR being merged.
+out="$(run_hook merge-gate.sh "$(merge_payload "sleep 30; gh -R o/r pr merge 444")" "$repo")"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "444" \
+  "a -R merge after another command is judged on its own number"
+
+# --- a long command is still read --------------------------------------------
+#
+# With the command piped into grep -q under pipefail, grep leaving at the match
+# killed the writer, the pipeline read as no match, and a merge with a body this
+# size went through. Behind a continuation it was already refused, because that
+# check folds the command onto one line first; the second case guards that.
+
+long_body="$(head -c 200000 /dev/zero | tr '\0' x)"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 444 --body-file - <<'EOF'
+$long_body
+EOF")" "$repo")"
+assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "refused: a merge with a 200 KB body in a heredoc"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr \\
+merge 444 --body-file - <<'EOF'
+$long_body
+EOF")" "$repo")"
+assert_eq "merge_gate_unparseable" "$(hook_field "$out" shipshapeCode)" \
+  "refused: the same behind a continuation"
+
 # --- one merge per command ---------------------------------------------------
 #
 # A compound merge has no single answer, and judging only one invocation lets
@@ -202,6 +248,28 @@ out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 57
 gh pr merge 58")" "$repo")"
 assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "two merges on separate lines are the same refusal"
+
+# A merge spelled with -R is still a merge. Counting only `gh pr merge` read
+# this as one merge, judged the stamped 57, and shipped 58 unjudged.
+out="$(run_hook merge-gate.sh "$(merge_payload "gh -R o/r pr merge 58 && gh pr merge 57")" "$repo")"
+assert_eq "merge_gate_compound" "$(hook_field "$out" shipshapeCode)" \
+  "a -R merge beside a plain one is a compound"
+
+# On separate lines the line count decides, so it reads the same spellings.
+# With the plain merge first, a narrow count saw one merge, judged the stamped
+# 57, and shipped 58.
+for second in 'gh -R o/r pr merge 58' 'command gh pr merge 58' 'time gh pr merge 58'; do
+  out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 57
+$second")" "$repo")"
+  assert_eq "merge_gate_compound" "$(hook_field "$out" shipshapeCode)" \
+    "a compound across lines: [gh pr merge 57 / $second]"
+done
+
+# The new spellings of a stamped PR are judged on that PR, and allowed.
+for cmd in 'command gh pr merge 57' 'time gh pr merge 57' 'GH_TOKEN=x command gh pr merge 57'; do
+  out="$(run_hook merge-gate.sh "$(merge_payload "$cmd")" "$repo")"
+  assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" "allowed, as PR 57: [$cmd]"
+done
 
 # Tokens on other lines belong to other invocations: `sleep 30` is not PR 30.
 out="$(run_hook merge-gate.sh "$(merge_payload "sleep 30
@@ -229,6 +297,10 @@ out="$(run_hook merge-gate.sh "$(merge_payload "gh \\
 pr merge 444")" "$repo")"
 assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
   "wherever the split lands"
+out="$(run_hook merge-gate.sh "$(merge_payload "gh -R o/r pr \\
+merge 444")" "$repo")"
+assert_eq "merge_gate_unparseable" "$(hook_field "$out" shipshapeCode)" \
+  "and whether or not -R sits in the words"
 
 # The two shapes that defeated the folding approach stay denied.
 out="$(run_hook merge-gate.sh "$(merge_payload "echo x \\\\
@@ -345,5 +417,17 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
 
 out="$(run_hook merge-gate.sh 'this is not json' "$repo")"
 assert_eq "0" "$(hook_status)" "an unreadable payload fails open"
+
+# An empty pattern would match every command, and every multi-line one would
+# read as a compound merge. With a lib that lacks the gh pattern, the gate
+# stands down instead.
+old_tree="$work/old-tree"; mkdir -p "$old_tree/hooks" "$old_tree/lib"
+cp "$HOOKS_DIR/merge-gate.sh" "$old_tree/hooks/"
+sed -e '/^shipshape_gh_pr_words()/,/^}/d' -e '/^shipshape_gh_pr_invocation()/,/^}/d' \
+  "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$old_tree/lib/shipshape-common.sh"
+out="$(cd "$repo" && merge_payload 'ls
+ls' | bash "$old_tree/hooks/merge-gate.sh" 2>/dev/null)"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a lib without the gh pattern fails open"
 
 finish

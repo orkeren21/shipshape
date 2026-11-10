@@ -100,11 +100,45 @@ assert_contains "$(handback_for 'gh pr --repo=o/r new --fill')" "shipshape-pr-op
   "--repo after pr survives the hand-back"
 assert_contains "$(handback_for 'gh -R a/b pr -R o/r create --fill')" "shipshape-pr-open -R a/b -R o/r --fill" \
   "both positions survive, in order, so gh resolves them as it would have"
+assert_contains "$(handback_for 'gh -R a/b --repo c/d pr -R e/f --repo=g/h new --fill')" \
+  "shipshape-pr-open -R a/b --repo c/d -R e/f --repo=g/h --fill" \
+  "every flag on each side survives, not only the last one"
 assert_contains "$(handback_for 'command gh pr create --fill')" "shipshape-pr-open --fill" \
   "the prefix is dropped with the rest of the old command"
 assert_contains "$(handback_for 'gh -R o/r pr create --title "gh pr new is the alias" --fill')" \
   'shipshape-pr-open -R o/r --title "gh pr new is the alias" --fill' \
   "a title that mentions the command is still the caller's title"
+
+# The hand-back starts at the first invocation, not the last match on a line.
+# A mention after a separator inside a title matches too, and taking the last
+# match cut the title there.
+assert_contains "$(handback_for 'gh pr create --title "fix (gh pr new alias)" --fill')" \
+  'shipshape-pr-open --title "fix (gh pr new alias)" --fill' \
+  "a title holding a mention after ( is handed back whole"
+assert_contains "$(handback_for 'gh pr create --title "a; gh pr new b" --fill')" \
+  'shipshape-pr-open --title "a; gh pr new b" --fill' \
+  "a title holding a mention after ; is handed back whole"
+
+# Only the invocation's own line is rewritten. The lines before it are other
+# commands, and the lines after it are its arguments, a heredoc body most
+# often, which come back exactly as written.
+multi="$(handback_for 'git push -u origin feat
+gh pr create --title t --fill')"
+assert_contains "$multi" "shipshape-pr-open --title t --fill" \
+  "a multi-line command hands back the invocation's arguments"
+assert_not_contains "$multi" "shipshape-pr-open git push" \
+  "and not the command on the line before it"
+
+heredoc="$(handback_for 'gh pr create --title t --body "$(cat <<'"'"'EOF'"'"'
+## Summary
+  - an indented item
+gh pr new is the alias
+EOF
+)"')"
+assert_contains "$heredoc" '  - an indented item' \
+  "a heredoc body keeps its indentation"
+assert_contains "$heredoc" 'gh pr new is the alias' \
+  "and a body line that starts with the words is not rewritten"
 
 # --- a long command is still read --------------------------------------------
 #
@@ -176,7 +210,29 @@ for payload in 'not json' '{}' ''; do
   assert_eq "0" "$(hook_status)" "an unusable payload fails open"
 done
 
-assert_contains "$(cat "$scratch/trace.log" 2>/dev/null)" "pr-wrapper-gate" \
+assert_contains "$(cat "$scratch/trace.log" 2>/dev/null)" "refused a bare gh pr create" \
   "the gate records what it refused"
+
+# A lib without the gh functions would leave a pattern that matches every
+# command, or one with no gh words in it. Either way the gate stands down:
+# exit 0, no refusal, and a trace line. Each run has a session of its own, so
+# its trace is not mistaken for the refusal's above.
+words_fn='/^shipshape_gh_pr_words()/,/^}/d'
+invocation_fn='/^shipshape_gh_pr_invocation()/,/^}/d'
+for strip in words invocation both; do
+  tree="$work/lib-without-$strip"; mkdir -p "$tree/hooks" "$tree/lib"
+  cp "$HOOKS_DIR/pr-wrapper-gate.sh" "$tree/hooks/"
+  case "$strip" in
+    words) sed -e "$words_fn" ;;
+    invocation) sed -e "$invocation_fn" ;;
+    both) sed -e "$words_fn" -e "$invocation_fn" ;;
+  esac < "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$tree/lib/shipshape-common.sh"
+  out="$(cd "$repo" && printf '{"session_id":"stripped-%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cd x; ls"}}' "$strip" \
+    | bash "$tree/hooks/pr-wrapper-gate.sh" 2>/dev/null; echo "exit=$?")"
+  assert_eq "exit=0" "${out##*$'\n'}" "a lib without $strip exits 0"
+  assert_not_contains "$out" '"deny"' "a lib without $strip refuses nothing"
+  assert_contains "$(cat "$repo/.shipshape/stripped-$strip/trace.log" 2>/dev/null)" \
+    "no gh pattern in lib; failing open" "a lib without $strip is traced"
+done
 
 finish

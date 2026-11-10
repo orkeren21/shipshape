@@ -34,22 +34,23 @@ shipshape_enabled PR_WRAPPER_GATE || exit 0
 command_line="$(shipshape_field tool_input.command)"
 [ -n "$command_line" ] || exit 0
 
-# `gh pr create` as an invocation. `invocation` below is the exact rule. In
-# words: the command at the start of a line or after a separator or `(`,
-# behind optional prefixes such as `command`, `time`, `GH_TOKEN=x` or
-# `/opt/homebrew/bin/`, and followed by whitespace or the end of the line.
-# That reads text, not shell, so it refuses some mentions and misses some
-# invocations.
+# `gh pr create` as an invocation, by the pattern both gh gates share:
+# shipshape_gh_pr_invocation in lib/shipshape-common.sh is the exact rule, and
+# gives examples of it in words. That reads text, not shell, so it refuses some
+# mentions and misses some invocations.
 #
-# `new` is create's alias and -R/--repo is `pr`'s one flag, so both are named,
-# -R on either side of `pr`. Measured on gh 2.96.0: `gh pr create --help` lists
-# the alias, `gh pr --help` lists only -R/--repo, and `gh -R o/r pr new --help`
-# and `gh pr -R o/r new --help` print create's help. Some of create's own flags
-# also reach it from before `create` (`gh pr --title t create --help` prints
-# create's help), and those are not matched.
-repo_flag='(-R|--repo)([[:space:]]+|=)?[^[:space:];&|()]+[[:space:]]+'
-gh_pr_create="gh[[:space:]]+(($repo_flag)*)pr[[:space:]]+(($repo_flag)*)(create|new)"
-invocation='(^|[;&|(]|&&|\|\|)[[:space:]]*((command|time)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$gh_pr_create"'([[:space:]]+|$)'
+# `new` is create's alias. Measured on gh 2.96.0: `gh pr create --help` lists
+# it, and `gh -R o/r pr new --help` and `gh pr -R o/r new --help` print
+# create's help. Some of create's own flags also reach it from before `create`
+# (`gh pr --title t create --help` prints create's help), and those are not
+# matched.
+# A lib without the pattern functions would leave a pattern that matches every
+# command, or one with no gh words in it. The gate fails open instead.
+if ! declare -F shipshape_gh_pr_words shipshape_gh_pr_invocation >/dev/null; then
+  shipshape_trace pr-wrapper-gate "no gh pattern in lib; failing open"
+  exit 0
+fi
+invocation="$(shipshape_gh_pr_invocation 'create|new')"
 
 # A here-string, not a pipe: with pipefail, grep -q leaving at an early match
 # kills a long printf, and the pipeline reads as no match. A 200 KB command got
@@ -66,15 +67,23 @@ esac
 
 # Hand back the caller's own arguments so the correction is a paste rather than
 # a retyping: everything after `create`, and any -R before it (groups 5 and 9 of
-# `invocation`), because without it the paste opens the pull request against
-# whichever repo is checked out. On each line that matches, sed replaces
-# everything up to and including the last match with that match's -R groups,
-# so `gh pr create --title "a; gh pr new b" --fill` hands back `b" --fill`.
-# Every line then loses its leading whitespace, and lines that do not match
-# come back otherwise unchanged.
-args="$(printf '%s' "$command_line" \
-  | sed -E -e "s#.*${invocation}#\\5\\9#" \
-  | sed -e 's/^[[:space:]]*//')"
+# the pattern), because without it the paste opens the pull request against
+# whichever repo is checked out. It starts at the leftmost match on the first
+# line that matches, so `--title "a; gh pr new b"` comes back whole. Lines
+# before that one are left out, and lines after it, a heredoc body most often,
+# come back exactly as written.
+handback_re="${invocation}(.*)\$"
+args=""
+{
+  while IFS= read -r line; do
+    if [[ $line =~ $handback_re ]]; then
+      args="${BASH_REMATCH[5]-}${BASH_REMATCH[9]-}${BASH_REMATCH[15]-}"
+      rest="$(cat)"
+      [ -n "$rest" ] && args="$args"$'\n'"$rest"
+      break
+    fi
+  done
+} <<<"$command_line"
 
 shipshape_trace pr-wrapper-gate "refused a bare gh pr create"
 shipshape_emit_deny "Open the pull request through the wrapper:
