@@ -269,8 +269,25 @@ for shape in \
 
   # really
 gh pr merge NN --squash' \
-  'gh pr merge NN --squash &' \
   'gh pr merge NN; echo done' \
+  'gh pr merge NN --squash; git checkout main & wait' \
+  'gh pr merge NN || echo failed' \
+  'gh pr merge NN && git checkout main && git pull --ff-only' \
+  'gh pr merge NN && git log | grep x' \
+  'gh pr merge NN --squash 2>&1 | tee merge.log | tail -n 3' \
+  'gh pr merge NN | head -3; git checkout main' \
+  'gh pr merge NN |& cat' \
+  '(gh pr merge NN; git checkout main) | cat' \
+  '(gh pr merge NN) 2>&1 | tail -3' \
+  'x=$(gh pr merge NN) && echo done' \
+  "gh pr merge NN && cat <<'X'
+not gh's stdin
+X" \
+  '{ gh pr merge NN; }' \
+  '{ gh pr merge NN --squash; } > out' \
+  'noglob gh pr merge NN' \
+  'GH_TOKEN=x GITHUB_TOKEN=y GH_PROMPT_DISABLED=1 GH_DEBUG=1 GH_PAGER=cat PAGER=cat NO_COLOR=1 CLICOLOR=0 GH_NO_UPDATE_NOTIFIER=1 gh pr merge NN' \
+  '/usr/local/bin/gh pr merge NN' \
   'gh pr merge NN # ship it' \
   'gh pr merge https://github.com/acme/widget/pull/NN' \
   'gh pr merge https://github.com/acme/widget/pull/NN/files --squash' \
@@ -305,9 +322,6 @@ gh pr merge NN --squash' \
   "gh pr merge --body-file - <<-'EOF' NN
 57
 EOF" \
-  "gh pr merge --body-file - <<-EOF NN
-57
-EOF" \
   'gh pr merge --squash 2>&1 NN' \
   'gh pr merge --squash 1>&2 NN' \
   'gh pr merge --squash &> /tmp/out NN' \
@@ -320,12 +334,12 @@ EOF" \
   "gh pr merge --body-file - <<'EOF' NN
 57
 EOF" \
-  'gh pr merge -F - <<EOF NN
+  "gh pr merge -F - <<\"EOF\" NN
 57
-EOF' \
-  'gh pr merge -sF- << EOF NN
+EOF" \
+  "gh pr merge -sF- << 'EOF' NN
 57
-EOF' \
+EOF" \
   "gh pr merge --body-file=- <<-\"EOF\" NN
 57
 EOF"
@@ -359,7 +373,6 @@ echo 64'
   '(gh pr merge)'
   'x=$(gh pr merge)'
   'gh pr merge|cat'
-  'gh pr merge&'
 )
 for cmd in "${no_selector[@]}"; do
   judged_as allow 57 "$cmd"
@@ -491,7 +504,58 @@ EOF" \
 EOF" \
   "gh pr merge --body-file - <<'EOF NN
 57
-EOF"
+EOF" \
+  'gh pr merge --squash --body-file - <<EOF NN
+$(git checkout -q feature-58)
+EOF' \
+  'gh pr merge --squash --body-file - <<-EOF NN
+	`git checkout -q feature-58`
+EOF' \
+  'gh pr merge -F - <<EOF NN
+57
+EOF' \
+  'gh pr merge -sF- << EOF NN
+57
+EOF' \
+  'gh pr merge NN --squash &' \
+  'gh pr merge NN --squash & git checkout -q feature-58; wait' \
+  'time gh pr merge NN --squash & git checkout -q feature-58' \
+  'gh pr merge NN --squash &! git checkout -q feature-58' \
+  'gh pr merge NN --squash &| git checkout -q feature-58' \
+  'gh pr merge NN && git checkout -q feature-58 &' \
+  '(gh pr merge NN --squash) & git checkout -q feature-58' \
+  '{ gh pr merge NN --squash; } & git checkout -q feature-58' \
+  'gh pr merge NN --squash | git checkout feature-58' \
+  'gh pr merge NN | grep x' \
+  'gh pr merge NN | tail "-5"' \
+  'gh pr merge NN | tail -5 > out' \
+  'gh pr merge NN | tail -5 | sh' \
+  '(gh pr merge NN; git checkout x) | grep y' \
+  'gh pr merge NN &&
+git checkout -q feature-58' \
+  'gh pr merge NN |
+cat' \
+  '(gh pr merge NN; git checkout -q feature-58' \
+  'gh pr merge NN) x' \
+  '{ gh pr merge NN }' \
+  '{ gh pr merge NN; true }' \
+  '(gh pr merge NN }' \
+  'x=$(gh pr merge NN) && echo "$x"' \
+  'gh pr merge NN && echo $x' \
+  'gh pr merge NN && echo {a,b}' \
+  './gh pr merge NN' \
+  'bin/gh pr merge NN' \
+  'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.gh-resolved GIT_CONFIG_VALUE_0=base gh pr merge NN' \
+  'GIT_CONFIG_GLOBAL=/tmp/x gh pr merge NN' \
+  'GIT_COMMON_DIR=/x gh pr merge NN' \
+  'PATH=/tmp/evil gh pr merge NN' \
+  'GH_TOKEN=x PATH=/tmp/evil gh pr merge NN' \
+  'X+=1 gh pr merge NN' \
+  "gh pr merge<<'EOF' NN
+57
+EOF" \
+  'gh pr merge<in NN' \
+  'gh pr merge(NN)'
 do
   refused_as merge_gate_unparseable "${shape//NN/58}"
   refused_as merge_gate_unparseable "${shape//NN/64}"
@@ -504,8 +568,54 @@ reason="$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)"
 assert_contains "$reason" "Merge by number, on one line, with plain flags" "the refusal says how to merge"
 assert_contains "$reason" "-s=t" "and names the word it could not read"
 refused_as merge_gate_unparseable "gh pr merge 64 --squash --body \"\$(cat <<'EOF'"
-assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "--body-file - and a heredoc" \
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "--body-file - and a quoted heredoc" \
   "a computed body is answered with the heredoc form"
+refused_as merge_gate_unparseable 'gh pr merge 64 --body-file - <<EOF'
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "quote it, as <<'EOF'" \
+  "an unquoted heredoc is answered with the quoted form"
+refused_as merge_gate_unparseable 'gh pr merge 64 --squash & git checkout -q feature-58'
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "in the background" \
+  "a backgrounded merge is named as one"
+refused_as merge_gate_unparseable 'GIT_CONFIG_GLOBAL=/tmp/x gh pr merge 64'
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
+  "GIT_CONFIG_GLOBAL; the only names read before gh are GH_TOKEN, GITHUB_TOKEN, GH_PROMPT_DISABLED, GH_DEBUG, GH_PAGER, PAGER, NO_COLOR, CLICOLOR and GH_NO_UPDATE_NOTIFIER" \
+  "a prefix off the list is named, with the list"
+refused_as merge_gate_unparseable 'gh pr merge 64 | grep x'
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "only tail, head, cat and tee" \
+  "a pipe into anything else is named, with the list"
+
+# The words reach awk through its environment, which the system caps; a run of
+# gh, pr, merge and -R flags past 1024 bytes is refused before it gets there,
+# rather than failing open when awk can't start. 200 KB of it here.
+r_run="$(printf ' -R acme/widget%.0s' $(seq 1 14000))"
+refused_as merge_gate_unparseable "gh$r_run pr merge 58"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "over 1024 bytes" \
+  "refused for its length"
+
+# Redirections count toward the 200: pr, merge, 64 and 197 of them pass, and
+# one more refuses.
+dups="$(printf ' 2>&1%.0s' $(seq 1 197))"
+judged_as allow 64 "gh pr merge 64$dups"
+refused_as merge_gate_unparseable "gh pr merge 64$dups 2>&1"
+
+# The pattern reaches a merge in braces, behind += and behind zsh's noglob, so
+# each is judged or refused rather than passed unseen.
+refused_as merge_gate_other_repo 'GH_REPO+=other/repo gh pr merge 64'
+out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 64 --squash
+{ gh pr merge 58; }")" "$repo")"
+assert_eq "merge_gate_compound" "$(hook_field "$out" shipshapeCode)" \
+  "a second merge in braces on another line makes a compound"
+
+# The cost of the wider boundary, which DETAILS lists: mentions in parentheses
+# or followed by | now match, and are refused as not first.
+for cmd in 'grep -rnE "(gh pr merge|gh pr create)" hooks/' \
+  'git commit -m "docs: say what (gh pr merge) does"' "git log --grep='(gh pr merge)'"; do
+  refused_as merge_gate_not_first "$cmd"
+done
+
+# A command on an earlier line is not hidden by a comment after it.
+refused_as merge_gate_not_first 'git checkout feature-58 # go
+gh pr merge --squash'
 
 # A word over 1024 bytes is read only as a flag's value written as a word of
 # its own: as one, it passes; anywhere else, joined to its flag included, it
@@ -528,9 +638,11 @@ judged_as allow 64 "gh pr merge 64 --squash --body '$inline_body'"
 # A redirection target or heredoc delimiter over 1024 bytes refuses: copying
 # one costs time that grows with its square, and a 320 KB one took 3 s.
 long_target="$(head -c 200000 /dev/zero | tr '\0' x)"
-refused_as merge_gate_unparseable "gh pr merge 64 --body-file - <<$long_target
+refused_as merge_gate_unparseable "gh pr merge 64 --body-file - <<'$long_target'
 x
 $long_target"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "over 1024 bytes" \
+  "refused for its length, not its quoting"
 refused_as merge_gate_unparseable "gh pr merge 64 > $long_target"
 # The limit is on the delimiter as written, quotes included: 1024 bytes pass.
 refused_as merge_gate_unparseable "gh pr merge 64 --body-file - <<'$(head -c 1023 /dev/zero | tr '\0' x)'"
@@ -624,6 +736,7 @@ gh pr merge --squash --delete-branch' \
   'cd /other/repo && gh pr merge 64' \
   'echo $(gh pr merge 64)' \
   '((gh pr merge 64))' \
+  '{gh pr merge 64; }' \
   'X=$(./switch-to-58) gh pr merge 64' \
   'GH_TOKEN="$T" gh pr merge 64' \
   'time (gh pr merge 64)' \

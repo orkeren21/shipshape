@@ -77,11 +77,23 @@ args=""
 {
   while IFS= read -r line; do
     if [[ $line =~ $handback_re ]]; then
-      # Group 14 is what ended the verb: whitespace, dropped, or a character
-      # such as `>` or `;` that belongs to what follows, kept.
-      after="${BASH_REMATCH[14]-}"
-      case "$after" in *[![:space:]]*) ;; *) after="" ;; esac
-      args="${BASH_REMATCH[5]-}${BASH_REMATCH[9]-}${after}${BASH_REMATCH[15]-}"
+      m=("${BASH_REMATCH[@]}")
+      # A match the shell ends with `)` at once is a mention in parentheses,
+      # such as a commit message's `(gh pr create)`; a later match on the line
+      # is the invocation to hand back.
+      while [ "${m[14]-}" = ")" ]; do
+        line="${m[15]-}"
+        [[ $line =~ $handback_re ]] || break
+        m=("${BASH_REMATCH[@]}")
+      done
+      # Group 14 is what ended the verb: whitespace, dropped; a `)`, which
+      # closes what the command was in, dropped with the rest of the line; or
+      # a character such as `>` or `;` that belongs to what follows, kept.
+      case "${m[14]-}" in
+        ")") args="${m[5]-}${m[9]-}" ;;
+        *[![:space:]]*) args="${m[5]-}${m[9]-}${m[14]}${m[15]-}" ;;
+        *) args="${m[5]-}${m[9]-}${m[15]-}" ;;
+      esac
       rest="$(cat)"
       [ -n "$rest" ] && args="$args"$'\n'"$rest"
       break

@@ -159,14 +159,18 @@ number_for_branch() { # <branch>
 # feature-58 && gh pr merge`, `cd ../wt2; gh pr merge` and `gh pr checkout 58`
 # all moved the merge off the PR the gate judged. So every line before the
 # merge's must be blank or a comment, and before `gh` on its own line there
-# may be only spaces and tabs, one opening `(`, `$(` or `NAME=$(`, then the
-# prefixes the pattern allows: `command`, `time`, NAME=VALUE with a plain
-# VALUE, and a plain path to gh. Anything else stops the awk with an N record.
-# A prefix setting GH_REPO, GH_HOST, GIT_DIR or GIT_WORK_TREE points gh or git
-# elsewhere, and stops it with a G record.
+# may be only spaces and tabs, one opener (`(`, `{ `, `$(` or `NAME=$(`), then
+# `command`, `time`, `noglob` and NAME=VALUE or NAME+=VALUE with a plain VALUE,
+# then one of gh's usual directories. Anything else stops the awk with an N
+# record, or an X record for gh from another directory. Of the names set
+# there, GH_REPO, GH_HOST, GIT_DIR and GIT_WORK_TREE point gh or git at
+# another repository and stop it with a G record; any name off a short list
+# of tokens and display settings stops it with an X record, since git reads
+# config, a common dir and more from its environment, and PATH picks the gh.
 #
-# The arguments come from the merge's line only: what follows on later lines
-# is a heredoc body or another command.
+# The arguments come from the merge's line only. Later lines are a quoted
+# heredoc's body, which stays text, or commands that start once the merge's
+# command has ended; after() below makes sure of the second.
 #
 # The awk splits that line, from just after `gh`, into the words bash and zsh
 # hand to gh, and it reads only shapes both shells read alike. The first shape
@@ -179,17 +183,17 @@ number_for_branch() { # <branch>
 #     single quotes, and text in double quotes holding no $, backtick or
 #     backslash, in any run. Unquoted spaces and tabs separate words.
 #   - An unquoted ; | & or ) ends the command, and so does an unquoted # that
-#     starts a word, which begins a comment.
+#     starts a word, which begins a comment. What follows is read by after().
 #   - A redirection starts a word of its own, and only a lone 1 or 2 may sit
 #     against it: >, >>, 1>, 1>>, 2>, 2>> or &> before a plain-word target;
-#     2>&1 or 1>&2; or a heredoc, <<WORD, <<'WORD', <<"WORD" or <<-WORD. A
-#     target or delimiter over 1024 bytes stops it, as copying one costs time
-#     that grows with its square.
+#     2>&1 or 1>&2; or a heredoc whose delimiter is quoted, <<'WORD',
+#     <<"WORD", <<-'WORD' or <<-"WORD". A target or delimiter over 1024
+#     bytes stops it, as copying one costs time that grows with its square.
 #   - Anything else stops it: $ or a backtick, a backslash, ( { } [ * ? ~ !,
-#     a quote left open, and any redirection of another shape. So does a
-#     201st word: no merge needs that many, and reading is linear but not
-#     free (about 15 µs a word here), so millions of them would run the hook
-#     past its timeout, where it decides nothing.
+#     a quote left open, an unquoted heredoc delimiter, and any redirection
+#     of another shape. So does a 201st word or redirection: no merge needs
+#     that many, and reading is linear but not free, so millions of them
+#     would run the hook past its timeout, where it decides nothing.
 #
 # It prints one record per line: W <word as written>; V for a word over 1024
 # bytes, which can only be a flag's value; R or H <redirection>; then E <what
@@ -202,8 +206,14 @@ split_words='
 BEGIN {
   plain = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/:@+,=-"; sq = "\047"
   name = "[A-Za-z_][A-Za-z0-9_]*"; value = "[A-Za-z0-9._/:@+,=-]*"
-  first = "^[ \t]*([(]|[$][(]|" name "=[$][(])?[ \t]*((command|time)[ \t]+|" name "=" value "[ \t]+)*(" value "/)?$"
-  elsewhere = "(^|[ \t(])(GH_REPO|GH_HOST|GIT_DIR|GIT_WORK_TREE)="
+  opener = "^[ \t]*([(]|[$][(]|" name "[+]?=[$][(]|[{][ \t])"
+  prefix = "[ \t]*((command|time|noglob)[ \t]+|" name "[+]?=" value "[ \t]+)*"
+  shaped = opener "?" prefix "(" value "/)?$"
+  first = opener "?" prefix "(/opt/homebrew/bin/|/usr/local/bin/|/usr/bin/|/bin/|/home/linuxbrew/[.]linuxbrew/bin/)?$"
+  readable = "GH_TOKEN, GITHUB_TOKEN, GH_PROMPT_DISABLED, GH_DEBUG, GH_PAGER, PAGER, NO_COLOR, CLICOLOR and GH_NO_UPDATE_NOTIFIER"
+  allowed = " GH_TOKEN GITHUB_TOKEN GH_PROMPT_DISABLED GH_DEBUG GH_PAGER PAGER NO_COLOR CLICOLOR GH_NO_UPDATE_NOTIFIER "
+  elsewhere = " GH_REPO GH_HOST GIT_DIR GIT_WORK_TREE "
+  piped = " tail head cat tee "
 }
 NR < ENVIRON["SHIPSHAPE_MERGE_AT"] + 0 {
   if ($0 !~ /^[ \t]*(#.*)?$/) { finish("N", "a command on a line before the merge"); exit }
@@ -211,23 +221,112 @@ NR < ENVIRON["SHIPSHAPE_MERGE_AT"] + 0 {
 }
 function text(from, to,   k, s) { s = ""; for (k = from; k < to; k++) s = s ch[k]; return s }
 function finish(kind, why) { print kind "\t" why; ended = 1 }
+function counted() { if (++words > 200) finish("X", "more than 200 words or redirections"); return !ended }
 function flush() {
   if (!inword) return
   inword = 0
-  if (++words > 200) return finish("X", "more than 200 words")
+  if (!counted()) return
   if (i - wstart > 1024) print "V"
   else print "W\t" text(wstart, i)
 }
 function boundary(k) { return (k > n) || index(" \t;|&)", ch[k]) }
 function plain_run(   s) { s = i; while (i <= n && index(plain, ch[i])) i++; return i > s }
 function quoted(q,   j) {
-  if (!inword) { inword = 1; wstart = i }
   for (j = i + 1; j <= n && ch[j] != q; j++)
     if (q == "\"" && index("$`\\", ch[j])) return finish("X", (ch[j] == "\\") ? "a backslash" : "dynamic")
   if (j > n) return finish("X", "a quote left open past the line")
   i = j + 1
 }
+# Each NAME= before gh, past the opener: one that points gh or git at another
+# repository is a G record; any name not on the short list read here, an X.
+function prefixes(b,   k, m, part, nm) {
+  sub(opener, "", b)
+  m = split(b, part, /[ \t]+/)
+  for (k = 1; k <= m; k++) {
+    if (part[k] !~ ("^" name "[+]?=")) continue
+    nm = part[k]; sub(/[+]?=.*/, "", nm)
+    if (index(elsewhere, " " nm " ")) return finish("G", "a prefix setting " nm)
+    if (!index(allowed, " " nm " ")) return finish("X", "a prefix setting " nm "; the only names read before gh are " readable)
+  }
+}
+# One word after the merge'\''s command, read as the merge'\''s words are read but
+# not printed. Its text when it is short, for a pipe stage to be checked.
+function tailword(   s) {
+  s = i
+  while ((i <= n) && !ended && !index(" \t;|&)<>", ch[i])) {
+    if ((ch[i] == sq) || (ch[i] == "\"")) quoted(ch[i])
+    else if ((ch[i] == "$") || (ch[i] == "`")) finish("X", "dynamic")
+    else if (index(plain, ch[i])) i++
+    else finish("X", "the character " ch[i])
+  }
+  if (ended || !counted()) return ""
+  return (i - s > 1024) ? "" : text(s, i)
+}
+# What follows the merge'\''s own command on its line. Whatever runs alongside
+# gh can change which PR it merges, so only shapes known to run after it are
+# read: ; && || and the end of the line, a comment, a ) or } closing the
+# opener before gh, plain words and redirections in the commands after it,
+# and a pipe from the merge (or its group) into tail, head, cat or tee with
+# plain words only. A backgrounding & anywhere, any other pipe stage, and a
+# list or group that goes on past the line refuse.
+function after(   c, t, s, need, inmerge, stage, depth, semi) {
+  quiet = 1; depth = (closer != ""); need = 0; inmerge = 1; stage = 0; semi = 0
+  while (!ended) {
+    while ((ch[i] == " ") || (ch[i] == "\t")) i++
+    c = ch[i]
+    if ((i > n) || (c == "#")) {
+      if (need) return finish("X", "a list that goes on past the merge'\''s line")
+      if (depth) return finish("X", "a group around the merge that goes on past its line")
+      return finish("E", "the end of the line")
+    }
+    if (c == ";") {
+      if (need) return finish("X", "an empty command")
+      i++; inmerge = 0; stage = 0; semi = 1
+      if (!depth) return finish("E", ";")
+      continue
+    }
+    if (((c == "&") && (ch[i + 1] == "&")) || ((c == "|") && (ch[i + 1] == "|"))) {
+      if (need) return finish("X", "an empty command")
+      i += 2; need = 1; inmerge = 0; stage = 0; semi = 0
+      continue
+    }
+    if ((c == "&") && (ch[i + 1] != ">"))
+      return finish("X", "a merge run in the background, alongside what follows it")
+    if (c == "|") {
+      if (need) return finish("X", "an empty command")
+      i++; if (ch[i] == "&") i++
+      need = 1; stage = inmerge; semi = 0
+      continue
+    }
+    if ((c == ")") || ((c == "}") && boundary(i + 1))) {
+      if (need || !depth || (c != closer) || ((c == "}") && !semi))
+        return finish("X", "a " c " that closes nothing the gate saw open")
+      i++; depth = 0; inmerge = 1; stage = 0; semi = 0
+      continue
+    }
+    semi = 0
+    if (index("<>&", c)) {
+      if (stage) return finish("X", "a redirection in the pipe stage after the merge")
+      inword = 0; redirect(); continue
+    }
+    s = i; t = tailword()
+    if (ended) return
+    if ((ch[i] == "<") || (ch[i] == ">")) {
+      if (stage) return finish("X", "a redirection in the pipe stage after the merge")
+      inword = 1; wstart = s; redirect(); continue
+    }
+    need = 0
+    if (stage == 1) {
+      if (!index(piped, " " t " ")) return finish("X", "a pipe from the merge into " (t == "" ? "a long word" : t) ", which runs alongside it; only tail, head, cat and tee are read there")
+      stage = 2
+    }
+    else if (stage == 2) {
+      if ((t == "") || index(t, sq) || index(t, "\"")) return finish("X", "a word in the pipe stage after the merge that is not plain")
+    }
+  }
+}
 function redirect(   fd, op, s, q) {
+  if (!counted()) return
   fd = ""
   if (inword) {
     if ((i - wstart != 1) || (ch[i] != ">") || !index("12", ch[wstart])) return finish("X", "a redirection joined to a word")
@@ -237,7 +336,8 @@ function redirect(   fd, op, s, q) {
   else if ((ch[i] == ">") && (ch[i + 1] == "&")) {
     if (((fd ch[i + 2]) != "21") && ((fd ch[i + 2]) != "12")) return finish("X", "a >& redirection other than 2>&1 or 1>&2")
     if (!boundary(i + 3)) return finish("X", "a >& redirection other than 2>&1 or 1>&2")
-    print "R\t" fd ">&" ch[i + 2]; i += 3; return
+    if (!quiet) print "R\t" fd ">&" ch[i + 2]
+    i += 3; return
   }
   else if ((ch[i] == ">") && (ch[i + 1] == ">")) { op = ">>"; i += 2 }
   else if (ch[i] == ">") { op = ">"; i++ }
@@ -247,35 +347,60 @@ function redirect(   fd, op, s, q) {
   while ((ch[i] == " ") || (ch[i] == "\t")) i++
   s = i; q = ""
   if ((op ~ /^<</) && ((ch[i] == sq) || (ch[i] == "\""))) { q = ch[i]; i++ }
+  # An unquoted delimiter has the shell expand the body, $(…) and backticks
+  # included, before gh runs; a quoted one keeps it as text.
+  if ((op ~ /^<</) && (q == "")) return finish("X", "an unquoted heredoc delimiter, whose body the shell runs before gh: quote it, as <<'\''EOF'\''")
   if (!plain_run()) return finish("X", "a redirection whose target is not a plain word")
   if (q != "") { if (ch[i] != q) return finish("X", "a redirection whose target is not a plain word"); i++ }
   if (!boundary(i)) return finish("X", "a redirection whose target is not a plain word")
   if (i - s > 1024) return finish("X", "a redirection target over 1024 bytes")
-  print ((op ~ /^<</) ? "H" : "R") "\t" fd op " " text(s, i)
+  if (!quiet) print ((op ~ /^<</) ? "H" : "R") "\t" fd op " " text(s, i)
 }
 {
   p = index($0, ENVIRON["SHIPSHAPE_MERGE_WORDS"])
   if (!p) { finish("X", "the merge words were not where they matched"); exit }
   before = substr($0, 1, p - 1)
-  if (before !~ first) { finish("N", "a command before the merge on its line"); exit }
-  if (before ~ elsewhere) { finish("G", "a prefix setting GH_REPO, GH_HOST, GIT_DIR or GIT_WORK_TREE"); exit }
+  if (before !~ shaped) { finish("N", "a command before the merge on its line"); exit }
+  if (before !~ first) { finish("X", "gh run from a path that is none of /opt/homebrew/bin/, /usr/local/bin/, /usr/bin/, /bin/ and /home/linuxbrew/.linuxbrew/bin/"); exit }
+  prefixes(before)
+  if (ended) exit
+  closer = ""
+  if (before ~ /^[ \t]*[{]/) closer = "}"
+  else if (before ~ opener) closer = ")"
   n = split(substr($0, p + 2), ch, "")
-  i = 1; inword = 0; ended = 0; words = 0
+  i = 1; inword = 0; ended = 0; words = 0; quiet = 0
   while ((i <= n) && !ended) {
     c = ch[i]
     if ((c == " ") || (c == "\t")) { flush(); i++ }
-    else if ((c == "#") && !inword) finish("E", "a comment")
-    else if (index(";|)", c)) { flush(); finish("E", c) }
-    else if ((c == "&") && (ch[i + 1] != ">")) { flush(); finish("E", c) }
+    else if ((c == "#") && !inword) after()
+    else if (index(";|)", c) || ((c == "&") && (ch[i + 1] != ">"))) { flush(); if (!ended) after() }
     else if (index("<>&", c)) redirect()
-    else if ((c == sq) || (c == "\"")) quoted(c)
+    else if ((c == sq) || (c == "\"")) { if (!inword) { inword = 1; wstart = i }; quoted(c) }
     else if ((c == "$") || (c == "`")) finish("X", "dynamic")
     else if (index(plain, c)) { if (!inword) { inword = 1; wstart = i }; i++ }
     else finish("X", "the character " c)
   }
-  if (!ended) { flush(); finish("E", "the end of the line") }
+  if (!ended) { flush(); if (!ended) after() }
   exit
 }'
+
+deny_unparseable() { # <why the words cannot be read>
+  local how
+  shipshape_trace merge-gate "denied: the merge's words cannot be read: ${1:0:200}"
+  how="Merge by number, on one line, with plain flags — gh pr merge <number> --squash — and the gate can judge it."
+  case "$1" in
+    dynamic) how="$how A value only the shell knows (\$…, \$(…) or a backtick) can't be read here: for a long body, pass it with --body-file - and a quoted heredoc on the merge's line (--body-file - <<'EOF'), or write it as a plain quoted body." ;;
+  esac
+  shipshape_emit_deny "The gate can't read this merge's words with certainty (${1:0:300}), so it can't tell which pull request would ship. It judges only merges whose every word it recognises. $how$unreasoned_note" \
+    merge_gate_unparseable "gh pr merge <number> --squash"
+  exit 0
+}
+
+# The words reach awk through its environment, which the system caps (about
+# 128 KB a string on Linux, 1 MB in all on macOS); past that the exec fails,
+# and a failed awk fails open. A run of gh, pr, merge and -R flags this long is
+# input the gate refuses, not breakage, so it never gets that far.
+[ "${#mention}" -le 1024 ] || deny_unparseable "a gh … pr … merge run of over 1024 bytes"
 
 # The awk's own breakage — missing, or exiting non-zero — is not the input's
 # fault, so the gate fails open on it, traced. Only an X record refuses.
@@ -455,16 +580,7 @@ url_repo=""
   *) number="$selector" ;;
 esac
 
-if [ -n "$refusal" ]; then
-  shipshape_trace merge-gate "denied: the merge's words cannot be read: ${refusal:0:200}"
-  how="Merge by number, on one line, with plain flags — gh pr merge <number> --squash — and the gate can judge it."
-  case "$refusal" in
-    dynamic) how="$how A value only the shell knows (\$…, \$(…) or a backtick) can't be read here: for a long body, pass it with --body-file - and a heredoc on the merge's line (--body-file - <<'EOF'), or write it as a plain quoted body." ;;
-  esac
-  shipshape_emit_deny "The gate can't read this merge's words with certainty (${refusal:0:200}), so it can't tell which pull request would ship. It judges only merges whose every word it recognises. $how$unreasoned_note" \
-    merge_gate_unparseable "gh pr merge <number> --squash"
-  exit 0
-fi
+[ -z "$refusal" ] || deny_unparseable "$refusal"
 
 # A plain word that is not a number is a branch, read through the records.
 if [ -n "$selector" ] && [ -z "$number" ]; then
