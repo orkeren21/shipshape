@@ -247,19 +247,21 @@ doctor's report say it went unjudged. A local branch moved back to its stamp wit
 The name resolves as git resolves any name, so a tag sharing it outranks the branch.
 
 `pr-wrapper-gate` reads a command as text, not as shell: it is a tripwire on the ordinary
-spelling, not a parser. It refuses text shaped like the start of the command: at the
-start of a line or after a separator, behind a path, environment assignments, `command`
-or `time`. So it also refuses a heredoc or commit-message line that starts with the
-command, and a quoted mention after a separator, `(` included, such as
-`-m "fix (gh pr new alias)"`. A string for `eval` or `bash -c` is refused where gh follows
-a separator inside it and missed where gh opens it. Ways past it include any other word
-in front (`env`, `exec`, `time -p`, a shell keyword such as `then`); backticks, including
-inside a double-quoted commit message, where the shell runs them; a quoted or escaped
-word (`"gh"`, `\gh`, `gh pr "create"`); a line continuation inside the three words;
-create's own flags before `create` (`gh pr --title t create`, `gh pr -fd create`);
-`gh api`; and a tool other than Bash. A command that names `shipshape-pr-open` anywhere
-is let through. The gate closes the ordinary path, and the done gate's arming is as
-complete as that.
+spelling, not a parser. It refuses text shaped like the start of the command and followed
+by a space or the line's end: at the start of a line or after a separator, behind a path,
+environment assignments, `command` or `time`. So it also refuses a heredoc or
+commit-message line that starts with the command, and a quoted mention after a separator,
+`(` included, such as `-m "fix (gh pr new alias)"`. A string for `eval` or `bash -c`, or
+in backticks, is refused where gh follows a separator inside it and missed where gh opens
+it. Ways past it include any other word in front (`env`, `exec`, `time -p`, a shell
+keyword such as `then`); gh opening backticks, even inside a double-quoted commit message,
+where the shell runs them; a quoted or escaped word (`"gh"`, `\gh`, `gh pr "create"`); a
+line continuation inside the three words or straight after them; a redirect against
+`create` (`gh pr create>pr.log`); some of create's own flags before `create`
+(`gh pr --title t create`, `gh pr -fd create`, `gh pr --fill --draft create`); `gh api`;
+and a tool other than Bash. A command that names `shipshape-pr-open` anywhere is let
+through. The gate closes the ordinary path, and the done gate's arming is as complete as
+that.
 
 ## The pipeline
 

@@ -35,23 +35,22 @@ command_line="$(shipshape_field tool_input.command)"
 
 # `gh pr create` as an invocation: at the start of a line or after a shell
 # separator, optionally behind a path, environment assignments, `command` or
-# `time`, and followed by whitespace or the end of the line. The words mid-text,
-# as in most commit messages and grep patterns, are not one; limits below.
+# `time`, and followed by whitespace or the end of the line. A commit message
+# that mentions the words mid-sentence is not one; limits below.
 #
 # `new` is create's alias, and -R/--repo is `pr`'s one flag, so it is named on
-# either side of `pr`. gh also reads create's own flags there, in any form but a
-# bare valueless one (`gh pr --title t create`, `gh pr -fd create`), and this
-# does not catch them. Measured on gh 2.96.0 with --help: `gh pr create --help`
-# lists the alias, `gh pr --help` lists only -R/--repo; `gh -R o/r pr new`,
-# `gh pr -R o/r new`, `gh pr --title t create` and `gh pr -fd create` all print
-# create's help, and `gh pr --fill create` is an unknown flag.
+# either side of `pr`. Some of create's own flags reach it from there too, as
+# in `gh pr --title t create`, `gh pr -fd create` and
+# `gh pr --fill --draft create`, and this does not catch them. Measured on
+# gh 2.96.0 with --help: `gh pr create --help` lists the alias, `gh pr --help`
+# lists only -R/--repo, and every spelling named here prints create's help.
 #
 # Text, not shell: a heredoc or commit-message line that starts with the command
 # reads as one, and so does a quoted mention after a separator, `(` included,
-# as in `-m "fix (gh pr new alias)"`. A string for `eval` or `bash -c` is read
-# the same way, refused where gh follows a separator inside it and missed where
-# gh opens it. Backticks, quoted words and other prefixes are missed; DETAILS.md
-# names examples.
+# as in `-m "fix (gh pr new alias)"`. A string for `eval` or `bash -c`, or in
+# backticks, is read the same way: refused where gh follows a separator inside
+# it, missed where gh opens it. Quoted words and other prefixes are missed too;
+# DETAILS.md names examples.
 repo_flag='(-R|--repo)([[:space:]]+|=)?[^[:space:];&|()]+[[:space:]]+'
 gh_pr_create="gh[[:space:]]+(($repo_flag)*)pr[[:space:]]+(($repo_flag)*)(create|new)"
 invocation='(^|[;&|(]|&&|\|\|)[[:space:]]*((command|time)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$gh_pr_create"'([[:space:]]+|$)'
