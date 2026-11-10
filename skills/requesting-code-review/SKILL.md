@@ -93,7 +93,7 @@ severities. Filtering is your job, not the reviewer's.
 
 ## Acting on the findings
 
-**Critical and Major block.** Fix them, within the review cap below.
+**Critical and Major block.** Fix them, within the review cap (step 4 below).
 
 **Minor goes to the retro** as a follow-up. Not silently dropped, and not fixed
 reflexively at the end of a branch either.
@@ -116,16 +116,19 @@ see `shipshape:receiving-code-review`.
    matters, and what the options are. Two full rounds failing to converge is
    information about the change, not a reason to keep looping.
 
-4. **Count every whole-branch review, scoped re-reviews included.** These are
-   the `review-*.md` reports in the session scratch; the conformance lane isn't
-   counted. Each fix commit makes the last review stale, and each new review can
-   find something new, so the fourth is the last one you start on your own. If
-   it still finds something blocking, stop and escalate as in step 3, and a
-   fifth runs on the answer. A review that only re-earns evidence for code an
-   earlier review passed isn't counted: main merged in, a version reordered, or
-   a successor session's first. In the field, one branch ran seven reviews over
-   hours, each finding one more sentence that described its gate as stricter
-   than the regex. Four reviews in, the shape of the problem was clear enough to
-   take to a human.
+4. **The review cap.** Count every review of this branch dispatched with the
+   `whole-branch-review:` marker, scoped re-reviews included, and a predecessor
+   session's too; the conformance lane isn't counted. Each fix commit makes the
+   last review stale, and each new review can find something new, so the fourth
+   is the last one you start on your own. If it still finds something blocking,
+   stop and escalate as in step 3; every review after the fourth runs on the
+   escalation's answer. Only these aren't counted, because nothing of the
+   branch's own changed since a review passed: one after main merged in with no
+   conflict to resolve, one after only the version number moved, and a
+   successor session's first, before it changes anything. A commit that changes
+   only comments or docs is the branch's own. In the field, one branch ran eight
+   reviews in three and a half hours: after the first found a code bug, six in a
+   row found sentences in the gate's comments and docs that a probe proved
+   false.
 
 The escalation goes in the retro either way, as does reaching round two at all.
