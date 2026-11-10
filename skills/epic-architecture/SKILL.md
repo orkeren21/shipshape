@@ -182,13 +182,14 @@ handoff. The lane proposes rather than the Architect because only a session
 inside the lane's worktree can start one there, on the lane's branch and
 pull request. Log the verdict like any ruling.
 
-Follow-ups arrive here too, in a lane's `DONE` or a `QUESTION`, and placing
-them is this seat's job. First check the operator's go: a follow-up it
+Follow-ups arrive here too, in a lane's `DONE`, and placing them is this
+seat's job. First check the operator's go: a follow-up it
 doesn't cover is a scope change, and that goes to the operator. One the go
 covers goes back to the session that found it, since that session holds its
-context. Write the lane a priming for it in `<epic folder>/<lane>/`, send the
-path in a `RULING`, and log the routing with the operator's words, who said
-them and when. That entry is what the lane checks its wider scope against.
+context. Write the lane a priming for it in `<epic folder>/<lane>/`, log the
+routing with the operator's words, who said them and when, then send the
+path in a `RULING`. That entry is what the lane checks its wider scope
+against, so it is in the log before the lane reads the ruling.
 Weigh the context the lane has left, as for a `MILESTONE`. A new session
 comes last, for a follow-up whose session is gone or out of room. On a turn
 a lane's message started, the app lets this seat only propose a session, so
