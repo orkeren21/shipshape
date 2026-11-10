@@ -106,6 +106,37 @@ assert_contains "$(handback_for 'gh -R o/r pr create --title "gh pr new is the a
   'shipshape-pr-open -R o/r --title "gh pr new is the alias" --fill' \
   "a title that mentions the command is still the caller's title"
 
+# The hand-back starts at the first invocation, not the last match on a line.
+# A mention after a separator inside a title matches too, and taking the last
+# match cut the title there.
+assert_contains "$(handback_for 'gh pr create --title "fix (gh pr new alias)" --fill')" \
+  'shipshape-pr-open --title "fix (gh pr new alias)" --fill' \
+  "a title holding a mention after ( is handed back whole"
+assert_contains "$(handback_for 'gh pr create --title "a; gh pr new b" --fill')" \
+  'shipshape-pr-open --title "a; gh pr new b" --fill' \
+  "a title holding a mention after ; is handed back whole"
+
+# Only the invocation's own line is rewritten. The lines before it are other
+# commands, and the lines after it are its arguments, a heredoc body most
+# often, which come back exactly as written.
+multi="$(handback_for 'git push -u origin feat
+gh pr create --title t --fill')"
+assert_contains "$multi" "shipshape-pr-open --title t --fill" \
+  "a multi-line command hands back the invocation's arguments"
+assert_not_contains "$multi" "shipshape-pr-open git push" \
+  "and not the command on the line before it"
+
+heredoc="$(handback_for 'gh pr create --title t --body "$(cat <<'"'"'EOF'"'"'
+## Summary
+  - an indented item
+gh pr new is the alias
+EOF
+)"')"
+assert_contains "$heredoc" '  - an indented item' \
+  "a heredoc body keeps its indentation"
+assert_contains "$heredoc" 'gh pr new is the alias' \
+  "and a body line that starts with the words is not rewritten"
+
 # --- a long command is still read --------------------------------------------
 #
 # With the command piped into grep -q under pipefail, grep leaving at the match

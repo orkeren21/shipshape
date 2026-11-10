@@ -455,6 +455,33 @@ shipshape_emit_context() {
 }
 
 # ---------------------------------------------------------------------------
+# The gh command shapes the gates match
+# ---------------------------------------------------------------------------
+
+# pr-wrapper-gate and merge-gate read a command as text, and both read it with
+# these two patterns, so the gates cannot drift apart. Each takes the verb as an
+# ERE alternation, such as `create|new` or `merge`.
+#
+# shipshape_gh_pr_words <verb> — `gh pr <verb>` anywhere in a line, with -R or
+# --repo allowed on either side of `pr`: `gh -R o/r pr merge`, `gh pr
+# --repo=o/r merge`. gh 2.96.0's `gh pr --help` lists -R/--repo as `pr`'s one
+# flag. Groups 1 and 5 hold the flags before and after `pr`; the verb is 9.
+shipshape_gh_pr_words() {
+  local repo_flag='(-R|--repo)([[:space:]]+|=)?[^[:space:];&|()]+[[:space:]]+'
+  printf '%s' "gh[[:space:]]+(($repo_flag)*)pr[[:space:]]+(($repo_flag)*)($1)"
+}
+
+# shipshape_gh_pr_invocation <verb> — the same words where a command starts.
+# This pattern is the exact rule. In words, for example: at the start of a line
+# or after a separator or `(`, behind optional prefixes such as `command`,
+# `time`, `GH_TOKEN=x` or `/opt/homebrew/bin/`, and followed by whitespace or
+# the end of the line. Groups 5 and 9 hold the -R flags before and after `pr`,
+# the verb is 13, and the whitespace after it is 14.
+shipshape_gh_pr_invocation() {
+  printf '%s' '(^|[;&|(]|&&|\|\|)[[:space:]]*((command|time)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$(shipshape_gh_pr_words "$1")"'([[:space:]]+|$)'
+}
+
+# ---------------------------------------------------------------------------
 # Waivers
 # ---------------------------------------------------------------------------
 
