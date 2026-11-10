@@ -255,6 +255,22 @@ out="$(run_hook merge-gate.sh "$(merge_payload "gh -R o/r pr merge 58 && gh pr m
 assert_eq "merge_gate_compound" "$(hook_field "$out" shipshapeCode)" \
   "a -R merge beside a plain one is a compound"
 
+# On separate lines the line count decides, so it reads the same spellings.
+# With the plain merge first, a narrow count saw one merge, judged the stamped
+# 57, and shipped 58.
+for second in 'gh -R o/r pr merge 58' 'command gh pr merge 58' 'time gh pr merge 58'; do
+  out="$(run_hook merge-gate.sh "$(merge_payload "gh pr merge 57
+$second")" "$repo")"
+  assert_eq "merge_gate_compound" "$(hook_field "$out" shipshapeCode)" \
+    "a compound across lines: [gh pr merge 57 / $second]"
+done
+
+# The new spellings of a stamped PR are judged on that PR, and allowed.
+for cmd in 'command gh pr merge 57' 'time gh pr merge 57' 'GH_TOKEN=x command gh pr merge 57'; do
+  out="$(run_hook merge-gate.sh "$(merge_payload "$cmd")" "$repo")"
+  assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" "allowed, as PR 57: [$cmd]"
+done
+
 # Tokens on other lines belong to other invocations: `sleep 30` is not PR 30.
 out="$(run_hook merge-gate.sh "$(merge_payload "sleep 30
 gh pr merge 57")" "$repo")"
@@ -401,5 +417,17 @@ assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
 
 out="$(run_hook merge-gate.sh 'this is not json' "$repo")"
 assert_eq "0" "$(hook_status)" "an unreadable payload fails open"
+
+# An empty pattern would match every command, and every multi-line one would
+# read as a compound merge. With a lib that lacks the gh pattern, the gate
+# stands down instead.
+old_tree="$work/old-tree"; mkdir -p "$old_tree/hooks" "$old_tree/lib"
+cp "$HOOKS_DIR/merge-gate.sh" "$old_tree/hooks/"
+sed -e '/^shipshape_gh_pr_words()/,/^}/d' -e '/^shipshape_gh_pr_invocation()/,/^}/d' \
+  "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$old_tree/lib/shipshape-common.sh"
+out="$(cd "$repo" && merge_payload 'ls
+ls' | bash "$old_tree/hooks/merge-gate.sh" 2>/dev/null)"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a lib without the gh pattern fails open"
 
 finish

@@ -100,6 +100,9 @@ assert_contains "$(handback_for 'gh pr --repo=o/r new --fill')" "shipshape-pr-op
   "--repo after pr survives the hand-back"
 assert_contains "$(handback_for 'gh -R a/b pr -R o/r create --fill')" "shipshape-pr-open -R a/b -R o/r --fill" \
   "both positions survive, in order, so gh resolves them as it would have"
+assert_contains "$(handback_for 'gh -R a/b --repo c/d pr -R e/f --repo=g/h new --fill')" \
+  "shipshape-pr-open -R a/b --repo c/d -R e/f --repo=g/h --fill" \
+  "every flag on each side survives, not only the last one"
 assert_contains "$(handback_for 'command gh pr create --fill')" "shipshape-pr-open --fill" \
   "the prefix is dropped with the rest of the old command"
 assert_contains "$(handback_for 'gh -R o/r pr create --title "gh pr new is the alias" --fill')" \
@@ -206,6 +209,16 @@ for payload in 'not json' '{}' ''; do
   run_hook pr-wrapper-gate.sh "$payload" "$repo" >/dev/null
   assert_eq "0" "$(hook_status)" "an unusable payload fails open"
 done
+
+# An empty pattern would match every command. With a lib that lacks the gh
+# pattern, the gate stands down rather than refuse `npm test`.
+old_tree="$work/old-tree"; mkdir -p "$old_tree/hooks" "$old_tree/lib"
+cp "$HOOKS_DIR/pr-wrapper-gate.sh" "$old_tree/hooks/"
+sed -e '/^shipshape_gh_pr_words()/,/^}/d' -e '/^shipshape_gh_pr_invocation()/,/^}/d' \
+  "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$old_tree/lib/shipshape-common.sh"
+out="$(cd "$repo" && bash_payload 'npm test' | bash "$old_tree/hooks/pr-wrapper-gate.sh" 2>/dev/null)"
+assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
+  "a lib without the gh pattern fails open"
 
 assert_contains "$(cat "$scratch/trace.log" 2>/dev/null)" "pr-wrapper-gate" \
   "the gate records what it refused"
