@@ -116,7 +116,9 @@ fi
 # unevidenced — the reviewed failure mode was exactly that, phrased as an
 # ordinary cascade cleanup. Refusing is cheaper than being wrong.
 invocations="$(grep -cE "$invocation" <<<"$command_line")"
-merge_line="$(grep -E -m1 "$invocation" <<<"$command_line")"
+merge_at="$(grep -n -E -m1 "$invocation" <<<"$command_line")"
+merge_line="${merge_at#*:}"
+merge_at="${merge_at%%:*}"
 # The same-line occurrence count reads the raw line, quotes included. A
 # --body that mentions "gh pr merge" therefore false-trips this — stripping
 # quoted regions first was tried, and an ordinary apostrophe in a body let the
@@ -152,9 +154,19 @@ number_for_branch() { # <branch>
 
 # ---- the merge's words ------------------------------------------------------
 #
-# The arguments come from the matched line only: a token on another line
-# belongs to a different invocation, and reading a PR number out of `sleep 30`
-# would be this gate judging work it was never asked about.
+# The merge must be the first command in the text. Whatever runs before it can
+# change which PR gh merges, and the gate can't see what: `git checkout
+# feature-58 && gh pr merge`, `cd ../wt2; gh pr merge` and `gh pr checkout 58`
+# all moved the merge off the PR the gate judged. So every line before the
+# merge's must be blank or a comment, and before `gh` on its own line there
+# may be only spaces and tabs, one opening `(`, `$(` or `NAME=$(`, then the
+# prefixes the pattern allows: `command`, `time`, NAME=VALUE with a plain
+# VALUE, and a plain path to gh. Anything else stops the awk with an N record.
+# A prefix setting GH_REPO, GH_HOST, GIT_DIR or GIT_WORK_TREE points gh or git
+# elsewhere, and stops it with a G record.
+#
+# The arguments come from the merge's line only: what follows on later lines
+# is a heredoc body or another command.
 #
 # The awk splits that line, from just after `gh`, into the words bash and zsh
 # hand to gh, and it reads only shapes both shells read alike. The first shape
@@ -170,7 +182,9 @@ number_for_branch() { # <branch>
 #     starts a word, which begins a comment.
 #   - A redirection starts a word of its own, and only a lone 1 or 2 may sit
 #     against it: >, >>, 1>, 1>>, 2>, 2>> or &> before a plain-word target;
-#     2>&1 or 1>&2; or a heredoc, <<WORD, <<'WORD', <<"WORD" or <<-WORD.
+#     2>&1 or 1>&2; or a heredoc, <<WORD, <<'WORD', <<"WORD" or <<-WORD. A
+#     target or delimiter over 1024 bytes stops it, as copying one costs time
+#     that grows with its square.
 #   - Anything else stops it: $ or a backtick, a backslash, ( { } [ * ? ~ !,
 #     a quote left open, and any redirection of another shape. So does a
 #     201st word: no merge needs that many, and reading is linear but not
@@ -179,12 +193,22 @@ number_for_branch() { # <branch>
 #
 # It prints one record per line: W <word as written>; V for a word over 1024
 # bytes, which can only be a flag's value; R or H <redirection>; then E <what
-# ended the command> or X <why the words cannot be read>. One pass over a
+# ended the command> or X <why the words cannot be read>. N or G, from the
+# first-command check, comes alone. One pass over a
 # character array, so it stays linear on a long line in BSD awk, whose substr
 # measures the whole string on every call.
 # shellcheck disable=SC2016  # an awk program, quoted so the shell leaves it be
 split_words='
-BEGIN { plain = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/:@+,=-"; sq = "\047" }
+BEGIN {
+  plain = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._/:@+,=-"; sq = "\047"
+  name = "[A-Za-z_][A-Za-z0-9_]*"; value = "[A-Za-z0-9._/:@+,=-]*"
+  first = "^[ \t]*([(]|[$][(]|" name "=[$][(])?[ \t]*((command|time)[ \t]+|" name "=" value "[ \t]+)*(" value "/)?$"
+  elsewhere = "(^|[ \t(])(GH_REPO|GH_HOST|GIT_DIR|GIT_WORK_TREE)="
+}
+NR < ENVIRON["SHIPSHAPE_MERGE_AT"] + 0 {
+  if ($0 !~ /^[ \t]*(#.*)?$/) { finish("N", "a command on a line before the merge"); exit }
+  next
+}
 function text(from, to,   k, s) { s = ""; for (k = from; k < to; k++) s = s ch[k]; return s }
 function finish(kind, why) { print kind "\t" why; ended = 1 }
 function flush() {
@@ -226,11 +250,15 @@ function redirect(   fd, op, s, q) {
   if (!plain_run()) return finish("X", "a redirection whose target is not a plain word")
   if (q != "") { if (ch[i] != q) return finish("X", "a redirection whose target is not a plain word"); i++ }
   if (!boundary(i)) return finish("X", "a redirection whose target is not a plain word")
+  if (i - s > 1024) return finish("X", "a redirection target over 1024 bytes")
   print ((op ~ /^<</) ? "H" : "R") "\t" fd op " " text(s, i)
 }
 {
   p = index($0, ENVIRON["SHIPSHAPE_MERGE_WORDS"])
   if (!p) { finish("X", "the merge words were not where they matched"); exit }
+  before = substr($0, 1, p - 1)
+  if (before !~ first) { finish("N", "a command before the merge on its line"); exit }
+  if (before ~ elsewhere) { finish("G", "a prefix setting GH_REPO, GH_HOST, GIT_DIR or GIT_WORK_TREE"); exit }
   n = split(substr($0, p + 2), ch, "")
   i = 1; inword = 0; ended = 0; words = 0
   while ((i <= n) && !ended) {
@@ -251,7 +279,8 @@ function redirect(   fd, op, s, q) {
 
 # The awk's own breakage — missing, or exiting non-zero — is not the input's
 # fault, so the gate fails open on it, traced. Only an X record refuses.
-words="$(SHIPSHAPE_MERGE_WORDS="$mention" LC_ALL=C awk "$split_words" 2>/dev/null <<<"$merge_line")"
+words="$(SHIPSHAPE_MERGE_WORDS="$mention" SHIPSHAPE_MERGE_AT="$merge_at" \
+  LC_ALL=C awk "$split_words" 2>/dev/null <<<"$command_line")"
 split_status=$?
 if [ "$split_status" -ne 0 ]; then
   shipshape_trace merge-gate "the merge's words could not be read (awk exited $split_status); failing open"
@@ -267,13 +296,15 @@ fi
 # flag left without its value refuses. A redirection is not a word gh sees, and
 # a heredoc is read only after --body-file - (or -F -), whose stdin it feeds.
 repo_shape='^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)?$'
-pull_url='^https://([A-Za-z0-9.-]+)/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/pull/([0-9]+)(/.*)?$'
+pull_url='^https://([A-Za-z0-9.-]+)/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/pull/([0-9]+)(/[A-Za-z0-9._-]*)*$'
 stage="gh"      # where in `gh … pr … merge …` the words have reached
 expect=""       # a flag still waiting for its value
 selector=""     # the word naming the PR, as written
 repos=""        # the repositories -R/--repo named
 stdin_body=""   # set by --body-file -, so a heredoc may follow
 refusal=""      # why the words cannot be read
+not_first=""    # what runs before the merge
+elsewhere=""    # a prefix pointing gh or git at another repository
 ended=""
 
 take_value() { # <flag> <W|V> <value as written; empty for V>
@@ -348,6 +379,8 @@ while IFS="$tab" read -r kind raw; do
       ;;
     E) ended=yes; break ;;
     X) refusal="$raw"; break ;;
+    N) not_first="$raw"; break ;;
+    G) elsewhere="$raw"; break ;;
     *) break ;;
   esac
   if [ -n "$expect" ]; then
@@ -369,6 +402,19 @@ while IFS="$tab" read -r kind raw; do
   [ -z "$refusal" ] || break
 done <<<"$words"
 
+if [ -n "$not_first" ]; then
+  shipshape_trace merge-gate "denied: the merge is not the first command ($not_first)"
+  shipshape_emit_deny "This merge is not the first command here: there is $not_first. Whatever runs first can change which pull request gh merges — a checkout, a switch, a cd into another worktree or repository — and the gate can't see what it does, so it judges a merge only when nothing runs before it. Run the merge as its own command, first on the line: gh pr merge <number>$unreasoned_note" \
+    merge_gate_not_first "gh pr merge <number>"
+  exit 0
+fi
+if [ -n "$elsewhere" ]; then
+  shipshape_trace merge-gate "denied: the merge has $elsewhere"
+  shipshape_emit_deny "This merge has $elsewhere, which can point gh or git at another repository. The gate can't judge another repository's pull request from this session's records. For this repository's PR, merge it by number without that prefix; for a pull request in another repository, merge it from a session in that repository, or hand the merge to the operator.$unreasoned_note" \
+    merge_gate_other_repo "gh pr merge <number>"
+  exit 0
+fi
+
 # The records stopped short of their E or X: the awk broke, not the input.
 if [ -z "$refusal" ] && [ -z "$ended" ]; then
   shipshape_trace merge-gate "the merge's words could not be read (the reader stopped short); failing open"
@@ -379,9 +425,9 @@ fi
 # Which PR the words name. gh takes a number, a URL or a branch (gh 2.96.0's
 # usage: `[<number> | <url> | <branch>]`), and with none of them it merges the
 # current branch's PR. The gate reads a number as digits, or as '58', "58",
-# '#58' or "#58"; a URL as https://HOST/OWNER/REPO/pull/N, with any path after
-# it; and a branch as a plain word an obligation record names. Anything else
-# refuses.
+# '#58' or "#58"; a URL as https://HOST/OWNER/REPO/pull/N, followed by nothing
+# or by /segments of letters, digits and ._- only; and a branch as a plain word
+# an obligation record names. Anything else refuses.
 number=""
 url_repo=""
 [ -n "$refusal" ] || case "$selector" in
@@ -469,18 +515,13 @@ elif [ ! -f "$record" ] && [ -f "$scratch/pr-armed" ]; then
   fi
 fi
 
-if [ ! -f "$record" ]; then
-  shipshape_trace merge-gate "denied: PR #$number has no obligation record in this session"
-  shipshape_emit_deny "PR #$number has no evidence record in this session, and an unevidenced merge is the incident this gate exists to stop. Earn the evidence here — dispatch the whole-branch reviewer, run shipshape-ci-watch $number, exercise the changed flows through shipshape-smoke, verify any bound plan's tasks — or hand the merge to the operator. \"Every pull request, no exception\" includes the ones somebody else opened.$unreasoned_note" \
-    merge_gate_foreign "shipshape-ci-watch $number"
-  exit 0
-fi
-
 # A repository named by -R/--repo, or by the URL, must be the one the record's
 # url= names: OWNER/REPO against its owner and repo, HOST/OWNER/REPO against
 # all three, exactly as written. A record is this session's evidence for one
 # PR in one repository, and another repository's PR of the same number is not
-# what it describes. A record with no such url can't vouch for any repository.
+# what it describes. A record with no such url, or no record, can't vouch for
+# any repository; this runs before the no-record refusal, whose fix line would
+# send the session to this repository's PR of that number.
 named_repos="$repos${url_repo:+ $url_repo}"
 if [ -n "$named_repos" ]; then
   record_repo="$(record_field "$record" url | sed -n -E 's#^https://([^/]+)/([^/]+)/([^/]+)/pull/[0-9]+(/.*)?$#\1/\2/\3#p')"
@@ -489,13 +530,25 @@ if [ -n "$named_repos" ]; then
       */*/*) [ "$repo" = "$record_repo" ] && continue ;;
       *) [ "$repo" = "${record_repo#*/}" ] && continue ;;
     esac
-    record_says="without a repository URL"
-    [ -z "$record_repo" ] || record_says="for $record_repo"
-    shipshape_trace merge-gate "denied: merge names the repository $repo, and PR #$number's record is $record_says"
-    shipshape_emit_deny "This merge names the repository $repo, and PR #$number's record in this session is $record_says. The gate can't judge another repository's pull request from this session's records. For this repository's PR #$number, merge it by number without -R/--repo; for a pull request in another repository, merge it from a session working there, or hand the merge to the operator.$unreasoned_note" \
-      merge_gate_other_repo "gh pr merge $number"
+    if [ ! -f "$record" ]; then
+      record_says="does not exist"
+    elif [ -z "$record_repo" ]; then
+      record_says="has no repository URL"
+    else
+      record_says="is for $record_repo"
+    fi
+    shipshape_trace merge-gate "denied: merge names the repository $repo, and this session's record for PR #$number $record_says"
+    shipshape_emit_deny "This merge names the repository $repo, and this session's record for PR #$number $record_says. The gate can't judge another repository's pull request from this session's records. For this repository's PR #$number, merge it by number without -R/--repo; for a pull request in another repository, merge it from a session in that repository, or hand the merge to the operator.$unreasoned_note" \
+      merge_gate_other_repo "merge it from a session in that repository, or hand the merge to the operator"
     exit 0
   done
+fi
+
+if [ ! -f "$record" ]; then
+  shipshape_trace merge-gate "denied: PR #$number has no obligation record in this session"
+  shipshape_emit_deny "PR #$number has no evidence record in this session, and an unevidenced merge is the incident this gate exists to stop. Earn the evidence here — dispatch the whole-branch reviewer, run shipshape-ci-watch $number, exercise the changed flows through shipshape-smoke, verify any bound plan's tasks — or hand the merge to the operator. \"Every pull request, no exception\" includes the ones somebody else opened.$unreasoned_note" \
+    merge_gate_foreign "shipshape-ci-watch $number"
+  exit 0
 fi
 
 # The stamp is written by the done gate on a Stop — so evidence completed and

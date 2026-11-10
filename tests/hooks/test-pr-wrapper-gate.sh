@@ -109,6 +109,18 @@ assert_contains "$(handback_for 'gh -R o/r pr create --title "gh pr new is the a
   'shipshape-pr-open -R o/r --title "gh pr new is the alias" --fill' \
   "a title that mentions the command is still the caller's title"
 
+# The shell ends the verb at ; & | ( ) < > as well as at a space, so each of
+# these runs gh pr create. A character that ends the verb and belongs to what
+# follows comes back in the hand-back.
+for command in 'gh pr create;' 'gh pr create&&echo done' '(gh pr create)' 'x=$(gh pr create)' \
+  'gh pr create>pr.log --fill' 'gh pr create|cat' 'gh pr create&'; do
+  assert_eq "deny" "$(decision_for "$command")" "refused: [$command]"
+done
+assert_contains "$(handback_for 'gh pr create>pr.log --fill')" "shipshape-pr-open >pr.log --fill" \
+  "the redirection that ended the verb is handed back with it"
+assert_contains "$(handback_for 'gh pr create --fill')" "shipshape-pr-open --fill" \
+  "and the space that ended it is not"
+
 # The hand-back starts at the first invocation, not the last match on a line.
 # A mention after a separator inside a title matches too, and taking the last
 # match cut the title there.

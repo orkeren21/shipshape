@@ -206,11 +206,11 @@ do
     "and judged as PR 444: [$cmd]"
 done
 
-# The number is read after the words, -R and all. Read from the start of the
-# line instead, `sleep 30` would be judged as the PR being merged.
+# A merge after another command is not judged at all: `sleep 30` is harmless,
+# but the gate can't tell it from a checkout that moves the merge to another PR.
 out="$(run_hook merge-gate.sh "$(merge_payload "sleep 30; gh -R o/r pr merge 444")" "$repo")"
-assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "444" \
-  "a -R merge after another command is judged on its own number"
+assert_eq "merge_gate_not_first" "$(hook_field "$out" shipshapeCode)" \
+  "a -R merge after another command is refused as not first"
 
 # --- the PR the merge names --------------------------------------------------
 #
@@ -259,13 +259,23 @@ for shape in \
   'gh pr merge "#NN"' \
   '(gh pr merge NN)' \
   'x=$(gh pr merge NN)' \
-  'cd /x && gh pr merge NN --squash --delete-branch 2>&1 | tail -3' \
+  'gh pr merge NN --squash --delete-branch 2>&1 | tail -3' \
   'gh pr merge NN --squash && git checkout main' \
+  'gh pr merge NN >out;echo' \
+  '(gh pr merge NN >out)' \
+  'x=$( GH_TOKEN=abc command time gh pr merge NN )' \
+  '/opt/homebrew/bin/gh pr merge NN' \
+  '# merge it now
+
+  # really
+gh pr merge NN --squash' \
   'gh pr merge NN --squash &' \
   'gh pr merge NN; echo done' \
   'gh pr merge NN # ship it' \
   'gh pr merge https://github.com/acme/widget/pull/NN' \
   'gh pr merge https://github.com/acme/widget/pull/NN/files --squash' \
+  'gh pr merge https://github.com/acme/widget/pull/NN/' \
+  'gh pr merge https://github.com/acme/widget/pull/NN/commits/abc1234' \
   'gh pr merge -t 57 NN' \
   'gh pr merge -t57 NN' \
   'gh pr merge -st 57 NN' \
@@ -291,6 +301,13 @@ for shape in \
   "gh pr merge --subject 'it is (b)' NN" \
   "gh pr merge --subject 'say \"\$x\"' NN" \
   "gh pr merge --subject 'it''s'\"done\"x NN" \
+  "gh pr merge --subject 'a\\b' NN" \
+  "gh pr merge --body-file - <<-'EOF' NN
+57
+EOF" \
+  "gh pr merge --body-file - <<-EOF NN
+57
+EOF" \
   'gh pr merge --squash 2>&1 NN' \
   'gh pr merge --squash 1>&2 NN' \
   'gh pr merge --squash &> /tmp/out NN' \
@@ -337,6 +354,12 @@ EOF"
 echo 64'
   'gh pr merge --subject 64 --squash'
   'x=$(gh pr merge --squash) 64'
+  'gh pr merge;'
+  'gh pr merge&&echo 64'
+  '(gh pr merge)'
+  'x=$(gh pr merge)'
+  'gh pr merge|cat'
+  'gh pr merge&'
 )
 for cmd in "${no_selector[@]}"; do
   judged_as allow 57 "$cmd"
@@ -453,6 +476,10 @@ EOF
   "gh pr merge 'NN'>out" \
   'gh pr merge NN>/dev/null 2>&1' \
   'gh pr merge --squash>out NN' \
+  'gh pr merge>out NN' \
+  "gh pr merge https://github.com/acme/widget/pull/NN/'?x=1'" \
+  'gh pr merge https://github.com/acme/widget/pull/NN/"x"' \
+  'gh pr merge https://github.com/acme/widget/pull/NN/a:b' \
   "gh pr merge --squash <<'EOF' NN
 57
 EOF" \
@@ -480,14 +507,34 @@ refused_as merge_gate_unparseable "gh pr merge 64 --squash --body \"\$(cat <<'EO
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "--body-file - and a heredoc" \
   "a computed body is answered with the heredoc form"
 
-# A word over 1024 bytes is read only as a flag's value: as one, it passes;
-# anywhere else, it refuses.
+# A word over 1024 bytes is read only as a flag's value written as a word of
+# its own: as one, it passes; anywhere else, joined to its flag included, it
+# refuses.
 long_word="$(head -c 3000 /dev/zero | tr '\0' x)"
 judged_as allow 64 "gh pr merge --body \"$long_word\" 64"
 judged_as merge_gate_unsatisfied 58 "gh pr merge 58 -b '$long_word'"
 refused_as merge_gate_unparseable "gh pr merge $long_word"
 refused_as merge_gate_unparseable "gh pr merge 64 $long_word"
 refused_as merge_gate_unparseable "gh pr merge -R $long_word 64"
+refused_as merge_gate_unparseable "gh pr merge --body=$long_word 64"
+refused_as merge_gate_unparseable "gh pr merge -b$long_word 64"
+
+# A 200 KB inline value on the merge's own line is read in one linear pass,
+# and the merge is judged on its PR.
+inline_body="$(head -c 200000 /dev/zero | tr '\0' x)"
+judged_as merge_gate_unsatisfied 58 "gh pr merge 58 --squash --body \"$inline_body\""
+judged_as allow 64 "gh pr merge 64 --squash --body '$inline_body'"
+
+# A redirection target or heredoc delimiter over 1024 bytes refuses: copying
+# one costs time that grows with its square, and a 320 KB one took 3 s.
+long_target="$(head -c 200000 /dev/zero | tr '\0' x)"
+refused_as merge_gate_unparseable "gh pr merge 64 --body-file - <<$long_target
+x
+$long_target"
+refused_as merge_gate_unparseable "gh pr merge 64 > $long_target"
+# The limit is on the delimiter as written, quotes included: 1024 bytes pass.
+refused_as merge_gate_unparseable "gh pr merge 64 --body-file - <<'$(head -c 1023 /dev/zero | tr '\0' x)'"
+judged_as allow 64 "gh pr merge 64 --body-file - <<'$(head -c 1022 /dev/zero | tr '\0' x)'"
 
 # At most 200 words after gh: here pr, merge, 64 and 197 switches pass, and
 # one more switch refuses.
@@ -530,23 +577,73 @@ for cmd in \
   'gh pr merge https://ghe.example.com/acme/widget/pull/64' \
   'gh pr merge -R Acme/Widget 64' \
   'gh -R acme/widget pr merge -R other/repo 64' \
-  'gh pr merge -R other/repo lane-64'
+  'gh pr merge -R other/repo lane-64' \
+  'gh pr merge -R fork/widget 64' \
+  'gh pr merge -R acme/gadget 64' \
+  'gh pr merge https://github.com/fork/widget/pull/64'
 do
   judged_as merge_gate_other_repo 64 "$cmd"
 done
 reason="$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)"
 assert_contains "$reason" "another repository" "the refusal says why"
-assert_contains "$reason" "acme/widget" "names the repository the record is for"
-assert_contains "$reason" "operator" "and how to go on"
+assert_contains "$reason" "is for github.com/acme/widget" "names the repository the record is for"
+assert_contains "$reason" "merge it from a session in that repository, or hand the merge to the operator" \
+  "and how to go on"
+assert_not_contains "$reason" "gh pr merge 64" "without a fix line that points at this repository's PR"
 
 # A record without a repository URL vouches for no repository.
 printf 'number=66\nbranch=lane-66\nepoch=1\n' > "$scratch/pr-armed-66"
 give_stamp 66 "$main_head" lane-66
 judged_as allow 66 'gh pr merge 66'
 judged_as merge_gate_other_repo 66 'gh pr merge -R acme/widget 66'
-assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "without a repository URL" \
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "has no repository URL" \
   "and the refusal says the record names none"
 rm -f "$scratch/pr-armed-66" "$scratch/pr-satisfied-66"
+
+# Nor does no record at all: another repository's PR is refused as that, not
+# as this repository's unrecorded PR, whose fix line would point here.
+judged_as merge_gate_other_repo 999 'gh pr merge -R other/repo 999'
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "PR #999 does not exist" \
+  "and the refusal says there is no record"
+judged_as merge_gate_foreign 999 'gh pr merge 999'
+
+# --- the merge comes first ---------------------------------------------------
+#
+# Whatever runs before the merge can change which PR gh merges. Measured with a
+# stub gh, each of these merged 58 while the gate judged the current branch's
+# stamped 57, or judged this checkout's 64 for another repository's: so a merge
+# is judged only when nothing runs before it.
+
+for cmd in \
+  'git checkout feature-58 && gh pr merge --squash' \
+  'git switch feature-58; gh pr merge --squash --delete-branch' \
+  'git switch feature-58
+gh pr merge --squash --delete-branch' \
+  'gh pr checkout 58 && gh pr merge --squash' \
+  'cd ../wt2 && gh pr merge --squash' \
+  'cd /other/repo && gh pr merge 64' \
+  'echo $(gh pr merge 64)' \
+  '((gh pr merge 64))' \
+  'X=$(./switch-to-58) gh pr merge 64' \
+  'GH_TOKEN="$T" gh pr merge 64' \
+  'time (gh pr merge 64)' \
+  '# a comment, then a command
+true
+gh pr merge 64'
+do
+  refused_as merge_gate_not_first "$cmd"
+done
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
+  "Run the merge as its own command, first on the line: gh pr merge <number>" \
+  "the refusal says how to run it"
+
+# A prefix that points gh or git at another repository is refused as one.
+for var in GH_REPO GH_HOST GIT_DIR GIT_WORK_TREE; do
+  refused_as merge_gate_other_repo "$var=elsewhere gh pr merge 64"
+  refused_as merge_gate_other_repo "GH_TOKEN=x $var=elsewhere command gh pr merge 64"
+done
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "another repository" \
+  "and says so"
 
 # A repository flag whose value is not a repository is a shape it can't read.
 for cmd in 'gh pr merge -R 57 64' 'gh pr merge --repo 57 64' 'gh pr merge -R=acme/widget 64' \
@@ -616,11 +713,12 @@ for cmd in 'command gh pr merge 64' 'time gh pr merge 64' 'GH_TOKEN=x command gh
   assert_contains "$(tail -1 "$scratch/trace.log")" "PR #64" "and judged as PR 64: [$cmd]"
 done
 
-# Tokens on other lines belong to other invocations: `sleep 30` is not PR 30.
+# A command on an earlier line is refused, not read: `sleep 30` is not PR 30,
+# and the merge after it is not first.
 out="$(run_hook merge-gate.sh "$(merge_payload "sleep 30
 gh pr merge 57")" "$repo")"
-assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
-  "a number on an unrelated line is not read as the PR being merged"
+assert_eq "merge_gate_not_first" "$(hook_field "$out" shipshapeCode)" \
+  "a merge after a command on an earlier line is refused as not first"
 
 # A merge behind backslash-newline continuations cannot be attributed safely
 # — folding was tried and opened its own false-allows — so it is refused with

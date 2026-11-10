@@ -77,7 +77,11 @@ args=""
 {
   while IFS= read -r line; do
     if [[ $line =~ $handback_re ]]; then
-      args="${BASH_REMATCH[5]-}${BASH_REMATCH[9]-}${BASH_REMATCH[15]-}"
+      # Group 14 is what ended the verb: whitespace, dropped, or a character
+      # such as `>` or `;` that belongs to what follows, kept.
+      after="${BASH_REMATCH[14]-}"
+      case "$after" in *[![:space:]]*) ;; *) after="" ;; esac
+      args="${BASH_REMATCH[5]-}${BASH_REMATCH[9]-}${after}${BASH_REMATCH[15]-}"
       rest="$(cat)"
       [ -n "$rest" ] && args="$args"$'\n'"$rest"
       break
