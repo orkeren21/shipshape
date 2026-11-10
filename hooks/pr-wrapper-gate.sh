@@ -33,11 +33,18 @@ command_line="$(shipshape_field tool_input.command)"
 [ -n "$command_line" ] || exit 0
 
 # `gh pr create` as an invocation: at the start of the line or after a shell
-# separator, optionally with a leading path or environment assignments, and
-# followed by whitespace or the end of the command. A commit message or a grep
-# pattern containing the same words is not an invocation.
+# separator, optionally behind a path, environment assignments, `command` or
+# `time`, and followed by whitespace or the end of the command. A commit message
+# or a grep pattern containing the same words is not an invocation.
+#
+# `new` is create's alias in gh's own help. -R is the one flag gh accepts before
+# `create` that still opens a pull request, on either side of `pr`, so it is
+# named rather than any flag at all.
+repo_flag='(-R|--repo)([[:space:]]+|=)?[^[:space:];&|()]+[[:space:]]+'
+gh_pr_create="gh[[:space:]]+(($repo_flag)*)pr[[:space:]]+(($repo_flag)*)(create|new)"
+
 printf '%s' "$command_line" | grep -qE \
-  '(^|[;&|(]|&&|\|\|)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' \
+  '(^|[;&|(]|&&|\|\|)[[:space:]]*((command|time)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$gh_pr_create"'([[:space:]]|$)' \
   || exit 0
 
 # The session may legitimately be running the wrapper, which invokes gh itself.
@@ -49,9 +56,11 @@ case "$command_line" in
 esac
 
 # Hand back the caller's own arguments so the correction is a paste rather than
-# a retyping. Everything from `create` onward belongs to the new command.
+# a retyping. Everything from `create` onward belongs to the new command, and so
+# does any -R before it (groups 1 and 5 of the pattern): without it the paste
+# opens the pull request against whichever repo is checked out.
 args="$(printf '%s' "$command_line" \
-  | sed -e 's/.*gh[[:space:]][[:space:]]*pr[[:space:]][[:space:]]*create//' \
+  | sed -E -e "s/.*${gh_pr_create}[[:space:]]*/\\1\\5/" \
   | sed -e 's/^[[:space:]]*//')"
 
 shipshape_trace pr-wrapper-gate "refused a bare gh pr create"
