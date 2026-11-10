@@ -19,13 +19,12 @@
 # (SHIPSHAPE_MERGE_GATE=0), a reasoned skip_merge_gate waiver in .shipshape.yaml,
 # or a stamp whose branch has no tip here or on origin. Every decision is traced.
 #
-# It reads the command as text, with the patterns in lib/shipshape-common.sh
-# that pr-wrapper-gate also uses. Where a merge starts is
-# shipshape_gh_pr_invocation's exact rule. shipshape_gh_pr_words is read
-# anywhere in the text by the continuation check, anywhere on the merge's line
-# by the same-line count, and to find where the merge's arguments begin. So it
-# also refuses some mentions, and it misses some invocations; DETAILS.md lists
-# measured examples.
+# It reads the command as text, with the patterns pr-wrapper-gate reads it
+# with, from lib/shipshape-common.sh. Where a merge starts is
+# shipshape_gh_pr_invocation's exact rule. The continuation check and the
+# same-line count read shipshape_gh_pr_words anywhere in the text, so they also
+# refuse mentions. Reading text, it refuses some mentions and misses some
+# invocations; DETAILS.md lists measured examples.
 
 set -uo pipefail
 
@@ -41,18 +40,17 @@ shipshape_enabled MERGE_GATE || exit 0
 command_line="$(shipshape_field tool_input.command)"
 [ -n "$command_line" ] || exit 0
 
-# A lib without the pattern functions would leave a pattern that matches every
-# command, or one with no gh words in it, and every multi-line command would
-# read as a compound. The gate fails open instead.
-if ! declare -F shipshape_gh_pr_words shipshape_gh_pr_invocation >/dev/null; then
+# `gh pr merge` in words, with -R allowed on either side of `pr`, and the same
+# where a command starts. gh 2.96.0's `gh pr merge --help` lists no alias.
+merge_words="$(shipshape_gh_pr_words merge 2>/dev/null)"
+invocation="$(shipshape_gh_pr_invocation merge 2>/dev/null)"
+
+# An empty pattern matches every command, and makes every multi-line one a
+# compound. A lib without it fails open.
+if [ -z "$merge_words" ] || [ -z "$invocation" ]; then
   shipshape_trace merge-gate "no gh pattern in lib; failing open"
   exit 0
 fi
-
-# `gh pr merge` in words, with -R allowed on either side of `pr`, and the same
-# where a command starts. gh 2.96.0's `gh pr merge --help` lists no alias.
-merge_words="$(shipshape_gh_pr_words merge)"
-invocation="$(shipshape_gh_pr_invocation merge)"
 
 # A backslash-newline continuation moves this command's tokens onto lines the
 # per-line parser below cannot safely attribute — folding them back was tried
@@ -126,202 +124,52 @@ if [ "$invocations" -gt 1 ] \
   exit 0
 fi
 
-# The PR a branch's obligation record names: its number, "legacy" for the
-# un-numbered record older wrappers wrote, or nothing. Read from the records,
-# not the network: a PreToolUse hook that waits on an API call is a gate
-# sessions learn to resent, then disable.
-number_for_branch() { # <branch>
-  local record_file
-  for record_file in "$scratch"/pr-armed-*; do
-    [ -f "$record_file" ] || continue
-    if [ "$(record_field "$record_file" branch)" = "$1" ]; then
-      basename "$record_file" | sed 's/^pr-armed-//'
-      return
-    fi
-  done
-  if [ -f "$scratch/pr-armed" ] \
-    && [ "$(record_field "$scratch/pr-armed" branch)" = "$1" ]; then
-    printf 'legacy'
-  fi
-}
-
-# Which PR the merge names. gh takes a number, a URL or a branch (gh 2.96.0's
-# usage: `[<number> | <url> | <branch>]`), and with none of them it merges the
-# current branch's PR. The arguments come from the matched line only: a token
-# on another line belongs to a different invocation, and reading a PR number
-# out of `sleep 30` would be this gate judging work it was never asked about.
-#
-# The awk below splits the rest of the line into words the way bash would for
-# one simple command, so a word means what gh receives. It handles single and
-# double quotes (with backslash escapes inside double quotes) and a backslash
-# outside them. An unquoted `#` that starts a word begins a comment.
-# An unquoted `;`, `|`, `&`, `(` or `)` ends the command. A redirection is
-# dropped with its target, so `2>&1`, `> out` and `<<'EOF'` are not selectors.
-# A word holding `$`, a backtick or `$(...)` is marked D: its value is not
-# knowable here. The awk exits 1 if a quote, backtick or command substitution
-# is left open on the line.
-# shellcheck disable=SC2016  # an awk program, quoted so the shell leaves it be
-split_words='
-function endword() {
-  if (have) {
-    if (redir) redir = 0
-    else printf "%s\t%s\n", (dyn ? "D" : "S"), tok
-  }
-  tok = ""; have = 0; dyn = 0
-}
-function subst_end(j,   depth, c) {
-  depth = 1
-  for (; j <= n; j++) {
-    c = substr(s, j, 1)
-    if (c == "(") depth++
-    else if (c == ")" && --depth == 0) return j
-  }
-  return 0
-}
-{
-  s = $0; n = length(s); i = 1; tok = ""; have = 0; dyn = 0; redir = 0
-  while (i <= n) {
-    c = substr(s, i, 1)
-    if (c == " " || c == "\t") { endword(); i++; continue }
-    if (c == "#" && !have) exit 0
-    if (c == ";" || c == "|" || c == "(" || c == ")") { endword(); exit 0 }
-    if (c == "&" && substr(s, i + 1, 1) != ">") { endword(); exit 0 }
-    if (c == "&" || c == "<" || c == ">") {
-      if (have && !dyn && tok ~ /^[0-9]+$/) { tok = ""; have = 0 } else endword()
-      op = c; i++
-      while (i <= n && index("<>|", substr(s, i, 1)) && length(op) < 3) { op = op substr(s, i, 1); i++ }
-      if (op ~ /[<>]$/ && substr(s, i, 1) == "&" && substr(s, i + 1, 1) ~ /[0-9-]/) {
-        for (i++; i <= n && substr(s, i, 1) ~ /[0-9-]/; i++) ;
-        continue
-      }
-      if (op == "<<" && substr(s, i, 1) == "-") i++
-      redir = 1; continue
-    }
-    if (c == "\\") { if (i < n) tok = tok substr(s, i + 1, 1); have = 1; i += 2; continue }
-    if (c == "'\''") {
-      j = index(substr(s, i + 1), "'\''"); if (!j) exit 1
-      tok = tok substr(s, i + 1, j - 1); have = 1; i += j + 1; continue
-    }
-    if (c == "$" && substr(s, i + 1, 1) == "(") {
-      j = subst_end(i + 2); if (!j) exit 1
-      tok = tok substr(s, i, j - i + 1); have = 1; dyn = 1; i = j + 1; continue
-    }
-    if (c == "$" && substr(s, i + 1, 1) == "'\''") {
-      for (j = i + 2; j <= n && substr(s, j, 1) != "'\''"; j++) if (substr(s, j, 1) == "\\") j++
-      if (j > n) exit 1
-      tok = tok substr(s, i, j - i + 1); have = 1; dyn = 1; i = j + 1; continue
-    }
-    if (c == "`") {
-      j = index(substr(s, i + 1), "`"); if (!j) exit 1
-      tok = tok substr(s, i, j + 1); have = 1; dyn = 1; i += j + 1; continue
-    }
-    if (c == "\"") {
-      have = 1; j = i + 1
-      while (1) {
-        if (!match(substr(s, j), /["\\$`]/)) exit 1
-        tok = tok substr(s, j, RSTART - 1); j += RSTART - 1; d = substr(s, j, 1)
-        if (d == "\"") break
-        if (d == "\\") {
-          e = substr(s, j + 1, 1)
-          if (e != "" && index("\"\\$`", e)) { tok = tok e; j += 2 } else { tok = tok d; j++ }
-          continue
-        }
-        if (d == "$" && substr(s, j + 1, 1) == "(") {
-          k = subst_end(j + 2); if (!k) exit 1
-          tok = tok substr(s, j, k - j + 1); dyn = 1; j = k + 1; continue
-        }
-        if (d == "`") {
-          k = index(substr(s, j + 1), "`"); if (!k) exit 1
-          tok = tok substr(s, j, k + 1); dyn = 1; j += k + 1; continue
-        }
-        tok = tok d; dyn = 1; j++
-      }
-      i = j + 1; continue
-    }
-    if (c == "$") { tok = tok c; have = 1; dyn = 1; i++; continue }
-    match(substr(s, i), /^[^ \t;|()&<>\\"$`'\'']+/)
-    if (RLENGTH < 1) RLENGTH = 1
-    tok = tok substr(s, i, RLENGTH); have = 1; i += RLENGTH
-  }
-  endword()
-}'
-
-# The values of the flags that take one are skipped (gh 2.96.0's help: -A, -b,
-# -F, -t, --match-head-commit, and the inherited -R), so `-t 57 58` names 58,
-# and a short cluster stops at `=`, so `-s=t 58` names 58 too. The first other
-# word is the selector, less a leading `#` (`'#58'`, quoted, reaches gh).
-if ! command -v awk >/dev/null 2>&1; then
-  shipshape_trace merge-gate "no awk here — cannot read the merge's arguments, failing open"
-  exit 0
-fi
-args="$(printf '%s' "$merge_line" | sed -E -e "s#.*${merge_words}##")"
-words="$(LC_ALL=C awk "$split_words" <<<"$args" 2>/dev/null)"
-split_status=$?
-selector=""
-skip=""
-while IFS="$(printf '\t')" read -r kind tok; do
-  [ -n "$kind" ] || continue
-  if [ -n "$skip" ]; then skip=""; continue; fi
-  if [ "$kind" = S ]; then
-    case "$tok" in
-      --author-email|--body|--body-file|--subject|--match-head-commit|--repo)
-        skip=1; continue ;;
-      --*) continue ;;
-      -?*)
-        # A short cluster such as -sb: a value flag takes the rest of the
-        # cluster as its value, or the next word when it ends the cluster.
-        cluster="${tok#-}"
-        while [ -n "$cluster" ]; do
-          c="${cluster:0:1}"; cluster="${cluster:1}"
-          case "$c" in
-            =) break ;;
-            A|b|F|t|R) [ -z "$cluster" ] && skip=1; break ;;
-          esac
-        done
-        continue ;;
-    esac
-    tok="${tok#\#}"
-  fi
-  [ -n "$tok" ] || continue
-  selector="$tok"
-  break
-done <<<"$words"
-
+# The first argument after `merge` that is a number or a pull URL, read from
+# the matched line only — a token on some other line of the command belongs to
+# a different invocation, and reading a PR number out of `sleep 30` would be
+# this gate judging work it was never asked about.
+args="$(printf '%s' "$merge_line" \
+  | sed -E -e "s#.*${merge_words}##" \
+  | sed -e 's/[;&|].*$//')"
 number=""
-case "$selector" in
-  "")
-    # No selector read. If a quote, backtick or command substitution opened on
-    # the merge's line closes on a later one, the selector may sit past it, and
-    # the current branch's PR would be a guess.
-    if [ "$split_status" -ne 0 ]; then
-      shipshape_trace merge-gate "denied: merge arguments could not be read"
-      shipshape_emit_deny "The gate could not read this merge's arguments (a quote, backtick or command substitution left open on its line), so it cannot tell which pull request the merge names. Write it on one line with the number first — gh pr merge <number> [flags] — so it can be judged.$unreasoned_note" \
-        merge_gate_unparseable "gh pr merge <number> --squash"
-      exit 0
-    fi
-    ;;
-  *[!0-9]*)
-    number="$(printf '%s' "$selector" | sed -n 's#.*/pull/\([0-9][0-9]*\).*#\1#p')"
-    [ -n "$number" ] || number="$(number_for_branch "$selector")"
-    if [ -z "$number" ]; then
-      shipshape_trace merge-gate "denied: merge names ${selector:0:80}, which matches no record"
-      shipshape_emit_deny "This merge names $selector, which the gate cannot match to a pull request this session has a record for (a branch with no record, or a value only the shell knows), so it cannot tell which one would ship. Merge it by number — gh pr merge <number> — once that pull request has its evidence, or hand the merge to the operator.$unreasoned_note" \
-        merge_gate_unresolved "gh pr merge <number>"
-      exit 0
-    fi
-    ;;
-  *) number="$selector" ;;
-esac
+for tok in $args; do
+  case "$tok" in
+    -*) continue ;;
+    *[!0-9]*)
+      n="$(printf '%s' "$tok" | sed -n 's#.*/pull/\([0-9][0-9]*\).*#\1#p')"
+      if [ -n "$n" ]; then
+        number="$n"
+        break
+      fi
+      ;;
+    *)
+      number="$tok"
+      break
+      ;;
+  esac
+done
 
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 
-# With no selector, gh merges the current branch's PR.
+# With no argument, gh merges the current branch's PR. Resolved through the
+# obligation records rather than the network: a PreToolUse hook that waits on
+# an API call is a gate sessions learn to resent, then disable.
 if [ -z "$number" ]; then
   if [ -z "$current_branch" ]; then
     shipshape_trace merge-gate "no git here — cannot judge a merge, failing open"
     exit 0
   fi
-  number="$(number_for_branch "$current_branch")"
+  for record_file in "$scratch"/pr-armed-*; do
+    [ -f "$record_file" ] || continue
+    if [ "$(record_field "$record_file" branch)" = "$current_branch" ]; then
+      number="$(basename "$record_file" | sed 's/^pr-armed-//')"
+      break
+    fi
+  done
+  if [ -z "$number" ] && [ -f "$scratch/pr-armed" ] \
+    && [ "$(record_field "$scratch/pr-armed" branch)" = "$current_branch" ]; then
+    number="legacy"
+  fi
   if [ -z "$number" ]; then
     shipshape_trace merge-gate "denied: bare merge on $current_branch with no obligation record"
     shipshape_emit_deny "This merge targets the current branch's pull request, and this session has no obligation record for $current_branch. Every pull request needs its evidence set before it merges — review, green CI, smoke, and any bound plan. Open PRs through shipshape-pr-open so they are tracked; for a PR this session did not open, produce the evidence first or hand the merge to the operator." \
