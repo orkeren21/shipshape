@@ -45,9 +45,9 @@ record behind as a side effect. The record cannot exist without the work.
 | Hook | Event | What it does |
 |---|---|---|
 | `done-gate` | `Stop` | Arms per pull request, one obligation record each, so a cascade's second PR cannot evaporate the first one's debt. Disarms a record only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD** — and, with a plan bound, a passing, current verify record for every task in scope, and stamps it `pr-satisfied-<n>` for the merge gate. A "No" from any report that landed after the newest background review was launched still blocks: that review was sent before those findings existed. A foreground review is dated when it returns, so for it the rule reaches only a "No" that landed after it returned. The soft nudge speaks when the outstanding state changes and stays silent while it does not; the hard block on a completion claim never dedupes. On a branch other than the record's it nudges but does not block, and it never disarms. |
-| `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp, one still at the branch's tip, read from the local branch or, once that is gone, from `origin`'s tracking ref (limits under *Where enforcement stops*). It also refuses, on the PR's own branch, while a review report the done gate would still count says No (a reasoned review waiver is honoured, as the done gate honours it). A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. |
+| `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp, one still at the branch's tip, read from the local branch or, once that is gone, from `origin`'s tracking ref (limits under *Where enforcement stops*). It also refuses, on the PR's own branch, while a review report the done gate would still count says No (a reasoned review waiver is honoured, as the done gate honours it). A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. It reads the command with `pr-wrapper-gate`'s pattern, `-R` and `command` or `time` included (limits under *Where enforcement stops*). |
 | `review-capture` | `PostToolUse`, `SubagentStop` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:` — at once for a foreground dispatch, and for a background one (in the field since late October 2026 the only kind the desktop app launches) when that agent stops, matched by its agent id and dated at its launch, so commits made while it read leave it stale. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
-| `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create`, its alias `gh pr new`, either with `-R` before or after `pr` or behind `command` or `time`, and hands back the `shipshape-pr-open` form with the caller's arguments and any `-R`. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. It reads the command as text (limits under *Where enforcement stops*). |
+| `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create`, its alias `gh pr new`, either with `-R` before or after `pr` or behind `command` or `time`, and hands back the `shipshape-pr-open` form with the caller's arguments and any `-R`, from the first invocation on, with a heredoc body as written. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. It reads the command as text (limits under *Where enforcement stops*). |
 | `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, at the seat's handoff point: 70/85% for a lane or solo session, 85/92% for an Architect. Worded as actions, with no prohibitions to echo back; the operator gets the number in a one-line `systemMessage`, so the session has nothing to announce. |
 | `session-start` | `SessionStart` | Injects the entrypoint skill. After a compaction it clears context-watch's markers, so the climb back is nudged again, and points a seated session at its roster file, rulings and handoff. |
 
@@ -247,12 +247,12 @@ doctor's report say it went unjudged. A local branch moved back to its stamp wit
 The name resolves as git resolves any name, so a tag sharing it outranks the branch.
 
 `pr-wrapper-gate` reads a command as text, not as shell: it is a tripwire on the ordinary
-spelling, not a parser, and the `invocation` pattern in the hook is its exact rule. In
-words: `gh pr create` or `gh pr new`, with `-R o/r` or `--repo=o/r` allowed on either side
-of `pr`, at the start of a line or after a separator or `(`, behind optional prefixes such
-as `command`, `time`, `GH_TOKEN=x` or `/opt/homebrew/bin/`, and followed by whitespace or
-the line's end. Reading text, it refuses some mentions and misses some invocations.
-Measured examples:
+spelling, not a parser. `shipshape_gh_pr_invocation` in `lib/shipshape-common.sh` is the
+exact rule for the match. In words: `gh pr create` or `gh pr new`, with a repo flag such as
+`-R o/r` or `--repo=o/r` on either side of `pr`, at the start of a line or after a
+separator or `(`, behind optional prefixes such as `command`, `time`, `GH_TOKEN=x` or
+`/opt/homebrew/bin/`, and followed by whitespace or the line's end. Reading text, it
+refuses some mentions and misses some invocations. Measured examples:
 
 - Refused, though gh would not run: `git commit -m "fix (gh pr new alias)"`, and a
   commit message whose second line is `gh pr new is the alias`.
@@ -268,10 +268,14 @@ Measured examples:
   `my\ tools/gh pr create --fill`.
 - Let through on purpose: any command that contains `shipshape-pr-open`.
 
-`gh api` is not what the match looks for, and is refused only when its text holds the
-shape above. A tool other than Bash never reaches the hook, which is registered for Bash
-alone. The gate closes the ordinary path, and the done gate's arming is as complete as
-that.
+Other ways to open a pull request arm nothing as well. `gh api` is not what the match looks
+for, and is refused only when its text matches that pattern. A tool other than Bash never
+reaches the hook, which is registered for Bash alone. The gate closes the ordinary path,
+and the done gate's arming is as complete as that.
+
+`merge-gate` reads `gh pr merge` with the same pattern, so it refuses
+`gh -R o/r pr merge 444` and `command gh pr merge 444` and misses spellings of the same
+kinds, such as `env gh pr merge 444` and `gh pr "merge" 444`.
 
 ## The pipeline
 
