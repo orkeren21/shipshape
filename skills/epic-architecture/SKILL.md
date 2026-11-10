@@ -92,6 +92,13 @@ is a convenience on top of the protocol, not a replacement for it: the notes
 reach only the session that did the starting, so they stop at the first
 succession, and the roster does not.
 
+A session the Architect starts outside the epic, such as a one-off fix, has
+no priming to say where its follow-ups go, so its brief says it in a line:
+they come back to the Architect, in its report or by message to the
+Architect's session id. Without that line the session falls back on the
+desktop app's default and puts each follow-up to the operator, as a button
+or a card.
+
 ## Splitting
 
 Split along seams the code already has. A feature that touches everything is a
@@ -174,6 +181,19 @@ has left. A small remainder gets `RULING: continue`; a large one gets
 handoff. The lane proposes rather than the Architect because only a session
 inside the lane's worktree can start one there, on the lane's branch and
 pull request. Log the verdict like any ruling.
+
+Follow-ups arrive here too, in a lane's `DONE`, and placing them is this
+seat's job. First check the operator's go: a follow-up it
+doesn't cover is a scope change, and that goes to the operator. One the go
+covers goes back to the session that found it, since that session holds its
+context. Write the lane a priming for it in `<epic folder>/<lane>/`, log the
+routing with the operator's words, who said them and when, then send the
+path in a `RULING`. That entry is what the lane checks its wider scope
+against, so it is in the log before the lane reads the ruling.
+Weigh the context the lane has left, as for a `MILESTONE`. A new session
+comes last, for a follow-up whose session is gone or out of room. On a turn
+a lane's message started, the app lets this seat only propose a session, so
+that one costs the operator a click on a card.
 
 A lane gone quiet without a `MILESTONE` or `DONE` gets a nudge, then the
 operator. When dispatching, an idle notice can stand in for polling —
