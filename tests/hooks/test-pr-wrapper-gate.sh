@@ -57,6 +57,66 @@ do
   assert_eq "deny" "$(decision_for "$command")" "refused: [$command]"
 done
 
+# --- the other spellings of the same command ---------------------------------
+#
+# Each of these opens a pull request with nothing armed. `new` is create's alias
+# in gh's own help, and gh reads -R on either side of `pr`, in every form below.
+
+assert_eq "deny" "$(decision_for 'gh pr new --fill')" "refused: the alias in gh's own help"
+assert_eq "deny" "$(decision_for 'gh -R o/r pr create --fill')" "refused: -R before pr"
+assert_eq "deny" "$(decision_for 'gh pr -R o/r create --fill')" "refused: -R after pr"
+assert_eq "deny" "$(decision_for 'command gh pr create --fill')" "refused: behind command"
+assert_eq "deny" "$(decision_for 'time gh pr create --fill')" "refused: behind time"
+
+for command in \
+  'gh --repo o/r pr create --fill' \
+  'gh --repo=o/r pr create --fill' \
+  'gh -Ro/r pr create --fill' \
+  'gh pr --repo o/r create --fill' \
+  'gh pr --repo=o/r new --fill' \
+  'gh -R a/b pr -R o/r new --fill' \
+  '/opt/homebrew/bin/gh -R o/r pr new --fill' \
+  'git push && command gh pr new --fill' \
+  'GH_TOKEN=abc time gh pr create --fill' \
+  'time GH_TOKEN=abc gh pr create --fill'
+do
+  assert_eq "deny" "$(decision_for "$command")" "refused: [$command]"
+done
+
+# The correction has to open the same pull request. Losing -R here would be
+# worse than the gap: pasted, it opens one against whichever repo is checked out.
+
+handback_for() { # handback_for <command>
+  local out
+  out="$(run_hook pr-wrapper-gate.sh "$(bash_payload "$1")" "$repo")"
+  hook_field "$out" hookSpecificOutput.permissionDecisionReason
+}
+
+assert_contains "$(handback_for 'gh pr new --title t')" "shipshape-pr-open --title t" \
+  "the alias hands back its arguments"
+assert_contains "$(handback_for 'gh -R o/r pr create --fill')" "shipshape-pr-open -R o/r --fill" \
+  "-R before pr survives the hand-back"
+assert_contains "$(handback_for 'gh pr --repo=o/r new --fill')" "shipshape-pr-open --repo=o/r --fill" \
+  "--repo after pr survives the hand-back"
+assert_contains "$(handback_for 'gh -R a/b pr -R o/r create --fill')" "shipshape-pr-open -R a/b -R o/r --fill" \
+  "both positions survive, in order, so gh resolves them as it would have"
+assert_contains "$(handback_for 'command gh pr create --fill')" "shipshape-pr-open --fill" \
+  "the prefix is dropped with the rest of the old command"
+assert_contains "$(handback_for 'gh -R o/r pr create --title "gh pr new is the alias" --fill')" \
+  'shipshape-pr-open -R o/r --title "gh pr new is the alias" --fill' \
+  "a title that mentions the command is still the caller's title"
+
+# --- a long command is still read --------------------------------------------
+#
+# With the command piped into grep -q under pipefail, grep leaving at the match
+# killed the writer, the pipeline read as no match, and a body this size went
+# through. 200 KB is well past a pipe's buffer on macOS and Linux alike.
+
+long_body="$(head -c 200000 /dev/zero | tr '\0' x)"
+assert_eq "deny" "$(decision_for "gh pr create --title t --body-file - <<'EOF'
+$long_body
+EOF")" "refused: a 200 KB body in a heredoc"
+
 # --- what it must not catch --------------------------------------------------
 #
 # Over-matching would be its own failure: a gate that blocks unrelated work
@@ -73,7 +133,23 @@ for command in \
   'git commit -m "gh pr create is in this message"' \
   'echo "run gh pr create when ready" > notes.txt' \
   'npm test' \
-  'grep -rn "gh pr create" docs/'
+  'grep -rn "gh pr create" docs/' \
+  'git commit -m "gh pr new is the alias"' \
+  'git commit -m "command gh pr create and time gh pr create"' \
+  'git commit -m "gh -R o/r pr create is refused too"' \
+  'grep -rn "gh pr new" docs/' \
+  'grep -rn "gh pr -R o/r create" docs/' \
+  'echo "time gh pr new --fill" > notes.txt' \
+  'gh pr newest' \
+  'gh pr view -R o/r 41' \
+  'gh -R o/r pr view 41' \
+  'gh pr -R o/r merge 41' \
+  'gh -R o/r issue create --title t' \
+  'gh -R o/r; pr create' \
+  'command -v gh' \
+  'time npm test' \
+  'time gh pr view 41' \
+  'echo time gh pr create'
 do
   assert_eq "" "$(decision_for "$command")" "allowed: [$command]"
 done

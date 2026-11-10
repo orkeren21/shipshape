@@ -15,8 +15,10 @@
 # find out, not have one opened for it under a different name.
 #
 # Over-matching is its own failure mode: a gate that blocks unrelated work gets
-# switched off, and then the real thing goes unguarded too. So this matches the
-# `gh pr create` invocation specifically, and nothing that merely mentions it.
+# switched off, and then the real thing goes unguarded too. So this matches
+# text shaped like the start of a `gh pr create` invocation, not wherever the
+# words appear. DETAILS.md lists measured examples of what that refuses and
+# what it misses.
 
 set -uo pipefail
 
@@ -32,13 +34,27 @@ shipshape_enabled PR_WRAPPER_GATE || exit 0
 command_line="$(shipshape_field tool_input.command)"
 [ -n "$command_line" ] || exit 0
 
-# `gh pr create` as an invocation: at the start of the line or after a shell
-# separator, optionally with a leading path or environment assignments, and
-# followed by whitespace or the end of the command. A commit message or a grep
-# pattern containing the same words is not an invocation.
-printf '%s' "$command_line" | grep -qE \
-  '(^|[;&|(]|&&|\|\|)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' \
-  || exit 0
+# `gh pr create` as an invocation. `invocation` below is the exact rule. In
+# words: the command at the start of a line or after a separator or `(`,
+# behind optional prefixes such as `command`, `time`, `GH_TOKEN=x` or
+# `/opt/homebrew/bin/`, and followed by whitespace or the end of the line.
+# That reads text, not shell, so it refuses some mentions and misses some
+# invocations.
+#
+# `new` is create's alias and -R/--repo is `pr`'s one flag, so both are named,
+# -R on either side of `pr`. Measured on gh 2.96.0: `gh pr create --help` lists
+# the alias, `gh pr --help` lists only -R/--repo, and `gh -R o/r pr new --help`
+# and `gh pr -R o/r new --help` print create's help. Some of create's own flags
+# also reach it from before `create` (`gh pr --title t create --help` prints
+# create's help), and those are not matched.
+repo_flag='(-R|--repo)([[:space:]]+|=)?[^[:space:];&|()]+[[:space:]]+'
+gh_pr_create="gh[[:space:]]+(($repo_flag)*)pr[[:space:]]+(($repo_flag)*)(create|new)"
+invocation='(^|[;&|(]|&&|\|\|)[[:space:]]*((command|time)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$gh_pr_create"'([[:space:]]+|$)'
+
+# A here-string, not a pipe: with pipefail, grep -q leaving at an early match
+# kills a long printf, and the pipeline reads as no match. A 200 KB command got
+# through that way.
+grep -qE "$invocation" <<<"$command_line" || exit 0
 
 # The session may legitimately be running the wrapper, which invokes gh itself.
 # That happens in a child process rather than through the Bash tool, so it does
@@ -49,9 +65,15 @@ case "$command_line" in
 esac
 
 # Hand back the caller's own arguments so the correction is a paste rather than
-# a retyping. Everything from `create` onward belongs to the new command.
+# a retyping: everything after `create`, and any -R before it (groups 5 and 9 of
+# `invocation`), because without it the paste opens the pull request against
+# whichever repo is checked out. On each line that matches, sed replaces
+# everything up to and including the last match with that match's -R groups,
+# so `gh pr create --title "a; gh pr new b" --fill` hands back `b" --fill`.
+# Every line then loses its leading whitespace, and lines that do not match
+# come back otherwise unchanged.
 args="$(printf '%s' "$command_line" \
-  | sed -e 's/.*gh[[:space:]][[:space:]]*pr[[:space:]][[:space:]]*create//' \
+  | sed -E -e "s#.*${invocation}#\\5\\9#" \
   | sed -e 's/^[[:space:]]*//')"
 
 shipshape_trace pr-wrapper-gate "refused a bare gh pr create"
