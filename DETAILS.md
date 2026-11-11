@@ -45,7 +45,7 @@ record behind as a side effect. The record cannot exist without the work.
 | Hook | Event | What it does |
 |---|---|---|
 | `done-gate` | `Stop` | Arms per pull request, one obligation record each, so a cascade's second PR cannot evaporate the first one's debt. Disarms a record only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD** — and, with a plan bound, a passing, current verify record for every task in scope, and stamps it `pr-satisfied-<n>` for the merge gate. A "No" from any report that landed after the newest background review was launched still blocks: that review was sent before those findings existed. A foreground review is dated when it returns, so for it the rule reaches only a "No" that landed after it returned. The soft nudge speaks when the outstanding state changes and stays silent while it does not; the hard block on a completion claim never dedupes. On a branch other than the record's it nudges but does not block, and it never disarms. |
-| `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp, one still at the branch's tip, read from the local branch or, once that is gone, from `origin`'s tracking ref (limits under *Where enforcement stops*). It also refuses, on the PR's own branch, while a review report the done gate would still count says No (a reasoned review waiver is honoured, as the done gate honours it). A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. It reads the command with `pr-wrapper-gate`'s pattern, `-R` and `command` or `time` included (limits under *Where enforcement stops*). |
+| `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp, one still at the branch's tip, read from the local branch or, once that is gone, from `origin`'s tracking ref (limits under *Where enforcement stops*). It also refuses, on the PR's own branch, while a review report the done gate would still count says No (a reasoned review waiver is honoured, as the done gate honours it). A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. It reads the command with `pr-wrapper-gate`'s pattern, `-R` and `command` or `time` included (limits under *Where enforcement stops*), and judges the PR the merge names: a number, a pull URL, or a branch a record names. It refuses a merge that isn't the first command or that something on its line runs alongside, one with a word or prefix it can't read, and one naming another repository (*Which PR a merge names*, below). |
 | `review-capture` | `PostToolUse`, `SubagentStop` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:` — at once for a foreground dispatch, and for a background one (in the field since late October 2026 the only kind the desktop app launches) when that agent stops, matched by its agent id and dated at its launch, so commits made while it read leave it stale. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
 | `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create`, its alias `gh pr new`, either with `-R` before or after `pr` or behind `command` or `time`, and hands back the `shipshape-pr-open` form with the caller's arguments and any `-R`, from the first match on, with a heredoc body as written. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. It reads the command as text (limits under *Where enforcement stops*). |
 | `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, at the seat's handoff point: 70/85% for a lane or solo session, 85/92% for an Architect. Worded as actions, with no prohibitions to echo back; the operator gets the number in a one-line `systemMessage`, so the session has nothing to announce. |
@@ -60,6 +60,143 @@ wrappers run (measured for a session that stays in the directory it was
 launched in). Its own directory can be another checkout: the desktop app
 launches a worktree session with `--project-config-root` at the main checkout,
 and its hooks then start there (measured with the app's Claude Code 2.1.309).
+
+**Which PR a merge names.** The merge gate judges a merge only when it is the
+first command in the text, it knows the shape of every word on the merge's line
+from `gh` on, and nothing that line runs can run alongside gh. Each line before
+the merge's is read only to check that it is blank or a comment. The lines after
+it are not read: they are a quoted heredoc's body, which the shell leaves as text,
+or commands that start once the merge's own command has ended. A merge after
+another command is refused as `merge_gate_not_first`, and anything else the gate
+doesn't recognise as `merge_gate_unparseable`, with the merge asked for by number,
+on one line, with plain flags. The gate falls back to the current branch's PR only
+when the merge is first, it read every word, and none named a PR. Where a case
+below says what bash or zsh hands to gh, it was measured with a stub `gh` under
+zsh 5.9 and bash 3.2.57.
+
+- *First.* Every line before the merge's must be blank or a comment, so
+  `git checkout feature-58 # go` on the line before is refused. Before `gh` on the
+  merge's line there may be only spaces and tabs; one opener, `(`, `{` and a space,
+  `$(` or `NAME=$(`; then `command`, `time`, `noglob`, and `NAME=VALUE` or
+  `NAME+=VALUE` with a VALUE of plain characters; and gh's own directory, if any,
+  from `/opt/homebrew/bin/`, `/usr/local/bin/`, `/usr/bin/`, `/bin/` and
+  `/home/linuxbrew/.linuxbrew/bin/`. Anything else is refused, including
+  `git checkout feature-58 && gh pr merge --squash`,
+  `git switch feature-58; gh pr merge --squash --delete-branch` and the same on two
+  lines, `gh pr checkout 58 && gh pr merge --squash`, `cd ../wt2 && gh pr merge
+  --squash`, `cd /other/repo && gh pr merge 64`, `echo $(gh pr merge 64)` and
+  `X=$(./switch-to-58) gh pr merge 64`. A review measured the first five with a stub
+  gh: each merged feature-58's PR while the gate judged the stamped PR of the branch
+  the session was on. `./gh pr merge 64` is refused as unparseable: a gh the gate
+  doesn't know could merge anything.
+- *Names set before gh.* Only `GH_TOKEN`, `GITHUB_TOKEN`, `GH_PROMPT_DISABLED`,
+  `GH_DEBUG`, `GH_PAGER`, `PAGER`, `NO_COLOR`, `CLICOLOR` and `GH_NO_UPDATE_NOTIFIER`
+  are read. `GH_REPO`, `GH_HOST`, `GIT_DIR` and `GIT_WORK_TREE`, set with `=` or
+  `+=`, are refused as `merge_gate_other_repo`. Any other name is refused as
+  unparseable, with the list in the refusal: `GIT_CONFIG_COUNT=1
+  GIT_CONFIG_KEY_0=remote.origin.gh-resolved …`, `GIT_CONFIG_GLOBAL=…`,
+  `GIT_COMMON_DIR=…` and `PATH=…` can each send gh to another repository or
+  program, and `X+=1` is refused too.
+- *Words.* A word is a run of plain characters (letters, digits and `._/:@+,=-`),
+  text in single quotes, and text in double quotes that holds no `$`, backtick or
+  backslash, so `'it''s'"done"x` is one word. Unquoted spaces and tabs separate
+  words. A word over 1024 bytes is read only as a flag's value written as a word of
+  its own: `--body "<2000 bytes>"` passes, and `--body=<2000 bytes>` and
+  `-b<2000 bytes>` are refused. A merge line with more than 200 words and
+  redirections after `gh` is refused, and so is a run of `gh`, `pr`, `merge` and
+  `-R` flags over 1024 bytes.
+- *After the merge.* The merge's command ends at an unquoted `;`, `&&`, `||`, `|`,
+  `)` or the end of the line, or at a `#` that starts a word, a comment. In
+  `gh pr merge --squash #64` the `#64` is a comment, so the merge names no PR and
+  the gate judges the current branch's PR: with the merge first, that is the PR gh
+  merges, unless `GH_REPO` or a `gh` function from earlier says otherwise (below).
+  `(gh pr merge 58)` and `x=$(gh pr merge 58)` are judged as 58, and
+  `gh pr merge;`, `(gh pr merge)` and `gh pr merge|cat` as the current branch's PR.
+  What follows is read too, as the merge's words are, because anything that runs
+  alongside gh can change which PR it merges. Accepted: after `;`, anything, once
+  the opener before gh (if any) is closed; after `&&` or `||`, commands of plain
+  words, quoted text and the redirections below, up to a top-level `;` or the end of
+  the line; a `)`
+  or, after `;`, a `}` closing the opener; and a pipe from the merge or its group
+  into `tail`, `head`, `cat` or `tee` with plain words only, one stage after
+  another (`2>&1 | tee merge.log | tail -n 3`). Refused: a backgrounding `&`
+  anywhere on the line before a top-level `;`, zsh's `&!` and `&|` included
+  (`gh pr merge --squash & git checkout -q feature-58; wait`,
+  `(gh pr merge 58) & …`, `gh pr merge 58 && git checkout x &`); a pipe from the
+  merge into anything else (`| grep x`, `| git checkout feature-58`); a list or
+  group that goes on past the merge's line (a trailing `&&`, `||` or `|`, or an
+  opener not closed on it); and a `)` or `}` that closes nothing the gate saw open.
+- *Redirections.* Accepted: `>`, `>>`, `1>`, `1>>`, `2>`, `2>>` and `&>` before a
+  target of plain characters, with or without a space; `2>&1` and `1>&2`; and, after
+  `--body-file -` or `-F -`, a heredoc with a quoted delimiter: `<<` or `<<-`, then
+  optional spaces, then a delimiter of plain characters in single or double quotes
+  (`<<'EOF'`, `<< 'EOF'`, `<<"EOF"`, `<<-'EOF'`, `<<-"EOF"`). Each starts a word of
+  its own, with nothing against it but a lone `1` or `2`. Refused: an unquoted
+  delimiter (`<<EOF`, `<<-EOF`), because the shell expands its body before gh runs,
+  so `$(git checkout -q feature-58)` or a backtick in it would run first, and the
+  refusal says to quote it; `>&` in any other form (`>& out`, `>&out`, `>&2`,
+  `2>& 1`, `>&$FD`); `&>>` (bash 3.2 rejects it as a syntax error); `>|`, `<>`, `<`,
+  `<<<`, `<(…)` and `>(…)`; a target in quotes or holding `$`; a target or
+  delimiter over 1024 bytes as written; a heredoc with no `--body-file -` before
+  it; and a redirection joined to a word (`gh pr merge>out`, `gh pr merge<in`,
+  `gh pr merge 58>/dev/null`; for the last, zsh hands gh 58 and bash 3.2 hands it
+  nothing).
+- *Flags*, as gh 2.96.0's `gh pr merge --help` and `gh pr --help` list them.
+  Switches: `--admin`, `--auto`, `-d`/`--delete-branch`, `--disable-auto`,
+  `-m`/`--merge`, `-r`/`--rebase` and `-s`/`--squash`, the long forms also with
+  `=true` or `=false`. Value flags: `-A`/`--author-email`, `-b`/`--body`,
+  `-F`/`--body-file`, `--match-head-commit`, `-t`/`--subject` and `-R`/`--repo`, as
+  `--x V`, `--x=V`, `-x V` or `-xV`. A value flag takes the next word whatever it
+  looks like, so `-t 57 58` and `-t --squash 58` both name 58. Short switches
+  cluster (`-sd`), and a value flag may end a cluster (`-sb 57 58`, `-sF-`). The
+  value of `-R`/`--repo` must be `OWNER/REPO` or `HOST/OWNER/REPO`, bare or in one
+  pair of quotes; `-R https://github.com/acme/widget` is refused. Refused too: any
+  other flag (`--help` included), `--`, a short flag written with `=` (`-s=t 58`,
+  `-t=x 58`), and a value flag with nothing after it. Between `gh` and `merge`, only
+  `-R`/`--repo` is read.
+- *The PR.* At most one positional word: digits, or `'58'`, `"58"`, `'#58'` or
+  `"#58"`; a URL `https://HOST/OWNER/REPO/pull/N`, followed by nothing or by `/`
+  segments of letters, digits and `._-` (`…/pull/58/`, `…/pull/58/files`); or a word
+  of plain characters, read as a branch through the obligation records' `branch=`.
+  Refused: a second positional word, a quoted branch name, any other URL
+  (`http://`, `…/pull/58/'?x=1'`, `…/pull/58/a:b`), and a quoted word that is not a
+  number.
+- *Values the shell computes.* `$` and backticks refuse anywhere the gate reads on
+  the merge's line, outside single quotes: `--subject "$(date)"`, `-t $T`,
+  `--repo="$REPO"`, `--body "$(cat <<'EOF'` with the body on later lines, and
+  `&& echo "$x"` after the merge. That refusal says to pass a long body with
+  `--body-file -` and a quoted heredoc, or as a plain quoted body. Inside single
+  quotes they are text: `--subject 'say "$x"'` passes.
+
+A branch that no record names is refused as `merge_gate_unresolved`, which says to
+merge by number or hand the merge to the operator: with no record for
+`feature-58`, `gh pr merge feature-58` is refused.
+
+A repository named by `-R`/`--repo` (before `pr`, between `pr` and `merge`, or after
+`merge`) or by the URL must match the record's `url=`. `OWNER/REPO` is compared
+with its owner and repository, and `HOST/OWNER/REPO` with all three, exactly as
+written, so `Acme/Widget` does not match `acme/widget`, and neither `fork/widget`
+nor `acme/gadget` matches `acme/widget`. A mismatch, a record without such a URL,
+or no record for that number at all, is refused as `merge_gate_other_repo`, because
+the gate cannot judge another repository's pull request from this session's
+records. Its fix line sends the merge to a session in that repository, or to the
+operator. The gate does not read `GH_REPO` or `GH_HOST` from its own environment,
+nor see a `gh` function or alias defined before the command.
+
+If the reading itself breaks (awk missing, awk exiting non-zero, or its output
+stopping before its last record), the gate fails open and says so in the trace.
+
+This reading is 0.6.8's. An earlier, unreleased attempt tested some cases the other
+way, and 0.6.8 decides them so: `-s=t 58`, `--squash -d=F 58` and `-sd=t 58` are
+refused, where that attempt read them as 58, as gh does. `--subject "Fix \"quoted\"
+thing" 64` is refused, as is every backslash outside single quotes, a trailing lone
+one included (zsh hands gh an extra, empty word for it); `--subject 'a\b'` passes.
+`gh pr merge "$PR"` is refused as unparseable, not unresolved, and `-R 57 58`
+because 57 is not a repository. A merge after `sleep 30` on the line before is
+refused, where that attempt judged it, and so are an unquoted heredoc delimiter and
+a merge run in the background. The comment, redirection and quoted heredoc cases,
+and `&`, `;`, `|`, `(` and `)` inside quotes, are judged on the PR gh merges, as
+that attempt judged them.
 
 **The plan leg.** A fourth evidence leg, read by the done gate, the merge gate
 and the doctor through one evaluator. `shipshape-plan` binds a plan file to the
@@ -250,20 +387,29 @@ The name resolves as git resolves any name, so a tag sharing it outranks the bra
 spelling, not a parser. `shipshape_gh_pr_invocation` in `lib/shipshape-common.sh` is the
 exact rule for the match. In words: `gh pr create` or `gh pr new`, with a repo flag such as
 `-R o/r` or `--repo=o/r` on either side of `pr`, at the start of a line or after a
-separator or `(`, behind optional prefixes such as `command`, `time`, `GH_TOKEN=x` or
-`/opt/homebrew/bin/`, and followed by whitespace or the line's end. Reading text, it
-refuses some mentions and misses some invocations. Measured examples:
+separator, `(` or `{`, behind optional prefixes such as `command`, `time`, `noglob`,
+`GH_TOKEN=x`, `X+=1` or `/opt/homebrew/bin/`, and followed by whitespace, one of
+`; & | ( ) < >`, or the line's end, so `gh pr create>pr.log --fill`, `(gh pr create)`
+and `{ gh pr create --fill; }` are matched. Reading text, it refuses some mentions and
+misses some invocations. Measured examples:
 
 - Refused, though gh would not run: `git commit -m "fix (gh pr new alias)"`, and a
-  commit message whose second line is `gh pr new is the alias`.
+  commit message whose second line is `gh pr new is the alias`. Since 0.6.8, a mention
+  in parentheses or followed by `|` matches too, so these are refused by this gate and
+  by the merge gate (as not first): `grep -rnE "(gh pr merge|gh pr create)" hooks/`,
+  `rg '(gh pr create|gh pr new)' skills`, `git commit -m "docs: say what (gh pr merge)
+  does"` and `git log --grep='(gh pr merge)'`. For `git commit -m "add (gh pr create)"
+  && gh pr create --fill`, the hand-back passes over the mention and hands back
+  `shipshape-pr-open --fill`.
 - Refused, and gh would run: `eval "git push; gh pr create --fill"` and
   `` x=`git push; gh pr create --fill` ``.
-- Missed: `env`, `exec` or `then` in front; `eval "gh pr create --fill"`,
+- Missed: `env`, `exec`, `if` or `then` in front; `X=$(git switch b) gh pr create`,
+  whose prefix holds a space; `eval "gh pr create --fill"`,
   `eval "git push; gh pr create" --fill` and `bash -c 'gh pr create --fill'`;
   `` url=`gh pr create --fill` ``, and the same backticks inside a double-quoted commit
   message, which the shell runs; `"gh" pr create`, `\gh pr create` and `gh pr "create"`;
   a line continuation inside the three words or straight after them;
-  `gh pr create>pr.log --fill`; `gh pr --title t create`, `gh pr -fd create` and
+  `gh pr --title t create`, `gh pr -fd create` and
   `gh pr --fill --draft create`; `X="a b" gh pr create --fill` and
   `my\ tools/gh pr create --fill`.
 - Let through on purpose: any command that contains `shipshape-pr-open`.
@@ -275,7 +421,9 @@ and the done gate's arming is as complete as that.
 
 `merge-gate` reads `gh pr merge` with the same pattern, so it refuses
 `gh -R o/r pr merge 444` and `command gh pr merge 444` and misses spellings of the same
-kinds, such as `env gh pr merge 444` and `gh pr "merge" 444`.
+kinds, such as `env gh pr merge 444` and `gh pr "merge" 444`. Once it has matched a
+merge, it judges the PR the merge names, as *Which PR a merge names* under *The hooks*
+sets out, and refuses the words it can't read.
 
 ## The pipeline
 

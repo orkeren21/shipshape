@@ -109,6 +109,38 @@ assert_contains "$(handback_for 'gh -R o/r pr create --title "gh pr new is the a
   'shipshape-pr-open -R o/r --title "gh pr new is the alias" --fill' \
   "a title that mentions the command is still the caller's title"
 
+# The shell ends the verb at ; & | ( ) < > as well as at a space, so each of
+# these runs gh pr create. A character that ends the verb and belongs to what
+# follows comes back in the hand-back.
+for command in 'gh pr create;' 'gh pr create&&echo done' '(gh pr create)' 'x=$(gh pr create)' \
+  'gh pr create>pr.log --fill' 'gh pr create|cat' 'gh pr create&'; do
+  assert_eq "deny" "$(decision_for "$command")" "refused: [$command]"
+done
+assert_contains "$(handback_for 'gh pr create>pr.log --fill')" "shipshape-pr-open >pr.log --fill" \
+  "the redirection that ended the verb is handed back with it"
+assert_contains "$(handback_for 'gh pr create --fill')" "shipshape-pr-open --fill" \
+  "and the space that ended it is not"
+
+# A mention the shell ends with `)` at once, as in a commit message, is passed
+# over for the invocation after it on the line.
+handback="$(handback_for 'git commit -m "add (gh pr create)" && gh pr create --fill')"
+assert_contains "$handback" "shipshape-pr-open --fill" "the invocation after a parenthesised mention is handed back"
+assert_not_contains "$handback" 'shipshape-pr-open )' "and not the rest of the mention"
+assert_not_contains "$(handback_for '(gh pr create)')" 'shipshape-pr-open )' \
+  "a bare subshell hands back no stray parenthesis"
+
+# The cost of the wider boundary, which DETAILS lists: a mention in parentheses
+# or followed by | now matches, though gh would not run.
+for command in 'grep -rnE "(gh pr merge|gh pr create)" hooks/' "rg '(gh pr create|gh pr new)' skills" \
+  'git commit -m "docs: say what (gh pr create) does"'; do
+  assert_eq "deny" "$(decision_for "$command")" "over-matched, as DETAILS says: [$command]"
+done
+
+# The pattern reaches a command in braces, behind += and behind zsh's noglob.
+for command in '{ gh pr create --fill; }' 'X+=1 gh pr create --fill' 'noglob gh pr create --fill'; do
+  assert_eq "deny" "$(decision_for "$command")" "refused: [$command]"
+done
+
 # The hand-back starts at the first invocation, not the last match on a line.
 # A mention after a separator inside a title matches too, and taking the last
 # match cut the title there.

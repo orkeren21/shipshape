@@ -473,12 +473,14 @@ shipshape_gh_pr_words() {
 
 # shipshape_gh_pr_invocation <verb> — the same words where a command starts.
 # This pattern is the exact rule. In words, for example: at the start of a line
-# or after a separator or `(`, behind optional prefixes such as `command`,
-# `time`, `GH_TOKEN=x` or `/opt/homebrew/bin/`, and followed by whitespace or
-# the end of the line. Groups 5 and 9 hold the -R flags before and after `pr`,
-# the verb is 13, and the whitespace after it is 14.
+# or after a separator, `(` or `{`, behind optional prefixes such as `command`,
+# `time`, zsh's `noglob`, `GH_TOKEN=x`, `X+=1` or `/opt/homebrew/bin/`, and
+# followed by whitespace, one of ; & | ( ) < >, or the end of the line: the
+# shell ends the verb at any of them, so `gh pr merge;` and `gh pr merge>out`
+# run it too. Groups 5 and 9 hold the -R flags before and after `pr`, the verb
+# is 13, and what follows it is 14.
 shipshape_gh_pr_invocation() {
-  printf '%s' '(^|[;&|(]|&&|\|\|)[[:space:]]*((command|time)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$(shipshape_gh_pr_words "$1")"'([[:space:]]+|$)'
+  printf '%s' '(^|[;&|({]|&&|\|\|)[[:space:]]*((command|time|noglob)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*[+]?=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$(shipshape_gh_pr_words "$1")"'([[:space:]]+|[;&|()<>]|$)'
 }
 
 # ---------------------------------------------------------------------------
