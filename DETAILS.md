@@ -452,9 +452,12 @@ some mentions and misses some invocations. Measured examples:
   Otherwise it runs to the end of the line, as before 0.6.9: `(cd x && gh pr create
   --fill)` hands back `--fill)`, and `url="$(gh pr create --fill)"`, whose `$(…)`
   the shading reads as quoted text, hands back `--fill)"`. Quotes are followed
-  across lines, but a heredoc body
-  is read as commands, so an apostrophe in one before the invocation opens a quote;
-  then the hand-back starts at the first match, quoted or not, as before 0.6.9.
+  across lines, but a heredoc body is read as commands, so an apostrophe in one
+  before the invocation opens a quote. With no match outside quotes, the hand-back
+  starts at the first match, quoted or not, as before 0.6.9, passing over at most 16
+  mentions the shell ends with `)` at once: passing over every one ran the pattern
+  once per mention over the rest of the line, and 198 KB of them inside `eval "…"`
+  kept the hook running past ten minutes, where it decides nothing.
 - Refused, and gh would run: `eval "git push; gh pr create --fill"` and
   `` x=`git push; gh pr create --fill` ``.
 - Missed: other commands in front, such as `stdbuf -o0`, `caffeinate -i`, `coproc`,

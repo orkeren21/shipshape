@@ -229,7 +229,9 @@ for pair in \
   'url=$(gh pr create --title "$(git log -1 --format=%s)" --fill)|--title "$(git log -1 --format=%s)" --fill' \
   'url=$(gh pr create --title $(git log -1 --format=%s) --fill); echo "$url"|--title $(git log -1 --format=%s) --fill' \
   '(gh pr create --title "a)" --fill)|--title "a)" --fill' \
-  'x=$(gh pr create>pr.log --fill)|>pr.log --fill'
+  'x=$(gh pr create>pr.log --fill)|>pr.log --fill' \
+  'x=$( gh pr create ) && echo d|' \
+  $'x=$(gh pr create --fill\t\t)|--fill'
 do
   handback="$(handback_for "${pair%|*}")"
   assert_contains "$handback" "shipshape-pr-open ${pair##*|}${nl}" "handed back to its group's close: [${pair%|*}]"
@@ -257,16 +259,31 @@ assert_contains "$handback" "xxxx\"${nl}" "up to the ) that closes the group"
 
 # So are the spaces and newlines before that ), which are left out: trimmed
 # with bash's ${s##*[![:space:]]}, 40 KB of spaces took 20 s.
-for filler in ' ' "$nl"; do
-  pad="$(head -c 200000 /dev/zero | tr '\0' x | tr x "$filler"; printf .)"
+for filler in space newline; do
+  case "$filler" in space) one=' ' ;; newline) one="$nl" ;; esac
+  pad="$(head -c 200000 /dev/zero | tr '\0' x | tr x "$one"; printf .)"
   pad="${pad%.}"  # the dot keeps $(…) from dropping trailing newlines
   started=$SECONDS
   handback="$(handback_for "x=\$(gh pr create --fill$pad) && echo done")"
   assert_contains "$handback" "shipshape-pr-open --fill${nl}${nl}It passes" \
-    "200 KB of [$(printf '%s' "$filler" | od -An -c | tr -d ' ')] before the ) is left out of the hand-back"
+    "200 KB of ${filler}s before the ) are left out of the hand-back"
   [ $((SECONDS - started)) -lt 20 ] ||
-    fail "200 KB of whitespace before the ) took $((SECONDS - started)) s; it must stay linear"
+    fail "200 KB of ${filler}s before the ) took $((SECONDS - started)) s; it must stay linear"
 done
+
+# With no match outside quotes, the old reading passes over a mention the
+# shell ends with ) at once, for the invocation after it on the line...
+assert_contains "$(handback_for "eval \"git commit -m '(gh pr new)' && gh pr create --fill\"")" \
+  'shipshape-pr-open --fill"' "the old reading passes over a mention in parentheses"
+# ...but over 16 at most. Each pass ran the pattern over the rest of the line,
+# so 198 KB of them inside eval "…" ran the hook past ten minutes, where it
+# decides nothing. The refusal is decided before the hand-back.
+mentions="$(printf '(gh pr new) %.0s' $(seq 1 18000))"
+started=$SECONDS
+assert_eq "deny" "$(decision_for "eval \"echo '$mentions'; gh pr create --fill\"")" \
+  "a 198 KB line of mentions in parentheses is refused"
+[ $((SECONDS - started)) -lt 20 ] ||
+  fail "198 KB of mentions in parentheses took $((SECONDS - started)) s; the old reading must stay bounded"
 
 # Only the invocation's own line is rewritten. The lines before it are other
 # commands, and the lines after it are its arguments, a heredoc body most

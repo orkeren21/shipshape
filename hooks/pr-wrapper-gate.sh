@@ -181,7 +181,12 @@ handback_unquoted() {
       tail="${m[15]-}${rest:+$nl$rest}"
       cut="$(LC_ALL=C awk -v mode=close "$parens" 2>/dev/null \
         <<<"${shaded_line:$(( ${#line} - ${#m[15]} ))}${shaded_rest:+$nl$shaded_rest}")"
-      [ "${cut:--1}" -lt 0 ] || tail="${tail:0:cut}"
+      # Cut only at an offset in digits: under set -u, a word there would end
+      # the hook, which lets the command through.
+      case "$cut" in
+        ""|*[!0-9]*) ;;
+        *) tail="${tail:0:cut}" ;;
+      esac
       m[15]="$tail"
       rest=""
     elif [ "${open:-0}" -gt 0 ]; then
@@ -205,8 +210,14 @@ if ! handback_unquoted <<<"$command_line"; then
         m=("${BASH_REMATCH[@]}")
         # A match the shell ends with `)` at once is a mention in parentheses,
         # such as a commit message's `(gh pr create)`; a later match on the line
-        # is the invocation to hand back.
-        while [ "${m[14]-}" = ")" ]; do
+        # is the invocation to hand back. At most 16 passes: each runs the
+        # pattern over the rest of the line, so a line of thousands of such
+        # mentions took time that grows with its square, and 198 KB of them
+        # inside eval "…" ran the hook past ten minutes, where it decides
+        # nothing. The refusal is already decided; only the hand-back is cut.
+        passes=0
+        while [ "${m[14]-}" = ")" ] && [ "$passes" -lt 16 ]; do
+          passes=$((passes + 1))
           line="${m[15]-}"
           [[ $line =~ $handback_re ]] || break
           m=("${BASH_REMATCH[@]}")
