@@ -219,11 +219,15 @@ shipshape_json_get() {
       return 0
     fi
   fi
+  # python reads the JSON on stdin. Through its environment, a payload over the
+  # system's cap (1 MB in all on macOS, 128 KB a string on Linux) left python
+  # unable to start, every field read empty, and a gate let the command through
+  # untraced. Bytes in and out, so text that is not UTF-8 comes back unchanged.
   if command -v python3 >/dev/null 2>&1; then
-    SHIPSHAPE_JSON="$json" SHIPSHAPE_PATH="$path" python3 -c '
+    printf '%s' "$json" | SHIPSHAPE_PATH="$path" python3 -c '
 import json, os, sys
 try:
-    node = json.loads(os.environ["SHIPSHAPE_JSON"])
+    node = json.loads(sys.stdin.buffer.read().decode("utf-8", "surrogateescape"))
 except Exception:
     sys.exit(0)
 for key in os.environ["SHIPSHAPE_PATH"].split("."):
@@ -234,11 +238,12 @@ for key in os.environ["SHIPSHAPE_PATH"].split("."):
 if node is None:
     sys.exit(0)
 if isinstance(node, str):
-    sys.stdout.write(node)
+    out = node
 elif isinstance(node, bool):
-    sys.stdout.write("true" if node else "false")
+    out = "true" if node else "false"
 else:
-    sys.stdout.write(json.dumps(node))
+    out = json.dumps(node)
+sys.stdout.buffer.write(out.encode("utf-8", "surrogateescape"))
 ' 2>/dev/null
     return 0
   fi
@@ -326,23 +331,27 @@ shipshape_agent_text() {
       return 0
     fi
   fi
+  # On stdin, as shipshape_json_get says why.
   if command -v python3 >/dev/null 2>&1; then
-    SHIPSHAPE_JSON="$payload" python3 -c '
-import json, os, sys
+    printf '%s' "$payload" | python3 -c '
+import json, sys
 try:
-    payload = json.loads(os.environ["SHIPSHAPE_JSON"])
+    payload = json.loads(sys.stdin.buffer.read().decode("utf-8", "surrogateescape"))
 except Exception:
     sys.exit(0)
 response = payload.get("tool_response")
 if isinstance(response, str):
-    sys.stdout.write(response)
+    out = response
 elif isinstance(response, dict):
     parts = [
         block.get("text", "")
         for block in (response.get("content") or [])
         if isinstance(block, dict) and block.get("type") == "text"
     ]
-    sys.stdout.write("\n".join(p for p in parts if p))
+    out = "\n".join(p for p in parts if p)
+else:
+    sys.exit(0)
+sys.stdout.buffer.write(out.encode("utf-8", "surrogateescape"))
 ' 2>/dev/null
   fi
   return 0
@@ -369,9 +378,10 @@ shipshape_json_escape() {
   if command -v jq >/dev/null 2>&1; then
     printf '%s' "$s" | jq -Rs . 2>/dev/null && return 0
   fi
+  # On stdin, as shipshape_json_get says why.
   if command -v python3 >/dev/null 2>&1; then
-    SHIPSHAPE_RAW="$s" python3 -c \
-      'import json, os, sys; sys.stdout.write(json.dumps(os.environ["SHIPSHAPE_RAW"]))' \
+    printf '%s' "$s" | python3 -c \
+      'import json, sys; sys.stdout.write(json.dumps(sys.stdin.buffer.read().decode("utf-8", "surrogateescape")))' \
       2>/dev/null && return 0
   fi
   # Last resort: escape by hand. Enough for the text hooks actually emit.
@@ -479,8 +489,19 @@ shipshape_gh_pr_words() {
 # shell ends the verb at any of them, so `gh pr merge;` and `gh pr merge>out`
 # run it too. Groups 5 and 9 hold the -R flags before and after `pr`, the verb
 # is 13, and what follows it is 14.
+#
+# The prefixes also take the commands that run gh for the shell (`timeout`,
+# `nice`, `env`, `nohup`, `exec`, `sudo`, `xargs`, and `command` or `time` with
+# options), each with its own words up to a separator, and the keywords a
+# command can follow (`if`, `then`, `else`, `elif`, `do`, `while`, `until`, `!`).
+# They sit inside group 3 as alternatives, because ERE has no group that does
+# not count, and pr-wrapper-gate reads groups 5, 9, 14 and 15 by number. A
+# command's words run to the next separator, so `timeout 60 git commit -m
+# "… gh pr merge …"` matches too.
 shipshape_gh_pr_invocation() {
-  printf '%s' '(^|[;&|({]|&&|\|\|)[[:space:]]*((command|time|noglob)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*[+]?=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$(shipshape_gh_pr_words "$1")"'([[:space:]]+|[;&|()<>]|$)'
+  local runs='timeout[[:space:]][^;&|()]*|nice[[:space:]][^;&|()]*|env[[:space:]][^;&|()]*|sudo[[:space:]][^;&|()]*|xargs[[:space:]][^;&|()]*|exec[[:space:]][^;&|()]*|command[[:space:]]-[^;&|()]*|time[[:space:]]-[^;&|()]*'
+  local bare='command|time|noglob|nohup|nice|env|sudo|xargs|exec|if|then|else|elif|do|while|until|!'
+  printf '%s' '(^|[;&|({]|&&|\|\|)[[:space:]]*(('"$bare|$runs"')[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*[+]?=[^[:space:]]*[[:space:]]+)*([^[:space:];&|()]*/)?'"$(shipshape_gh_pr_words "$1")"'([[:space:]]+|[;&|()<>]|$)'
 }
 
 # ---------------------------------------------------------------------------
@@ -1104,11 +1125,12 @@ shipshape_json_array() {
       return 0
     fi
   fi
+  # On stdin, as shipshape_json_get says why.
   if command -v python3 >/dev/null 2>&1; then
-    SHIPSHAPE_JSON="$json" SHIPSHAPE_PATH="$path" python3 -c '
+    printf '%s' "$json" | SHIPSHAPE_PATH="$path" python3 -c '
 import json, os, sys
 try:
-    node = json.loads(os.environ["SHIPSHAPE_JSON"])
+    node = json.loads(sys.stdin.buffer.read().decode("utf-8", "surrogateescape"))
 except Exception:
     sys.exit(0)
 for key in os.environ["SHIPSHAPE_PATH"].split("."):
@@ -1119,7 +1141,7 @@ for key in os.environ["SHIPSHAPE_PATH"].split("."):
 if isinstance(node, list):
     for item in node:
         if isinstance(item, str):
-            sys.stdout.write(item + "\n")
+            sys.stdout.buffer.write((item + "\n").encode("utf-8", "surrogateescape"))
 ' 2>/dev/null
   fi
   return 0

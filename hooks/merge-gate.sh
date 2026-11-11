@@ -48,9 +48,14 @@ command_line="$(shipshape_field tool_input.command)"
 
 # A lib without the pattern functions would leave a pattern that matches every
 # command, or one with no gh words in it, and every multi-line command would
-# read as a compound. The gate fails open instead.
-if ! declare -F shipshape_gh_pr_words shipshape_gh_pr_invocation >/dev/null; then
-  shipshape_trace merge-gate "no gh pattern in lib; failing open"
+# read as a compound. The gate fails open instead, and says which is missing
+# from which file.
+missing_fns=""
+for fn in shipshape_gh_pr_words shipshape_gh_pr_invocation; do
+  declare -F "$fn" >/dev/null || missing_fns="$missing_fns $fn"
+done
+if [ -n "$missing_fns" ]; then
+  shipshape_trace merge-gate "no gh pattern in lib: $lib/shipshape-common.sh lacks$missing_fns; failing open"
   exit 0
 fi
 
@@ -90,8 +95,17 @@ esac
 
 # A here-string, not a pipe: with pipefail, grep -q leaving at an early match
 # kills a long printf, and the pipeline reads as no match. A merge with a
-# 200 KB body got through that way.
-grep -qE "$invocation" <<<"$command_line" || exit 0
+# 200 KB body got through that way. grep exits 1 for no match; anything above
+# that is grep failing, a pattern it can't compile most likely, and the gate
+# fails open on it, traced.
+grep -qE "$invocation" <<<"$command_line"
+match_status=$?
+if [ "$match_status" -eq 1 ]; then
+  exit 0
+elif [ "$match_status" -ne 0 ]; then
+  shipshape_trace merge-gate "the gh pattern could not be matched (grep exited $match_status); failing open"
+  exit 0
+fi
 
 if shipshape_waived merge_gate; then
   shipshape_trace merge-gate "waived: $(shipshape_waiver_line merge_gate)"
@@ -162,7 +176,9 @@ number_for_branch() { # <branch>
 # may be only spaces and tabs, one opener (`(`, `{ `, `$(` or `NAME=$(`), then
 # `command`, `time`, `noglob` and NAME=VALUE or NAME+=VALUE with a plain VALUE,
 # then one of gh's usual directories. Anything else stops the awk with an N
-# record, or an X record for gh from another directory. Of the names set
+# record, which names a command that runs gh for the shell (timeout, env, …)
+# or a shell keyword (if, !, …) when one stands there, or an X record for gh
+# from another directory. Of the names set
 # there, GH_REPO, GH_HOST, GIT_DIR and GIT_WORK_TREE point gh or git at
 # another repository and stop it with a G record; any name off a short list
 # of tokens and display settings stops it with an X record, since git reads
@@ -188,7 +204,8 @@ number_for_branch() { # <branch>
 #     against it: >, >>, 1>, 1>>, 2>, 2>> or &> before a plain-word target;
 #     2>&1 or 1>&2; or a heredoc whose delimiter is quoted, <<'WORD',
 #     <<"WORD", <<-'WORD' or <<-"WORD". A target or delimiter over 1024
-#     bytes stops it, as copying one costs time that grows with its square.
+#     bytes stops it, as copying one costs time that grows with its square,
+#     and so does a target with a .git path component, in any case.
 #   - Anything else stops it: $ or a backtick, a backslash, ( { } [ * ? ~ !,
 #     a quote left open, an unquoted heredoc delimiter, and any redirection
 #     of another shape. So does a 201st word or redirection: no merge needs
@@ -210,10 +227,12 @@ BEGIN {
   prefix = "[ \t]*((command|time|noglob)[ \t]+|" name "[+]?=" value "[ \t]+)*"
   shaped = opener "?" prefix "(" value "/)?$"
   first = opener "?" prefix "(/opt/homebrew/bin/|/usr/local/bin/|/usr/bin/|/bin/|/home/linuxbrew/[.]linuxbrew/bin/)?$"
-  readable = "GH_TOKEN, GITHUB_TOKEN, GH_PROMPT_DISABLED, GH_DEBUG, GH_PAGER, PAGER, NO_COLOR, CLICOLOR and GH_NO_UPDATE_NOTIFIER"
-  allowed = " GH_TOKEN GITHUB_TOKEN GH_PROMPT_DISABLED GH_DEBUG GH_PAGER PAGER NO_COLOR CLICOLOR GH_NO_UPDATE_NOTIFIER "
+  readable = "GH_TOKEN, GITHUB_TOKEN, GH_PROMPT_DISABLED, GH_DEBUG, NO_COLOR, CLICOLOR and GH_NO_UPDATE_NOTIFIER"
+  allowed = " GH_TOKEN GITHUB_TOKEN GH_PROMPT_DISABLED GH_DEBUG NO_COLOR CLICOLOR GH_NO_UPDATE_NOTIFIER "
   elsewhere = " GH_REPO GH_HOST GIT_DIR GIT_WORK_TREE "
   piped = " tail head cat tee "
+  wrappers = " timeout nice env nohup exec sudo xargs "
+  keywords = " if then else elif do while until ! "
 }
 NR < ENVIRON["SHIPSHAPE_MERGE_AT"] + 0 {
   if ($0 !~ /^[ \t]*(#.*)?$/) { finish("N", "a command on a line before the merge"); exit }
@@ -249,6 +268,27 @@ function prefixes(b,   k, m, part, nm) {
     if (!index(allowed, " " nm " ")) return finish("X", "a prefix setting " nm "; the only names read before gh are " readable)
   }
 }
+# What stands before gh, for the N record: a wrapper or shell keyword is named,
+# since the shared pattern reaches gh behind them only so that they refuse.
+function ahead(b,   k, m, part) {
+  sub(opener, "", b)
+  m = split(b, part, /[ \t]+/)
+  for (k = 1; k <= m; k++) {
+    if ((part[k] == "") || (part[k] ~ /^(command|time|noglob)$/) || (part[k] ~ ("^" name "[+]?="))) continue
+    if (index(wrappers, " " part[k] " ")) return part[k] " before gh on its line"
+    if (index(keywords, " " part[k] " ")) return "the shell keyword " part[k] " before gh on its line"
+    break
+  }
+  return "a command before the merge on its line"
+}
+# A path with a .git component, in any case: macOS paths are case-insensitive,
+# so .GIT/HEAD is the same file. Writing into .git can break the repository of
+# this checkout, and gh then finds the one around it.
+function gitpath(t,   k, m, part) {
+  m = split(tolower(t), part, "/")
+  for (k = 1; k <= m; k++) if (part[k] == ".git") return 1
+  return 0
+}
 # One word after the merge'\''s command, read as the merge'\''s words are read but
 # not printed. Its text when it is short, for a pipe stage to be checked.
 function tailword(   s) {
@@ -267,8 +307,8 @@ function tailword(   s) {
 # read: ; && || and the end of the line, a comment, a ) or } closing the
 # opener before gh, plain words and redirections in the commands after it,
 # and a pipe from the merge (or its group) into tail, head, cat or tee with
-# plain words only. A backgrounding & anywhere, any other pipe stage, and a
-# list or group that goes on past the line refuse.
+# plain words only, none of them a .git path. A backgrounding & anywhere, any
+# other pipe stage, and a list or group that goes on past the line refuse.
 function after(   c, t, s, need, inmerge, stage, depth, semi) {
   quiet = 1; depth = (closer != ""); need = 0; inmerge = 1; stage = 0; semi = 0
   while (!ended) {
@@ -322,6 +362,7 @@ function after(   c, t, s, need, inmerge, stage, depth, semi) {
     }
     else if (stage == 2) {
       if ((t == "") || index(t, sq) || index(t, "\"")) return finish("X", "a word in the pipe stage after the merge that is not plain")
+      if (gitpath(t)) return finish("X", "a .git path in the pipe stage after the merge, which runs alongside it and can break this checkout'\''s repository")
     }
   }
 }
@@ -354,13 +395,14 @@ function redirect(   fd, op, s, q) {
   if (q != "") { if (ch[i] != q) return finish("X", "a redirection whose target is not a plain word"); i++ }
   if (!boundary(i)) return finish("X", "a redirection whose target is not a plain word")
   if (i - s > 1024) return finish("X", "a redirection target over 1024 bytes")
+  if ((op !~ /^<</) && gitpath(text(s, i))) return finish("X", "a redirection into a .git path, which the shell opens before gh runs and can break this checkout'\''s repository")
   if (!quiet) print ((op ~ /^<</) ? "H" : "R") "\t" fd op " " text(s, i)
 }
 {
   p = index($0, ENVIRON["SHIPSHAPE_MERGE_WORDS"])
   if (!p) { finish("X", "the merge words were not where they matched"); exit }
   before = substr($0, 1, p - 1)
-  if (before !~ shaped) { finish("N", "a command before the merge on its line"); exit }
+  if (before !~ shaped) { finish("N", ahead(before)); exit }
   if (before !~ first) { finish("X", "gh run from a path that is none of /opt/homebrew/bin/, /usr/local/bin/, /usr/bin/, /bin/ and /home/linuxbrew/.linuxbrew/bin/"); exit }
   prefixes(before)
   if (ended) exit
@@ -418,7 +460,8 @@ fi
 # inherited -R/--repo. A flag that takes a value takes the next word whatever
 # it looks like, as pflag does, so `-t 57 58` names 58. Any other flag, a
 # short flag written with `=` (`-s=t`, `-t=x`), a second positional word, or a
-# flag left without its value refuses. A redirection is not a word gh sees, and
+# flag left without its value refuses, but --help or -h as a word of its own
+# asks for help, and nothing merges. A redirection is not a word gh sees, and
 # a heredoc is read only after --body-file - (or -F -), whose stdin it feeds.
 repo_shape='^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)?$'
 pull_url='^https://([A-Za-z0-9.-]+)/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/pull/([0-9]+)(/[A-Za-z0-9._-]*)*$'
@@ -430,6 +473,7 @@ stdin_body=""   # set by --body-file -, so a heredoc may follow
 refusal=""      # why the words cannot be read
 not_first=""    # what runs before the merge
 elsewhere=""    # a prefix pointing gh or git at another repository
+help=""         # --help or -h, a word of its own after merge
 ended=""
 
 take_value() { # <flag> <W|V> <value as written; empty for V>
@@ -470,6 +514,7 @@ read_cluster() { # <word> — -s, -sd, -t V, -tV, -sbV
 
 read_word() { # <word as written>
   case "$1" in
+    --help|-h) help="$1" ;;
     --admin|--auto|--delete-branch|--disable-auto|--merge|--rebase|--squash) ;;
     --admin=*|--auto=*|--delete-branch=*|--disable-auto=*|--merge=*|--rebase=*|--squash=*)
       case "${1#*=}" in
@@ -581,6 +626,16 @@ url_repo=""
 esac
 
 [ -z "$refusal" ] || deny_unparseable "$refusal"
+
+# --help or -h, as a word of its own after merge and not a flag's value, has gh
+# print merge's help and merge nothing, whatever PR or repository the other
+# words name. It is let through only here, once the merge was first, no prefix
+# pointed elsewhere, and every word read. --help=false and -sh are not this
+# shape, and were refused above.
+if [ -n "$help" ]; then
+  shipshape_trace merge-gate "allowed: $help asks gh for merge's help, and nothing merges"
+  exit 0
+fi
 
 # A plain word that is not a number is a branch, read through the records.
 if [ -n "$selector" ] && [ -z "$number" ]; then
@@ -705,7 +760,7 @@ if [ -n "$branch_head" ] && [ "$stamp_head" != "$branch_head" ]; then
     exit 0
   fi
   shipshape_trace merge-gate "denied: PR #$number stamp is stale ($stamp_head vs $branch_head)"
-  shipshape_emit_deny "PR #$number's evidence is stale: it was earned at $(printf '%s' "$stamp_head" | cut -c1-8), but $stamp_branch now points at $(printf '%s' "$branch_head" | cut -c1-8). A commit landed after the evidence, so the evidence no longer describes what would merge. Re-earn it — re-review if the diff changed, re-run CI, re-smoke, run any bound plan's verify commands again — and the done gate will re-stamp.$unreasoned_note" \
+  shipshape_emit_deny "PR #$number's evidence is stale: it was earned at $(printf '%s' "$stamp_head" | cut -c1-8), but $stamp_branch now points at $(printf '%s' "$branch_head" | cut -c1-8). A commit landed after the evidence, so the evidence no longer describes what would merge. Re-earn it — re-review if the diff changed, re-run CI, re-smoke, run any bound plan's verify commands again — and the done gate will re-stamp. Past the branch's fourth review, escalate first (shipshape:requesting-code-review, step 4).$unreasoned_note" \
     merge_gate_stale "shipshape-ci-watch $number"
   exit 0
 fi
@@ -723,7 +778,7 @@ if [ -n "$record_branch" ] && [ "$record_branch" = "$current_branch" ] \
   case "$live_review" in
     verdict-no\|*)
       shipshape_trace merge-gate "denied: PR #$number stamped, but ${live_review#*|} says no"
-      shipshape_emit_deny "PR #$number is stamped satisfied, but a review report — ${live_review#*|} — says it is not ready to merge, and it landed after the newest review was launched, so no review has answered it. Fix what it found and get a review launched after it; when that review says yes, this merge goes through.$unreasoned_note" \
+      shipshape_emit_deny "PR #$number is stamped satisfied, but a review report — ${live_review#*|} — says it is not ready to merge, and it landed after the newest review was launched, so no review has answered it. Fix what it found and get a review launched after it, and past the branch's fourth review, escalate first (shipshape:requesting-code-review, step 4). When that review says yes, this merge goes through.$unreasoned_note" \
         merge_gate_late_no
       exit 0
       ;;
