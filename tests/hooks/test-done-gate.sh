@@ -252,6 +252,8 @@ assert_eq "block" "$(hook_field "$out" decision)" "evidence older than HEAD is s
 reason="$(hook_field "$out" reason)"
 assert_contains "$reason" "smoke" "the stale smoke log is named"
 assert_contains "$reason" "stale" "and the reason says why it does not count"
+assert_contains "$reason" "fourth review, escalate first (shipshape:requesting-code-review, step 4)" \
+  "and the stale review's re-review names the review cap"
 
 # Re-running the evidence after the commit clears it again.
 give_all
@@ -270,6 +272,8 @@ give_bad_review
 out="$(run_hook done-gate.sh "$(stop_payload "$session" "$transcript" "$CLAIM")" "$repo")"
 assert_eq "block" "$(hook_field "$out" decision)" "a review whose verdict is no does not satisfy the gate"
 assert_contains "$(hook_field "$out" reason)" "verdict is no" "and the gate says the reviewer answered no"
+assert_contains "$(hook_field "$out" reason)" "fourth review, escalate first (shipshape:requesting-code-review, step 4)" \
+  "and the re-review it asks for names the review cap"
 
 # A smoke command that failed.
 give_all

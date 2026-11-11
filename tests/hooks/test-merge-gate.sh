@@ -91,6 +91,8 @@ assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason
   "review-99991231T235959Z-00.md" "and names the report that said it"
 assert_eq "merge_gate_late_no" "$(hook_field "$out" shipshapeCode)" \
   "with its own stable code"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
+  "fourth review, escalate first (shipshape:requesting-code-review, step 4)" "and the re-review it asks for names the review cap"
 
 # A reasoned review waiver is honoured here as every other reader honours it.
 # Without that, the done gate stamps a waived branch and this gate denies it,
@@ -112,6 +114,8 @@ assert_eq "deny" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" \
 assert_eq "merge_gate_stale" "$(hook_field "$out" shipshapeCode)" "named as staleness"
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "stale" \
   "and the reason says the evidence no longer describes the branch"
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
+  "fourth review, escalate first (shipshape:requesting-code-review, step 4)" "and the re-review it asks for names the review cap"
 
 # With no tip here or on origin, nothing is left to outrun the stamp, so it stands.
 # The branch is really deleted here because the bug lived in what git does with
@@ -286,7 +290,10 @@ X" \
   '{ gh pr merge NN; }' \
   '{ gh pr merge NN --squash; } > out' \
   'noglob gh pr merge NN' \
-  'GH_TOKEN=x GITHUB_TOKEN=y GH_PROMPT_DISABLED=1 GH_DEBUG=1 GH_PAGER=cat PAGER=cat NO_COLOR=1 CLICOLOR=0 GH_NO_UPDATE_NOTIFIER=1 gh pr merge NN' \
+  'GH_TOKEN=x GITHUB_TOKEN=y GH_PROMPT_DISABLED=1 GH_DEBUG=1 NO_COLOR=1 CLICOLOR=0 GH_NO_UPDATE_NOTIFIER=1 gh pr merge NN' \
+  'gh pr merge NN > out/.gitkeep' \
+  'gh pr merge NN 2>&1 | tee .github-merge.log' \
+  'gh pr merge NN >> git/HEAD.log' \
   '/usr/local/bin/gh pr merge NN' \
   'gh pr merge NN # ship it' \
   'gh pr merge https://github.com/acme/widget/pull/NN' \
@@ -555,7 +562,27 @@ cat' \
 57
 EOF" \
   'gh pr merge<in NN' \
-  'gh pr merge(NN)'
+  'gh pr merge(NN)' \
+  'gh pr merge NN >.git/HEAD' \
+  'gh pr merge NN > sub/.git/HEAD' \
+  'gh pr merge NN 2>>.GIT/config' \
+  'gh pr merge NN &> .Git' \
+  'gh pr merge NN >/abs/path/.git/index' \
+  'gh pr merge NN | tee .git/HEAD' \
+  'gh pr merge NN 2>&1 | tee -a x/.gIt/logs/HEAD' \
+  'gh pr merge NN | tail -3 | tee ../.git/HEAD' \
+  '(gh pr merge NN) > .git/HEAD' \
+  '{ gh pr merge NN; } >.git/FETCH_HEAD' \
+  'gh pr merge NN && echo x > .git/foo' \
+  'GH_PAGER=cat gh pr merge NN' \
+  'PAGER=cat gh pr merge NN' \
+  'GH_TOKEN=x PAGER=less gh pr merge NN' \
+  'gh pr merge --help=true NN' \
+  'gh pr merge --help=false NN' \
+  'gh pr merge -sh NN' \
+  'gh pr merge -hs NN' \
+  'gh pr merge --help NN extra' \
+  'gh pr merge -h $X NN'
 do
   refused_as merge_gate_unparseable "${shape//NN/58}"
   refused_as merge_gate_unparseable "${shape//NN/64}"
@@ -578,8 +605,14 @@ assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason
   "a backgrounded merge is named as one"
 refused_as merge_gate_unparseable 'GIT_CONFIG_GLOBAL=/tmp/x gh pr merge 64'
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
-  "GIT_CONFIG_GLOBAL; the only names read before gh are GH_TOKEN, GITHUB_TOKEN, GH_PROMPT_DISABLED, GH_DEBUG, GH_PAGER, PAGER, NO_COLOR, CLICOLOR and GH_NO_UPDATE_NOTIFIER" \
+  "GIT_CONFIG_GLOBAL; the only names read before gh are GH_TOKEN, GITHUB_TOKEN, GH_PROMPT_DISABLED, GH_DEBUG, NO_COLOR, CLICOLOR and GH_NO_UPDATE_NOTIFIER" \
   "a prefix off the list is named, with the list"
+refused_as merge_gate_unparseable 'gh pr merge 64 >.git/HEAD'
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "a redirection into a .git path" \
+  "a redirection into .git is named as one"
+refused_as merge_gate_unparseable 'gh pr merge 64 | tee .git/HEAD'
+assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "a .git path in the pipe stage" \
+  "and so is a .git path after a pipe"
 refused_as merge_gate_unparseable 'gh pr merge 64 | grep x'
 assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" "only tail, head, cat and tee" \
   "a pipe into anything else is named, with the list"
@@ -654,6 +687,36 @@ switches="$(printf ' -s%.0s' $(seq 1 197))"
 judged_as allow 64 "gh pr merge 64$switches"
 refused_as merge_gate_unparseable "gh pr merge 64$switches -s"
 refused_as merge_gate_unparseable "gh pr merge$switches -s 64"
+
+# --- help --------------------------------------------------------------------
+#
+# --help or -h as a word of its own after `merge` has gh print merge's help, and
+# nothing merges, so the gate lets it through, traced as help, whatever PR or
+# repository the other words name: 58 owes its evidence, and lane-67 has no
+# record at all.
+helped() { # helped <command>
+  : > "$scratch/trace.log"
+  out="$(run_hook merge-gate.sh "$(merge_payload "$1")" "$repo")"
+  assert_eq "" "$(hook_field "$out" hookSpecificOutput.permissionDecision)" "allowed: [$1]"
+  assert_contains "$(cat "$scratch/trace.log")" "asks gh for merge's help" "traced as help: [$1]"
+  assert_eq "" "$(grep ' merge-gate ' "$scratch/trace.log" | grep -oE 'PR #[0-9a-z]+' | head -1)" \
+    "and no PR is judged: [$1]"
+}
+for cmd in 'gh pr merge --help' 'gh pr merge -h' 'gh pr merge 58 --help' 'gh pr merge --squash -h 58' \
+  'gh pr merge --help 2>&1 | head -20' 'gh -R acme/widget pr merge --help' 'gh pr merge -R other/repo 58 -h' \
+  'gh pr merge feature-58 --help' 'gh pr merge -t 57 --help' '(gh pr merge -h)'; do
+  helped "$cmd"
+done
+git -C "$repo" checkout -q -b lane-67
+helped 'gh pr merge --help'
+git -C "$repo" checkout -q "$main_branch"
+
+# A flag's value is not help: gh merges 58 with "--help" as its subject.
+judged_as merge_gate_unsatisfied 58 'gh pr merge -t --help 58'
+judged_as merge_gate_unsatisfied 58 'gh pr merge --body -h 58'
+# Nor is help read past a refusal that comes first.
+refused_as merge_gate_not_first 'git checkout feature-58 && gh pr merge --help'
+refused_as merge_gate_other_repo 'GH_REPO=other/repo gh pr merge --help'
 
 # --- another repository ------------------------------------------------------
 #
@@ -750,6 +813,44 @@ assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason
   "Run the merge as its own command, first on the line: gh pr merge <number>" \
   "the refusal says how to run it"
 
+# A command that runs gh for the shell, or a keyword gh follows, used to keep
+# the pattern from matching, so the merge passed untraced. Each is matched now,
+# refused as not first, and named in the refusal. 64 is stamped, so a gate that
+# read past one would allow it.
+for pair in \
+  'timeout|timeout 60 gh pr merge 64' \
+  'nice|nice gh pr merge 64' \
+  'nice|nice -n 5 gh pr merge 64' \
+  'env|env gh pr merge 64' \
+  'env|env -i GH_TOKEN=x gh pr merge 64' \
+  'nohup|nohup gh pr merge 64' \
+  'exec|exec gh pr merge 64' \
+  'sudo|sudo -u bob gh pr merge 64' \
+  'xargs|xargs gh pr merge 64' \
+  'timeout|GH_TOKEN=x timeout 60 gh pr merge 64' \
+  'timeout|x=$(timeout 60 gh pr merge 64)' \
+  'timeout|timeout 60 nice -n 5 gh -R acme/widget pr merge 64' \
+  'the shell keyword if|if gh pr merge 64; then echo ok; fi' \
+  'the shell keyword if|if true; then gh pr merge 64; fi' \
+  'the shell keyword !|! gh pr merge 64' \
+  'the shell keyword while|while ! gh pr merge 64; do sleep 5; done' \
+  'the shell keyword until|until gh pr merge 64; do sleep 5; done'
+do
+  named="${pair%%|*}"; cmd="${pair#*|}"
+  refused_as merge_gate_not_first "$cmd"
+  assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
+    "there is $named before gh on its line" "and names it: [$cmd]"
+done
+# command and time with options are matched too, and named only as a command.
+for cmd in 'command -p gh pr merge 64' 'time -p gh pr merge 64'; do
+  refused_as merge_gate_not_first "$cmd"
+  assert_contains "$(hook_field "$out" hookSpecificOutput.permissionDecisionReason)" \
+    "a command before the merge on its line" "and named as a command: [$cmd]"
+done
+# The cost, which DETAILS lists: a wrapper's words run to the next separator,
+# so a mention inside them matches too.
+refused_as merge_gate_not_first 'timeout 60 git commit -m "docs: what gh pr merge does"'
+
 # A prefix that points gh or git at another repository is refused as one.
 for var in GH_REPO GH_HOST GIT_DIR GIT_WORK_TREE; do
   refused_as merge_gate_other_repo "$var=elsewhere gh pr merge 64"
@@ -784,6 +885,18 @@ $long_body
 EOF")" "$repo")"
 assert_eq "merge_gate_unparseable" "$(hook_field "$out" shipshapeCode)" \
   "refused: the same behind a continuation"
+
+# With jq broken, the payload reached python through its environment, which the
+# system caps (1 MB in all on macOS, 128 KB a string on Linux). Past that python
+# couldn't start, tool_name read empty, and the gate let this through untraced.
+# python reads stdin now, so the 1.1 MB merge is judged: 58 owes its evidence.
+broken_jq="$work/jq-broken"; mkdir -p "$broken_jq"
+printf '#!/bin/sh\nexit 1\n' > "$broken_jq/jq"; chmod +x "$broken_jq/jq"
+huge_body="$(head -c 1100000 /dev/zero | tr '\0' x)"
+huge_payload="$(merge_payload "gh pr merge 58 --body '$huge_body'")"
+out="$(PATH="$broken_jq:$PATH" run_hook merge-gate.sh "$huge_payload" "$repo")"
+assert_eq "merge_gate_unsatisfied" "$(hook_field "$out" shipshapeCode)" \
+  "a 1.1 MB merge read with python, not jq, is judged on its PR and refused"
 
 # --- one merge per command ---------------------------------------------------
 #
@@ -976,17 +1089,18 @@ assert_eq "0" "$(hook_status)" "an unreadable payload fails open"
 
 # A lib without the gh functions would leave a pattern that matches every
 # command, so every multi-line one would read as a compound merge. Either way
-# the gate stands down: exit 0, no refusal, and a trace line, each run in a
-# session of its own.
+# the gate stands down: exit 0, no refusal, and a trace line that names what is
+# missing and from which file, each run in a session of its own.
 words_fn='/^shipshape_gh_pr_words()/,/^}/d'
 invocation_fn='/^shipshape_gh_pr_invocation()/,/^}/d'
 for strip in words invocation both; do
   tree="$work/lib-without-$strip"; mkdir -p "$tree/hooks" "$tree/lib"
+  tree="$(cd "$tree" && pwd)"  # as the hook names it, with no doubled slash
   cp "$HOOKS_DIR/merge-gate.sh" "$tree/hooks/"
   case "$strip" in
-    words) sed -e "$words_fn" ;;
-    invocation) sed -e "$invocation_fn" ;;
-    both) sed -e "$words_fn" -e "$invocation_fn" ;;
+    words) sed -e "$words_fn"; lacks=" shipshape_gh_pr_words;" ;;
+    invocation) sed -e "$invocation_fn"; lacks=" shipshape_gh_pr_invocation;" ;;
+    both) sed -e "$words_fn" -e "$invocation_fn"; lacks=" shipshape_gh_pr_words shipshape_gh_pr_invocation;" ;;
   esac < "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$tree/lib/shipshape-common.sh"
   out="$(cd "$repo" && printf '{"session_id":"stripped-%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":%s}}' \
       "$strip" "$(json_string 'ls
@@ -994,8 +1108,22 @@ ls')" | bash "$tree/hooks/merge-gate.sh" 2>/dev/null; echo "exit=$?")"
   assert_eq "exit=0" "${out##*$'\n'}" "a lib without $strip exits 0"
   assert_not_contains "$out" '"deny"' "a lib without $strip refuses nothing"
   assert_contains "$(cat "$repo/.shipshape/stripped-$strip/trace.log" 2>/dev/null)" \
-    "no gh pattern in lib; failing open" "a lib without $strip is traced"
+    "no gh pattern in lib: $tree/lib/shipshape-common.sh lacks$lacks failing open" \
+    "a lib without $strip is traced, naming what is missing and where"
 done
+
+# A pattern grep can't compile used to read as no match, so the gate let the
+# merge through and said nothing. It still fails open, and now it is traced.
+# 58 owes its evidence, so a gate that read the merge would refuse it.
+tree="$work/lib-malformed"; mkdir -p "$tree/hooks" "$tree/lib"
+cp "$HOOKS_DIR/merge-gate.sh" "$tree/hooks/"
+sed -e "s/local bare='/local bare='(/" < "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$tree/lib/shipshape-common.sh"
+out="$(cd "$repo" && printf '{"session_id":"malformed","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"gh pr merge 58"}}' \
+  | bash "$tree/hooks/merge-gate.sh" 2>/dev/null; echo "exit=$?")"
+assert_eq "exit=0" "${out##*$'\n'}" "a malformed pattern exits 0"
+assert_not_contains "$out" '"deny"' "a malformed pattern refuses nothing"
+assert_contains "$(cat "$repo/.shipshape/malformed/trace.log" 2>/dev/null)" \
+  "the gh pattern could not be matched (grep exited 2); failing open" "a malformed pattern is traced"
 
 # The parse's own breakage is not the input's fault, so it fails open too: an
 # awk that is missing or exits non-zero, even after printing every record, or

@@ -141,6 +141,46 @@ for command in '{ gh pr create --fill; }' 'X+=1 gh pr create --fill' 'noglob gh 
   assert_eq "deny" "$(decision_for "$command")" "refused: [$command]"
 done
 
+# A command that runs gh for the shell, or a keyword gh follows, kept the
+# pattern from matching, so each of these opened a pull request with nothing
+# armed. Each is refused now.
+for command in \
+  'timeout 60 gh pr create --fill' \
+  'nice gh pr create --fill' \
+  'nice -n 5 gh pr create --fill' \
+  'env gh pr create --fill' \
+  'env -u X GH_TOKEN=x gh pr create --fill' \
+  'nohup gh pr create --fill' \
+  'exec gh pr create --fill' \
+  'exec -a name gh pr create --fill' \
+  'sudo -u bob gh pr create --fill' \
+  'xargs gh pr create --fill' \
+  'git log -1 --format=%s | xargs -I{} gh pr create --title {}' \
+  'command -p gh pr create --fill' \
+  'time -p gh pr new --fill' \
+  'if gh pr create --fill; then echo ok; fi' \
+  'if true; then gh pr create --fill; fi' \
+  'if x; then :; elif gh pr create --fill; then :; fi' \
+  'if x; then :; else gh pr create --fill; fi' \
+  'true || ! gh pr create --fill' \
+  'while ! gh pr create --fill; do sleep 5; done' \
+  'until gh pr new --fill; do sleep 5; done' \
+  'timeout 60 nice -n 5 env GH_TOKEN=x gh -R o/r pr create --fill'
+do
+  assert_eq "deny" "$(decision_for "$command")" "refused: [$command]"
+done
+assert_contains "$(handback_for 'timeout 60 gh -R o/r pr create --fill')" "shipshape-pr-open -R o/r --fill" \
+  "a wrapper is dropped from the hand-back with the rest of the old command"
+
+# The cost, which DETAILS lists: a wrapper's words run to the next separator,
+# so a mention inside them matches too.
+assert_eq "deny" "$(decision_for 'timeout 60 git commit -m "fix gh pr create for forks"')" \
+  "over-matched, as DETAILS says: a mention among a wrapper's words"
+
+# A long line of wrapper words is still answered: the pattern stays linear.
+assert_eq "" "$(decision_for "$(printf 'env a=b %.0s' $(seq 1 20000))true")" \
+  "a 160 KB line of env words is answered, and allowed"
+
 # The hand-back starts at the first invocation, not the last match on a line.
 # A mention after a separator inside a title matches too, and taking the last
 # match cut the title there.
@@ -150,6 +190,70 @@ assert_contains "$(handback_for 'gh pr create --title "fix (gh pr new alias)" --
 assert_contains "$(handback_for 'gh pr create --title "a; gh pr new b" --fill')" \
   'shipshape-pr-open --title "a; gh pr new b" --fill' \
   "a title holding a mention after ; is handed back whole"
+
+# The hand-back starts at the first match outside quotes and comments. A
+# mention in a commit message that the shell doesn't end with `)` at once was
+# handed back, the rest of the message with it.
+# The é case runs in a UTF-8 locale when the box has one, where bash counts é
+# as one character and the shaded line as two: the hand-back reads both in
+# bytes.
+utf8=C
+for loc in C.UTF-8 en_US.UTF-8 C.utf8 en_US.utf8; do
+  if [ "$(LC_ALL=$loc bash -c 's=é; echo ${#s}' 2>/dev/null)" = 1 ]; then utf8="$loc"; break; fi
+done
+for pair in \
+  'git commit -m "fix (gh pr new alias)" && gh pr create --fill|--fill' \
+  "git commit -m 'docs: gh pr create; gh pr new' && gh pr create --draft|--draft" \
+  "git commit -m 'fix (gh pr new alias)' && gh pr create --fill|--fill" \
+  'git commit -m "é ü ö ä é ü ö ä (gh pr new x)" && gh pr create --fill|--fill' \
+  'git commit -m "a \"(gh pr new x)\" b" && gh pr create --fill|--fill' \
+  'echo \(gh pr new x\) && gh pr create --fill|--fill' \
+  'echo hi # see (gh pr new x)
+gh pr create --fill|--fill' \
+  'git commit -m "line one
+fix (gh pr new x)" && gh pr create --fill|--fill'
+do
+  handback="$(LC_ALL="$utf8" handback_for "${pair%|*}")"
+  assert_contains "$handback" "shipshape-pr-open ${pair##*|}" "the invocation after a quoted mention: [${pair%|*}]"
+  assert_not_contains "$handback" "shipshape-pr-open x)" "and not the mention's tail: [${pair%|*}]"
+  assert_not_contains "$handback" "shipshape-pr-open alias)" "nor the alias's: [${pair%|*}]"
+done
+
+# A match that opens with ( or $( is handed back up to the ) that closes it.
+# The rest of the line was handed back, that ) included. The newline after it
+# in the refusal shows where the hand-back ends.
+nl=$'\n'
+for pair in \
+  'x=$(gh pr create --fill)|--fill' \
+  'x=$( gh pr create --fill ) && echo "$x"|--fill' \
+  'url=$(gh pr create --title "$(git log -1 --format=%s)" --fill)|--title "$(git log -1 --format=%s)" --fill' \
+  'url=$(gh pr create --title $(git log -1 --format=%s) --fill); echo "$url"|--title $(git log -1 --format=%s) --fill' \
+  '(gh pr create --title "a)" --fill)|--title "a)" --fill' \
+  'x=$(gh pr create>pr.log --fill)|>pr.log --fill'
+do
+  handback="$(handback_for "${pair%|*}")"
+  assert_contains "$handback" "shipshape-pr-open ${pair##*|}${nl}" "handed back to its group's close: [${pair%|*}]"
+done
+# The close can be lines away, past a heredoc body.
+handback="$(handback_for 'url=$(gh pr create --title t --body "$(cat <<'"'"'EOF'"'"'
+the body (with parentheses)
+EOF
+)")
+echo "$url"')"
+assert_contains "$handback" 'shipshape-pr-open --title t --body "$(cat <<'"'"'EOF'"'"'
+the body (with parentheses)
+EOF
+)"' "a group closed lines later is handed back to its close"
+assert_not_contains "$handback" 'echo "$url"' "and not what follows it"
+
+# The close is found in one linear pass. Counted with bash's ${s//(/}, a
+# 1.1 MB body inside $(…) ran the hook past ten minutes; 200 KB here.
+long_body="$(head -c 200000 /dev/zero | tr '\0' x)"
+started=$SECONDS
+handback="$(handback_for "url=\$(gh pr create --title t --body \"$long_body\") && echo done")"
+assert_contains "$handback" "shipshape-pr-open --title t --body \"xxxx" "a 200 KB body inside \$(…) is handed back"
+assert_contains "$handback" "xxxx\"${nl}" "up to the ) that closes the group"
+[ $((SECONDS - started)) -lt 20 ] || fail "a 200 KB body inside \$(…) took $((SECONDS - started)) s; it must stay linear"
 
 # Only the invocation's own line is rewritten. The lines before it are other
 # commands, and the lines after it are its arguments, a heredoc body most
@@ -247,24 +351,39 @@ assert_contains "$(cat "$scratch/trace.log" 2>/dev/null)" "refused a bare gh pr 
 
 # A lib without the gh functions would leave a pattern that matches every
 # command, or one with no gh words in it. Either way the gate stands down:
-# exit 0, no refusal, and a trace line. Each run has a session of its own, so
-# its trace is not mistaken for the refusal's above.
+# exit 0, no refusal, and a trace line that names what is missing and from
+# which file. Each run has a session of its own, so its trace is not mistaken
+# for the refusal's above.
 words_fn='/^shipshape_gh_pr_words()/,/^}/d'
 invocation_fn='/^shipshape_gh_pr_invocation()/,/^}/d'
 for strip in words invocation both; do
   tree="$work/lib-without-$strip"; mkdir -p "$tree/hooks" "$tree/lib"
+  tree="$(cd "$tree" && pwd)"  # as the hook names it, with no doubled slash
   cp "$HOOKS_DIR/pr-wrapper-gate.sh" "$tree/hooks/"
   case "$strip" in
-    words) sed -e "$words_fn" ;;
-    invocation) sed -e "$invocation_fn" ;;
-    both) sed -e "$words_fn" -e "$invocation_fn" ;;
+    words) sed -e "$words_fn"; lacks=" shipshape_gh_pr_words;" ;;
+    invocation) sed -e "$invocation_fn"; lacks=" shipshape_gh_pr_invocation;" ;;
+    both) sed -e "$words_fn" -e "$invocation_fn"; lacks=" shipshape_gh_pr_words shipshape_gh_pr_invocation;" ;;
   esac < "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$tree/lib/shipshape-common.sh"
   out="$(cd "$repo" && printf '{"session_id":"stripped-%s","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cd x; ls"}}' "$strip" \
     | bash "$tree/hooks/pr-wrapper-gate.sh" 2>/dev/null; echo "exit=$?")"
   assert_eq "exit=0" "${out##*$'\n'}" "a lib without $strip exits 0"
   assert_not_contains "$out" '"deny"' "a lib without $strip refuses nothing"
   assert_contains "$(cat "$repo/.shipshape/stripped-$strip/trace.log" 2>/dev/null)" \
-    "no gh pattern in lib; failing open" "a lib without $strip is traced"
+    "no gh pattern in lib: $tree/lib/shipshape-common.sh lacks$lacks failing open" \
+    "a lib without $strip is traced, naming what is missing and where"
 done
+
+# A pattern grep can't compile used to read as no match, so the gate let the
+# command through and said nothing. It still fails open, and now it is traced.
+tree="$work/lib-malformed"; mkdir -p "$tree/hooks" "$tree/lib"
+cp "$HOOKS_DIR/pr-wrapper-gate.sh" "$tree/hooks/"
+sed -e "s/local bare='/local bare='(/" < "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" > "$tree/lib/shipshape-common.sh"
+out="$(cd "$repo" && printf '{"session_id":"malformed","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"gh pr create --fill"}}' \
+  | bash "$tree/hooks/pr-wrapper-gate.sh" 2>/dev/null; echo "exit=$?")"
+assert_eq "exit=0" "${out##*$'\n'}" "a malformed pattern exits 0"
+assert_not_contains "$out" '"deny"' "a malformed pattern refuses nothing"
+assert_contains "$(cat "$repo/.shipshape/malformed/trace.log" 2>/dev/null)" \
+  "the gh pattern could not be matched (grep exited 2); failing open" "a malformed pattern is traced"
 
 finish
