@@ -22,6 +22,13 @@ difference between continuing the work and continuing a fiction.
 Where reality disagrees with the document, reality wins. Say what changed, then
 carry on from the actual state.
 
+The branch's review count carries over from the handoff, against the review
+cap in `shipshape:requesting-code-review`. A handoff with no count leaves you
+the number of review reports (`review-*.md`) the predecessor left for this
+branch in its scratch folder, the folder of the `seat file` its
+`shipshape-seat` lines name. Where neither can be found, take the branch as
+at the cap.
+
 ## Then confirm, briefly
 
 One short summary back to your human partner: what you understand the state to
@@ -52,13 +59,11 @@ the succession to the lanes — the order and the duties are in
 
 If the handoff names a bound plan, bind it here with `shipshape-plan "<path>"`,
 with the same `--tasks` and reason. Evidence stays with the session that
-earned it, so your predecessor's verify records do not count here, any more than
-its review does. The branch's review count is the exception: it carries over
-from the handoff, against the review cap in `shipshape:requesting-code-review`.
-Re-earning the verify records is usually one run: `shipshape-verify t1,t2,t3
-"<command>"`. A task that cannot be run again goes out of scope with `--tasks`
-and a reason. If the handoff says a plan was cleared, the gates here will not
-know, so say so in the pull request.
+earned it, so your predecessor's verify records do not satisfy the gates here,
+any more than its review does. Re-earning the verify records is usually one
+run: `shipshape-verify t1,t2,t3 "<command>"`. A task that cannot be run again
+goes out of scope with `--tasks` and a reason. If the handoff says a plan was
+cleared, the gates here will not know, so say so in the pull request.
 
 ## Then continue
 

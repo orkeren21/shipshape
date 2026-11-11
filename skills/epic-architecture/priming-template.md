@@ -5,6 +5,14 @@ session's first message — the brief of a session the Architect starts, or a
 paste by the operator — so it has to stand entirely on its own: the session
 it primes has no memory of the epic conversation that produced it.
 
+A priming can also reach a lane that is already running: a follow-up routed
+back to it is a priming file sent by path in a `RULING`
+(`shipshape:epic-architecture`). That lane holds its own work in context but
+not the routing, so this priming stands on its own too. It sits in the lane's
+folder under the follow-up's name, `<design>-<follow-up>-priming.md`, and the
+round's retro goes beside it as `<design>-<follow-up>-retro.md`, leaving the
+first priming and retro where the Architect read them.
+
 Every section below appears in every priming. A section with nothing to say
 says so in a line — an absent section reads as an oversight, and the session
 goes looking for it.
@@ -14,8 +22,8 @@ goes looking for it.
 ## `# <Feature name> — Session Priming`
 
 One line under the title: how the session starts (started by the Architect
-with this priming as its brief, or pasted by the operator) and which
-directory it works in.
+with this priming as its brief, pasted by the operator, or sent by path to a
+lane already running) and which directory it works in.
 
 ## Process frame
 

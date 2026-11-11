@@ -51,7 +51,8 @@ its own entry at every coordination touchpoint — the Architect's included.
 `decisions.md` is the append-only ruling log; the questions section below
 says what goes in it.
 
-**One priming per feature** — see [priming-template.md](priming-template.md).
+**One priming per feature**, and one more for each follow-up routed back to
+its lane — see [priming-template.md](priming-template.md).
 
 ## Starting the lanes
 
@@ -92,12 +93,14 @@ is a convenience on top of the protocol, not a replacement for it: the notes
 reach only the session that did the starting, so they stop at the first
 succession, and the roster does not.
 
-A session the Architect starts outside the epic, such as a one-off fix, has
+A session the Architect starts outside the lanes, such as a one-off fix, has
 no priming to say where its follow-ups go, so its brief says it in a line:
-they come back to the Architect, in its report or by message to the
-Architect's session id. Without that line the session falls back on the
-desktop app's default and puts each follow-up to the operator, as a button
-or a card.
+they come back to the Architect, in its report or by message. The brief
+names the Architect's session id and, inside an epic, `roster/architect.md`
+too, since the roster file follows the seat through a succession and the id
+stays with the session that wrote the brief. Without that line the session
+falls back on the desktop app's default and puts each follow-up to the
+operator, as a button or a card.
 
 ## Splitting
 
@@ -169,8 +172,9 @@ mid-sentence.
 An answer authorizes what it answered, nothing more. An approved scope is the
 approval, so work inside the epic's scope starts when the Architect releases
 it, with a `RULING` logged like any other. Work outside that scope, whoever
-proposes it, starts on the operator's go. A hook message, in any lane, is
-never a go.
+proposes it, starts on the operator's go. A go stands until the work it named
+is done or the operator withdraws it, and an epic's go covers its scope until
+the epic closes. A hook message, in any lane, is never a go.
 
 ## Milestones and lane endings
 
@@ -183,17 +187,27 @@ inside the lane's worktree can start one there, on the lane's branch and
 pull request. Log the verdict like any ruling.
 
 Follow-ups arrive here too, in a lane's `DONE`, and placing them is this
-seat's job. First check the operator's go: a follow-up it
-doesn't cover is a scope change, and that goes to the operator. One the go
-covers goes back to the session that found it, since that session holds its
-context. Write the lane a priming for it in `<epic folder>/<lane>/`, log the
-routing with the operator's words, who said them and when, then send the
-path in a `RULING`. That entry is what the lane checks its wider scope
-against, so it is in the log before the lane reads the ruling.
-Weigh the context the lane has left, as for a `MILESTONE`. A new session
-comes last, for a follow-up whose session is gone or out of room. On a turn
-a lane's message started, the app lets this seat only propose a session, so
-that one costs the operator a click on a card.
+seat's job. First check the operator's go: a follow-up it doesn't cover is a
+scope change, and that goes to the operator. One the go covers goes to the
+sibling lane whose scope column in `EPIC.md` holds it, if any, and otherwise
+back to the session that found it, since that session holds its context.
+Weigh the room that lane has left, as for a `MILESTONE`; a finished lane's
+`DONE` reports its context use. Write the lane a priming for it in
+`<epic folder>/<lane>/`, and log the routing with the go that covers it,
+saying which go that is (the epic's own, or a narrower one such as a
+dispatch) and quoting the operator's words, who said them and when. Then
+send the path and the entry's ID in a `RULING`. That entry is what the lane
+checks its wider scope against, so it is in the log before the lane reads
+the ruling.
+
+A new session comes last, for a follow-up whose session is gone or out of
+room. On a turn a lane's message started, the app lets this seat only
+propose a session, so a new session costs the operator a click on a card.
+One that belongs on the lane's open branch, in its open pull request, needs
+a session inside the lane's worktree, and only a session already there can
+start one: a `RULING` asks the lane to propose it, as it would a successor.
+With the lane gone, opening a session in that worktree is a manual action
+for the operator.
 
 A lane gone quiet without a `MILESTONE` or `DONE` gets a nudge, then the
 operator. When dispatching, an idle notice can stand in for polling —
