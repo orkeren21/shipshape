@@ -47,7 +47,7 @@ record behind as a side effect. The record cannot exist without the work.
 | `done-gate` | `Stop` | Arms per pull request, one obligation record each, so a cascade's second PR cannot evaporate the first one's debt. Disarms a record only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD** — and, with a plan bound, a passing, current verify record for every task in scope, and stamps it `pr-satisfied-<n>` for the merge gate. A "No" from any report that landed after the newest background review was launched still blocks: that review was sent before those findings existed. A foreground review is dated when it returns, so for it the rule reaches only a "No" that landed after it returned. The soft nudge speaks when the outstanding state changes and stays silent while it does not; the hard block on a completion claim never dedupes. On a branch other than the record's it nudges but does not block, and it never disarms. |
 | `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp, one still at the branch's tip, read from the local branch or, once that is gone, from `origin`'s tracking ref (limits under *Where enforcement stops*). It also refuses, on the PR's own branch, while a review report the done gate would still count says No (a reasoned review waiver is honoured, as the done gate honours it). A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. It reads the command with `pr-wrapper-gate`'s pattern, `-R`, `command`, `time`, the commands that run gh for the shell (`timeout`, `env`, …) and the shell keywords included (limits under *Where enforcement stops*), and judges the PR the merge names: a number, a pull URL, or a branch a record names. It refuses a merge that isn't the first command or that something on its line runs alongside, one with a word or prefix it can't read, and one naming another repository (*Which PR a merge names*, below). `gh pr merge --help` merges nothing, and is let through. |
 | `review-capture` | `PostToolUse`, `SubagentStop` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:` — at once for a foreground dispatch, and for a background one (in the field since late October 2026 the only kind the desktop app launches) when that agent stops, matched by its agent id and dated at its launch, so commits made while it read leave it stale. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
-| `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create`, its alias `gh pr new`, either with `-R` before or after `pr`, or behind `command`, `time`, a command that runs gh for the shell (`timeout`, `nice`, `env`, `nohup`, `exec`, `sudo`, `xargs`) or a shell keyword (`if`, `then`, `!`, …), and hands back the `shipshape-pr-open` form with the caller's arguments and any `-R`, from the first match outside quotes and comments on, with a heredoc body as written; for a command inside `(…)` or `$(…)`, up to the `)` that closes it. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. It reads the command as text (limits under *Where enforcement stops*). |
+| `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create`, its alias `gh pr new`, either with `-R` before or after `pr`, or behind `command`, `time`, a command that runs gh for the shell (`timeout`, `nice`, `env`, `nohup`, `exec`, `sudo`, `xargs`) or a shell keyword (`if`, `then`, `!`, …), and hands back the `shipshape-pr-open` form with the caller's arguments and any `-R`, from the first match outside quotes and comments on, with a heredoc body as written; when the match itself opens `(…)` or `$(…)`, up to the `)` that closes it. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. It reads the command as text (limits under *Where enforcement stops*). |
 | `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, at the seat's handoff point: 70/85% for a lane or solo session, 85/92% for an Architect. Worded as actions, with no prohibitions to echo back; the operator gets the number in a one-line `systemMessage`, so the session has nothing to announce. |
 | `session-start` | `SessionStart` | Injects the entrypoint skill. After a compaction it clears context-watch's markers, so the climb back is nudged again, and points a seated session at its roster file, rulings and handoff. |
 
@@ -446,15 +446,20 @@ some mentions and misses some invocations. Measured examples:
   create`.
 - The hand-back passes over a match that starts inside quotes or a comment, so for
   `git commit -m "fix (gh pr new alias)" && gh pr create --fill` it hands back
-  `shipshape-pr-open --fill`. A command inside `(…)` or `$(…)` is handed back up to
-  the `)` that closes the group, on its line or a later one: `x=$(gh pr create
-  --fill)` hands back `--fill`. Quotes are followed across lines, but a heredoc body
+  `shipshape-pr-open --fill`. When the match itself opens a group, as
+  `(gh pr create --fill)` and `x=$(gh pr create --fill)` do, the hand-back stops at
+  the `)` that closes it, on its line or a later one, and both hand back `--fill`.
+  Otherwise it runs to the end of the line, as before 0.6.9: `(cd x && gh pr create
+  --fill)` hands back `--fill)`, and `url="$(gh pr create --fill)"`, whose `$(…)`
+  the shading reads as quoted text, hands back `--fill)"`. Quotes are followed
+  across lines, but a heredoc body
   is read as commands, so an apostrophe in one before the invocation opens a quote;
   then the hand-back starts at the first match, quoted or not, as before 0.6.9.
 - Refused, and gh would run: `eval "git push; gh pr create --fill"` and
   `` x=`git push; gh pr create --fill` ``.
-- Missed: other commands in front, such as `stdbuf -o0`, `caffeinate -i`, `coproc`
-  and `builtin command`, and a `case` pattern's `a)`; `X=$(git switch b) gh pr create`,
+- Missed: other commands in front, such as `stdbuf -o0`, `caffeinate -i`, `coproc`,
+  `builtin command`, `doas`, an unquoted `eval`, and zsh's `nocorrect` and `repeat 1`
+  (zsh 5.9 runs gh behind both), and a `case` pattern's `a)`; `X=$(git switch b) gh pr create`,
   whose prefix holds a space; `eval "gh pr create --fill"`,
   `eval "git push; gh pr create" --fill` and `bash -c 'gh pr create --fill'`;
   `` url=`gh pr create --fill` ``, and the same backticks inside a double-quoted commit

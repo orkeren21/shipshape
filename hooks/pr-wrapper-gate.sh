@@ -118,20 +118,24 @@ handback_re="${invocation}(.*)\$"
 words_re="$(shipshape_gh_pr_words 'create|new')"
 
 # Parentheses in a shaded text, where only unquoted ones are left. With mode
-# close: the byte offset of the ) that closes the group the text starts inside,
-# or -1. With mode depth: how many groups the text leaves open. In awk, one
-# linear pass: bash's ${s//pattern/} takes time that grows with the square of
-# a long string, and a 1.1 MB body inside $(…) ran the hook past ten minutes.
+# close: the byte offset where the text inside the group it starts in ends,
+# before the ) that closes that group and without the spaces, tabs and
+# newlines in front of that ), or -1 when nothing closes it. With mode depth:
+# how many groups the text leaves open. In awk, one linear pass: bash's
+# ${s//pattern/} and ${s##*[![:space:]]} take time that grows with the square
+# of a long string, and a 1.1 MB body inside $(…) ran the hook past ten minutes.
 # shellcheck disable=SC2016  # an awk program, quoted so the shell leaves it be
 parens='
+BEGIN { last = 0 }
 {
   n = split($0, ch, "")
   for (k = 1; k <= n; k++) {
     if (ch[k] == "(") depth++
     else if (ch[k] == ")") {
-      if ((mode == "close") && (depth == 0)) { print off + k - 1; done = 1; exit }
+      if ((mode == "close") && (depth == 0)) { print last; done = 1; exit }
       depth--
     }
+    if ((ch[k] != " ") && (ch[k] != "\t")) last = off + k
   }
   off += n + 1
 }
@@ -177,10 +181,7 @@ handback_unquoted() {
       tail="${m[15]-}${rest:+$nl$rest}"
       cut="$(LC_ALL=C awk -v mode=close "$parens" 2>/dev/null \
         <<<"${shaded_line:$(( ${#line} - ${#m[15]} ))}${shaded_rest:+$nl$shaded_rest}")"
-      if [ "${cut:--1}" -ge 0 ]; then
-        tail="${tail:0:cut}"
-        tail="${tail%"${tail##*[![:space:]]}"}"
-      fi
+      [ "${cut:--1}" -lt 0 ] || tail="${tail:0:cut}"
       m[15]="$tail"
       rest=""
     elif [ "${open:-0}" -gt 0 ]; then

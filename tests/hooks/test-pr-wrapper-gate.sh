@@ -255,6 +255,19 @@ assert_contains "$handback" "shipshape-pr-open --title t --body \"xxxx" "a 200 K
 assert_contains "$handback" "xxxx\"${nl}" "up to the ) that closes the group"
 [ $((SECONDS - started)) -lt 20 ] || fail "a 200 KB body inside \$(…) took $((SECONDS - started)) s; it must stay linear"
 
+# So are the spaces and newlines before that ), which are left out: trimmed
+# with bash's ${s##*[![:space:]]}, 40 KB of spaces took 20 s.
+for filler in ' ' "$nl"; do
+  pad="$(head -c 200000 /dev/zero | tr '\0' x | tr x "$filler"; printf .)"
+  pad="${pad%.}"  # the dot keeps $(…) from dropping trailing newlines
+  started=$SECONDS
+  handback="$(handback_for "x=\$(gh pr create --fill$pad) && echo done")"
+  assert_contains "$handback" "shipshape-pr-open --fill${nl}${nl}It passes" \
+    "200 KB of [$(printf '%s' "$filler" | od -An -c | tr -d ' ')] before the ) is left out of the hand-back"
+  [ $((SECONDS - started)) -lt 20 ] ||
+    fail "200 KB of whitespace before the ) took $((SECONDS - started)) s; it must stay linear"
+done
+
 # Only the invocation's own line is rewritten. The lines before it are other
 # commands, and the lines after it are its arguments, a heredoc body most
 # often, which come back exactly as written.
