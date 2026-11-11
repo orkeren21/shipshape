@@ -118,7 +118,7 @@ assert_contains "$handoff_flat" "Branch, worktree path, whether it is clean, SHA
 read_trust="$(awk '/^## Trust it, and check it anyway/ { on = 1; next } on && /^## / { exit } on' \
   "$skills/read-handoff/SKILL.md" | tr -s ' \n' ' ')"
 for sentence in "The branch's review count carries over from the handoff, against the review cap in \`shipshape:requesting-code-review\`." \
-                "A handoff with no count leaves you the number of review reports the predecessor's session holds for this branch, in \`.shipshape/<its session id>/review-*.md\`." \
+                "A handoff with no count leaves you the number of review reports (\`review-*.md\`) the predecessor left for this branch in its scratch folder, the folder of the \`seat file\` its \`shipshape-seat\` lines name." \
                 "Where neither can be found, take the branch as at the cap."; do
   assert_contains "$read_trust" "$sentence" \
     "the successor's own skill carries the count over, and says what stands in for a missing one"

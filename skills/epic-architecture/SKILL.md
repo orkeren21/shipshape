@@ -201,11 +201,13 @@ checks its wider scope against, so it is in the log before the lane reads
 the ruling.
 
 A new session comes last, for a follow-up whose session is gone or out of
-room. One that belongs on the lane's open branch, in its open pull request,
-is started the way a successor is: only a session inside the lane's worktree
-can start one there, so the lane proposes it. On a turn a lane's message
-started, the app lets this seat only propose a session, so that one costs
-the operator a click on a card.
+room. On a turn a lane's message started, the app lets this seat only
+propose a session, so a new session costs the operator a click on a card.
+One that belongs on the lane's open branch, in its open pull request, needs
+a session inside the lane's worktree, and only a session already there can
+start one: a `RULING` asks the lane to propose it, as it would a successor.
+With the lane gone, opening a session in that worktree is a manual action
+for the operator.
 
 A lane gone quiet without a `MILESTONE` or `DONE` gets a nudge, then the
 operator. When dispatching, an idle notice can stand in for polling —

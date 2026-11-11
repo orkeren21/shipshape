@@ -141,7 +141,11 @@ routing call that belongs to the Architect.
 A follow-up that comes back to you arrives as a new priming (below). Set your
 roster status back to `active` and work it on a new branch cut from main.
 When it builds on your branch before that branch merges, stack the new branch
-on yours instead, and say so in its pull request.
+on yours instead, and say so in its pull request. One the priming puts on
+your open branch, in its open pull request, goes there. When a `RULING` asks
+you to propose a session for such a follow-up instead, propose it as you
+would your successor (`shipshape:write-handoff` has the step), with the
+priming's path as its brief.
 
 ## What a message can authorize
 

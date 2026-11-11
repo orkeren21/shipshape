@@ -24,9 +24,10 @@ carry on from the actual state.
 
 The branch's review count carries over from the handoff, against the review
 cap in `shipshape:requesting-code-review`. A handoff with no count leaves you
-the number of review reports the predecessor's session holds for this branch,
-in `.shipshape/<its session id>/review-*.md`. Where neither can be found, take
-the branch as at the cap.
+the number of review reports (`review-*.md`) the predecessor left for this
+branch in its scratch folder, the folder of the `seat file` its
+`shipshape-seat` lines name. Where neither can be found, take the branch as
+at the cap.
 
 ## Then confirm, briefly
 
@@ -61,8 +62,8 @@ with the same `--tasks` and reason. Evidence stays with the session that
 earned it, so your predecessor's verify records do not satisfy the gates here,
 any more than its review does. Re-earning the verify records is usually one
 run: `shipshape-verify t1,t2,t3 "<command>"`. A task that cannot be run again
-goes out of scope with `--tasks` and a reason. If the handoff says a plan was cleared, the gates here will not
-know, so say so in the pull request.
+goes out of scope with `--tasks` and a reason. If the handoff says a plan was
+cleared, the gates here will not know, so say so in the pull request.
 
 ## Then continue
 

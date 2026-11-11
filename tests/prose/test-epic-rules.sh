@@ -151,8 +151,14 @@ assert_contains "$lane" "work it on a new branch cut from main." \
 assert_contains "$lane" "stack the new branch on yours instead, and say so in its pull request." \
   "and a follow-up that builds on unmerged work stacks, in the open"
 assert_contains "$epic" "A new session comes last" "a card is the last choice"
-assert_contains "$epic" "One that belongs on the lane's open branch, in its open pull request, is started the way a successor is: only a session inside the lane's worktree can start one there, so the lane proposes it." \
+assert_contains "$epic" "One that belongs on the lane's open branch, in its open pull request, needs a session inside the lane's worktree, and only a session already there can start one: a \`RULING\` asks the lane to propose it, as it would a successor." \
   "a new session for the lane's own branch is the lane's to propose, as a successor is"
+assert_contains "$epic" "With the lane gone, opening a session in that worktree is a manual action for the operator." \
+  "and a gone lane leaves it to the operator, since nothing else can start one there"
+assert_contains "$lane" "One the priming puts on your open branch, in its open pull request, goes there." \
+  "the lane's side has the open-branch case too, so the two skills agree on where the work goes"
+assert_contains "$lane" "When a \`RULING\` asks you to propose a session for such a follow-up instead, propose it as you would your successor" \
+  "and the lane knows the Architect can ask it to propose that session"
 assert_contains "$epic" "they come back to the Architect, in its report or by message" \
   "a session started outside the lanes is told where follow-ups go"
 assert_contains "$epic" 'names the Architect'"'"'s session id and, inside an epic, `roster/architect.md` too' \
