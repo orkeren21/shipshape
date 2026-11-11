@@ -19,8 +19,8 @@ every case the step in flight gets finished, not dropped mid-edit.
 
 **Current state, verified.** Not what you believe — what you just checked.
 Branch, worktree path, whether it is clean, SHAs, which tasks closed, what the
-last test run actually said, how many reviews the branch has had against the
-review cap in `shipshape:requesting-code-review`, and the seat
+last test run actually said, how many reviews have been started on the branch,
+against the review cap in `shipshape:requesting-code-review`, and the seat
 (`shipshape-seat` with no arguments prints it) so the successor can take the
 same one. Verify each claim as you write it; a handoff's
 value is entirely in being trustworthy, and one wrong fact makes the successor

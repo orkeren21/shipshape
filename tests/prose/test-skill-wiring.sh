@@ -86,6 +86,8 @@ assert_eq "1" "$homes" "the round policy is stated in exactly one skill"
 review="$(cat "$skills/requesting-code-review/SKILL.md")"
 assert_contains "$review" "whole-branch-review:" "the dispatch marker the capture hook watches for is documented"
 step3="$(sed -n '/^3\. \*\*If round two/,/^4\. /p' "$skills/requesting-code-review/SKILL.md" | tr -s ' \n' ' ')"
+assert_contains "$step3" "3. **If round two still returns Criticals, stop.**" \
+  "step 3 stops the rounds, in its own heading, since step 4 escalates the same way"
 assert_contains "$step3" "Escalate to your human partner in plain English" \
   "step 3 itself says what happens when rounds stop converging, since step 4 points at it"
 
@@ -94,33 +96,35 @@ assert_contains "$step3" "Escalate to your human partner in plain English" \
 # half hours. Four is where the session stops deciding alone, not a ceiling the
 # gate can't meet: the gate wants a review newer than every commit, so each
 # review past the fourth runs on an escalation's answer. The count is per
-# branch and survives a handoff. Every review counts: each list of exceptions
-# tried here was stretched by the next review.
+# branch, survives a handoff, and counts reviews started, since the limit is on
+# starting. Every review counts: each list of exceptions tried here was
+# stretched by the next review.
+#
+# So step 4 is pinned word for word, through the end of its section, rather
+# than scanned for carve-out words: a synonym, or a contradiction added after a
+# pinned sentence, passed the scan. Rewording the step means rewording this.
 review_flat="$(printf '%s' "$review" | tr -s ' \n' ' ')"
 handoff_flat="$(tr -s ' \n' ' ' < "$skills/write-handoff/SKILL.md")"
-read_handoff_flat="$(tr -s ' \n' ' ' < "$skills/read-handoff/SKILL.md")"
-step4="$(sed -n '/^4\. \*\*The review cap\.\*\*/,/^The escalation goes in the retro/p' \
+step4="$(awk '/^4\. \*\*The review cap\.\*\*/ { on = 1 } on && /^## / { exit } on' \
   "$skills/requesting-code-review/SKILL.md" | tr -s ' \n' ' ')"
-assert_contains "$step4" "The review cap" "step 4 is found, so the scans below read it"
-assert_contains "$step4" "Count every review of this branch that reports back: scoped re-reviews, unmarked ones and a predecessor session's included, the conformance lane not." \
-  "the cap counts per branch, every reviewer, across a handoff"
-assert_contains "$step4" "Every review counts, whatever changed before it." "with no exceptions"
-assert_contains "$step4" "Start at most four on your own." "four is where the session stops deciding alone"
-assert_contains "$step4" "Before starting each review past the fourth, escalate as in step 3, saying what changed since the last review and what the next would cover." \
-  "and each review past it waits on its own answer"
-assert_contains "$step4" "one branch ran eight reviews in three and a half hours" \
-  "the field example keeps its measured numbers"
-assert_contains "$handoff_flat" "how many reviews the branch has had against the review cap" \
-  "a handoff carries the count"
-assert_contains "$read_handoff_flat" "The branch's review count is the exception: it carries over" \
-  "and the successor's own skill says it carries over"
+step4="${step4% }"
+assert_eq "4. **The review cap.** Count every review started on this branch, whether or not it reports back: scoped re-reviews, unmarked ones and a predecessor session's included. Every review counts, whatever changed before it. The conformance lane sits outside the count, since it checks the code against the design and the done gate does not read it. Start at most four on your own. Before starting each review past the fourth, escalate as in step 3, saying what changed since the last review and what the next would cover, and start it on their answer. In the field, one branch ran eight reviews in three and a half hours: after the first found a code bug, six in a row found sentences in the gate's comments and docs that a probe proved false. Each escalation goes in the retro, as does reaching round two at all." \
+  "$step4" \
+  "step 4 is the cap as ruled, and nothing else: every review started counts, the conformance lane sits outside with its reason, and each review past four waits on an answer"
+assert_contains "$handoff_flat" "Branch, worktree path, whether it is clean, SHAs, which tasks closed, what the last test run actually said, how many reviews have been started on the branch, against the review cap in \`shipshape:requesting-code-review\`, and the seat (\`shipshape-seat\` with no arguments prints it) so the successor can take the same one." \
+  "a handoff carries the count, in the cap's own measure"
+# The successor reads the count where it checks the handoff's other facts, not
+# under the plan, which a successor with no plan skips.
+read_trust="$(awk '/^## Trust it, and check it anyway/ { on = 1; next } on && /^## / { exit } on' \
+  "$skills/read-handoff/SKILL.md" | tr -s ' \n' ' ')"
+for sentence in "The branch's review count carries over from the handoff, against the review cap in \`shipshape:requesting-code-review\`." \
+                "A handoff with no count leaves you the number of review reports the predecessor's session holds for this branch, in \`.shipshape/<its session id>/review-*.md\`." \
+                "Where neither can be found, take the branch as at the cap."; do
+  assert_contains "$read_trust" "$sentence" \
+    "the successor's own skill carries the count over, and says what stands in for a missing one"
+done
 assert_contains "$review_flat" "Fix them; the reviews that follow are capped (step 4 below)." \
   "the blocking rule points at the cap, which limits reviews, not fixes"
-for carve in "rides along" "wording alone" "its own count" "reset" "docs-only" \
-             "isn't counted" "not counted" "uncounted" "doesn't count" "free" "starts over"; do
-  assert_not_contains "$step4" "$carve" \
-    "no exception, carve-out or reset in the cap: '$carve'"
-done
 
 # The marker in the skill has to be the one the hook actually matches.
 hook_marker="$(grep -oE 'whole-branch-review:' "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh" | head -1)"
