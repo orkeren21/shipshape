@@ -38,6 +38,17 @@ check_registration "review-capture.sh"  SubagentStop
 check_registration "pr-wrapper-gate.sh" PreToolUse
 check_registration "merge-gate.sh"      PreToolUse
 
+# In auto mode a reviewer reports through SubagentHandback, and the call ends
+# its run, so its stop carries no text: review-capture takes the report from
+# the hand-back's own PostToolUse. Registered beside the dispatch tools.
+if command -v jq >/dev/null 2>&1; then
+  handback_matcher="$(printf '%s' "$body" | jq -r '
+    .hooks.PostToolUse // [] | .[] | select(any(.hooks[]?; .command | test("review-capture"))) | .matcher' 2>/dev/null)"
+  assert_contains "|$handback_matcher|" "|SubagentHandback|" \
+    "review-capture is registered for the SubagentHandback tool"
+  assert_contains "|$handback_matcher|" "|Agent|" "and still for Agent dispatches"
+fi
+
 # Both directions, so the list above cannot fall behind the directory: every
 # hook script is registered, and every registered script exists.
 for hook in "$SHIPSHAPE_REPO_ROOT"/hooks/*.sh; do
