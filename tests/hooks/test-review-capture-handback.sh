@@ -51,7 +51,8 @@ launch() {
   run_hook review-capture.sh "$(fixture launch.json)" "$repo" >/dev/null
   touch -t 202601020304.05 "$scratch/pending-capture/$agent" 2>/dev/null
 }
-mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+# The lib's reader: BSD's `stat -f` is an output format, GNU's is --file-system.
+mtime() { ( . "$SHIPSHAPE_REPO_ROOT/lib/shipshape-common.sh" && shipshape_mtime "$1" ); }
 touch -t 202601020304.05 "$work/launched"
 launched="$(mtime "$work/launched")"
 
@@ -122,9 +123,10 @@ assert_file "$scratch/pending-capture/$agent" "and the reviewer stays pending"
 
 # --- the stop alone recovers the hand-back -----------------------------------
 #
-# A session started on 0.6.8 has review-capture registered for SubagentStop but
-# not for the hand-back's PostToolUse. Its stop names the reviewer's
-# transcript, and the hand-back is the last thing the reviewer wrote there.
+# Under 0.6.8's registration, review-capture runs on SubagentStop but not on
+# the hand-back's PostToolUse: the case of this file copied into a 0.6.8
+# install. The stop names the reviewer's transcript, and the hand-back is the
+# last thing the reviewer wrote there.
 
 reset
 launch
@@ -172,6 +174,46 @@ tail -n 1 "$fixtures/transcript.jsonl" | jq -c '.message.content[0].content[0].t
 SHIPSHAPE_HANDBACK_WAIT=3 run_hook review-capture.sh "$(fixture stop.json)" "$repo" >/dev/null
 assert_eq "" "$(reports)" "a hand-back the transcript records as undelivered is not captured"
 assert_file "$scratch/pending-capture/$agent" "and the reviewer stays pending"
+
+# A refused hand-back seen first does not end the wait: the stop's hooks start
+# before the last lines land, and a delivered one may follow it.
+reset
+launch
+sed '$d' "$fixtures/transcript.jsonl" > "$transcript"
+tail -n 1 "$fixtures/transcript.jsonl" | jq -c '.message.content[0].content[0].text = "{\"success\":false,\"message\":\"Nothing was sent.\"}"' >> "$transcript"
+(
+  sleep 1
+  sed -n 2p "$fixtures/transcript.jsonl" | jq -c '.message.content[0].id = "toolu_second" | .message.content[0].input.message = "SECOND REPORT"'
+  tail -n 1 "$fixtures/transcript.jsonl" | jq -c '.message.content[0].tool_use_id = "toolu_second"'
+) >> "$transcript" &
+SHIPSHAPE_HANDBACK_WAIT=40 run_hook review-capture.sh "$(fixture stop.json)" "$repo" >/dev/null
+wait
+captured="$(reports | head -1)"
+[ -n "$captured" ] || fail "a delivered hand-back landing after a refused one is captured"
+[ -n "$captured" ] && assert_eq "SECOND REPORT" "$(cat "$captured")" "and it is the delivered one"
+
+# Without a working jq the hook reads the tail with python3. A reviewer's tail
+# runs to a megabyte (244-965 KB measured on real reviewers), more than one
+# environment string may hold, so it goes on stdin.
+if command -v python3 >/dev/null 2>&1; then
+  reset
+  launch
+  shim="$work/broken-jq"
+  mkdir -p "$shim"
+  printf '#!/bin/sh\nexit 3\n' > "$shim/jq"
+  chmod +x "$shim/jq"
+  {
+    head -n 1 "$fixtures/transcript.jsonl"
+    printf '{"type":"attachment","attachment":{"type":"padding","text":"%s"}}\n' \
+      "$(head -c 1500000 /dev/zero | tr '\0' x)"
+    tail -n 2 "$fixtures/transcript.jsonl"
+  } > "$transcript"
+  payload="$(fixture stop.json)"
+  PATH="$shim:$PATH" SHIPSHAPE_HANDBACK_WAIT=5 run_hook review-capture.sh "$payload" "$repo" >/dev/null
+  captured="$(reports | head -1)"
+  [ -n "$captured" ] || fail "with jq broken, python3 reads a hand-back behind a 1.5 MB line"
+  [ -n "$captured" ] && assert_eq "$REPORT" "$(cat "$captured")" "verbatim"
+fi
 
 # A transcript path that names another agent is not read.
 reset

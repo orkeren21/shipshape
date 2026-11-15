@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PostToolUse on Agent/Task, and SubagentStop — capture the whole-branch review
-# report.
+# PostToolUse on Agent/Task and SubagentHandback, and SubagentStop — capture
+# the whole-branch review report.
 #
 # Of the three evidence types the done gate reads, two cannot be faked by
 # construction: ci-status is an exit code from gh, and smoke.log is the output
@@ -35,11 +35,13 @@
 # app bundles, and seen on every reviewer in the field on 2026-11-15). The
 # hand-back's own PostToolUse fires inside the subagent, carrying its agent_id,
 # the parent's session_id, and the report as tool_input.message, so the report
-# is written there. A session that registered this hook before that event was
-# added sees only the stop; the stop names the subagent's transcript, and the
-# hook reads the hand-back call from it, waiting briefly, because the app
-# writes that call to the file after the stop's hooks start (measured: absent
-# when the hook began, present 0.1s later).
+# is written there. Where only the stop reaches this script, as when it runs
+# under 0.6.8's registration (this file copied into a 0.6.8 install, or a
+# --plugin-dir tree), the stop names the subagent's transcript, and the hook
+# reads the hand-back call from it, waiting briefly, because the app writes
+# that call to the file after the stop's hooks start (measured: absent when the
+# hook began, present 0.1s later). A session started on 0.6.8 runs the copy in
+# 0.6.8's own plugin folder, so it gains this only if that copy is replaced.
 #
 # A background report is dated at its launch, not its stop. The done gate
 # counts a review fresh when its report is newer than HEAD; a background
@@ -205,10 +207,12 @@ handback_in() {
     fi
   fi
   if command -v python3 >/dev/null 2>&1; then
-    SHIPSHAPE_TAIL="$tail_lines" python3 -c '
-import json, os, sys
+    # On stdin, not in the environment: a reviewer's tail runs to a megabyte,
+    # past what one environment string may hold.
+    printf '%s\n' "$tail_lines" | python3 -c '
+import json, sys
 entries = []
-for line in os.environ["SHIPSHAPE_TAIL"].splitlines():
+for line in sys.stdin.read().splitlines():
     try:
         entry = json.loads(line)
     except Exception:
@@ -252,11 +256,14 @@ else:
 
 # handback_from_transcript <agent> — the report the agent handed back, read
 # from the transcript its stop names, waiting up to SHIPSHAPE_HANDBACK_WAIT
-# tenths of a second (default 50) for the call to be written. Returns 1 when
-# the stop names no transcript to read, and 2, traced, when it read one and
-# found no report it can write.
+# tenths of a second (default 50) for a delivered call to be written. Anything
+# short of that is read again until the deadline: the stop's hooks start
+# before the last lines land, so a refused call seen first may be followed by a
+# delivered one. The deadline is in time as well as in reads, because a read
+# of a large tail is not instant. Returns 1 when the stop names no transcript
+# to read, and 2, traced, when it read one and found no report it can write.
 handback_from_transcript() {
-  local agent="$1" path wait tries=0 out state
+  local agent="$1" path wait limit started tries=0 out state="none"
   path="$(shipshape_field agent_transcript_path)"
   case "$path" in
     /*) : ;;
@@ -271,31 +278,35 @@ handback_from_transcript() {
   fi
   wait="${SHIPSHAPE_HANDBACK_WAIT:-50}"
   case "$wait" in ''|*[!0-9]*) wait=50 ;; esac
+  limit=$(((wait + 9) / 10))
+  started=$SECONDS
   while :; do
     out="$(handback_in "$path")"
-    state="${out%%$'\n'*}"
-    case "$state" in
+    case "${out%%$'\n'*}" in
       delivered)
         printf '%s' "${out#*$'\n'}"
         return 0
         ;;
-      refused)
-        shipshape_trace review-capture \
-          "marked agent $agent stopped after a hand-back that was not delivered; still waiting for its report"
-        return 2
-        ;;
-      empty)
-        shipshape_trace review-capture \
-          "marked agent $agent handed back an empty report; still waiting for its report"
-        return 2
-        ;;
+      refused | empty) state="${out%%$'\n'*}" ;;
     esac
-    [ "$tries" -lt "$wait" ] || break
+    [ "$tries" -lt "$wait" ] && [ $((SECONDS - started)) -lt "$limit" ] || break
     sleep 0.1 2>/dev/null || sleep 1
     tries=$((tries + 1))
   done
-  shipshape_trace review-capture \
-    "marked agent $agent stopped with no text, and no hand-back reached its transcript within $((wait / 10)).$((wait % 10))s; still waiting for its report"
+  case "$state" in
+    refused)
+      shipshape_trace review-capture \
+        "marked agent $agent stopped after a hand-back that was not delivered; still waiting for its report"
+      ;;
+    empty)
+      shipshape_trace review-capture \
+        "marked agent $agent handed back an empty report; still waiting for its report"
+      ;;
+    *)
+      shipshape_trace review-capture \
+        "marked agent $agent stopped with no text, and no hand-back reached its transcript within $((wait / 10)).$((wait % 10))s; still waiting for its report"
+      ;;
+  esac
   return 2
 }
 
@@ -413,7 +424,7 @@ if shipshape_agent_is_async; then
     exit 0
   fi
   shipshape_trace review-capture \
-    "marked dispatch launched in the background as agent $agent; its report is captured when it stops"
+    "marked dispatch launched in the background as agent $agent; its report is captured when it hands it back or stops"
   exit 0
 fi
 
