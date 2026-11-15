@@ -1,0 +1,32 @@
+{
+  "session_id": "c3d522b6-d046-4855-bbb4-e0aad41ccce8",
+  "transcript_path": "/home/user/.claude/projects/-work-repo/c3d522b6-d046-4855-bbb4-e0aad41ccce8.jsonl",
+  "cwd": "/work/repo",
+  "scratchpad_dir": "/tmp/claude/-work-repo/c3d522b6-d046-4855-bbb4-e0aad41ccce8/scratchpad",
+  "prompt_id": "83582250-fc4a-48af-a418-fd3cb2caffd8",
+  "permission_mode": "auto",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Agent",
+  "tool_input": {
+    "description": "whole-branch-review: headless probe",
+    "prompt": "This is a test of how your report reaches your caller, not a real review. Run no commands and read no files. Deliver exactly this report to your caller, the way you are told to deliver your final report: HEADLESS-PROBE REPORT / line two / (no verdict: this is a probe)",
+    "subagent_type": "general-purpose",
+    "run_in_background": true
+  },
+  "tool_response": {
+    "isAsync": true,
+    "status": "async_launched",
+    "agentId": "a1ca2fe3de1fd175e",
+    "description": "whole-branch-review: headless probe",
+    "resolvedModel": "claude-fable-5-2",
+    "prompt": "This is a test of how your report reaches your caller, not a real review. Run no commands and read no files. Deliver exactly this report to your caller, the way you are told to deliver your final report: HEADLESS-PROBE REPORT / line two / (no verdict: this is a probe)",
+    "outputFile": "/tmp/claude/-work-repo/c3d522b6-d046-4855-bbb4-e0aad41ccce8/tasks/a1ca2fe3de1fd175e.output",
+    "canReadOutputFile": true,
+    "canContinueAgent": true
+  },
+  "tool_use_id": "toolu_01PAfBH6cPNKtiwDEovXFFoa",
+  "duration_ms": 9
+}

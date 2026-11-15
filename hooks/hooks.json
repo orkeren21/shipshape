@@ -33,7 +33,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Agent|Task",
+        "matcher": "Agent|Task|SubagentHandback",
         "hooks": [
           {
             "type": "command",
