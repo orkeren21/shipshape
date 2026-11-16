@@ -46,6 +46,22 @@ for probe in session_id tool_input.description stop_hook_active n nope; do
   assert_eq "$with_jq" "$without_jq" "jq and python3 readers agree on [$probe]"
 done
 
+# Each python reader takes its JSON on stdin. Through its environment, 1.1 MB
+# is past the system's cap (1 MB in all on macOS, 128 KB a string on Linux), so
+# python could not start and every reader came back empty. The escape is told
+# from the hand-written fallback by the é, which python writes as é.
+big="$(head -c 1100000 /dev/zero | tr '\0' x)"
+big_payload="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$big\",\"files\":[\"a\",\"b\"]},\"tool_response\":{\"content\":[{\"type\":\"text\",\"text\":\"report $big\"}]}}"
+assert_eq "Bash" "$(PATH="$hide_jq:$PATH" shipshape_json_get "$big_payload" tool_name)" \
+  "python reads a field of a 1.1 MB payload"
+assert_eq "a
+b" "$(PATH="$hide_jq:$PATH" shipshape_json_array "$big_payload" tool_input.files)" \
+  "and an array"
+text="$(PATH="$hide_jq:$PATH" shipshape_agent_text "$big_payload")"
+assert_eq "1100007" "${#text}" "and an agent's 1.1 MB return"
+escaped="$(PATH="$hide_jq:$PATH" shipshape_json_escape "${big}é")"
+assert_eq 'u00e9"' "${escaped: -6}" "and quotes 1.1 MB as a JSON string, the é escaped"
+
 # --- shipshape_newer_than_head -----------------------------------------------
 #
 # Evidence invalidated by a later commit is as good as missing: smoke ran, then

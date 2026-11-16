@@ -95,6 +95,12 @@ printf '# Review\n\n**Ready to merge?** No\n' > "$scratch/review-1.md"
 out="$(cd "$repo" && "$doctor" 2>&1)"
 assert_contains "$out" "verdict is no" \
   "a verdict of No is reported as the failure the gate treats it as"
+assert_contains "$out" "fourth review, escalate first (shipshape:requesting-code-review, step 4)" "and its re-review names the review cap"
+printf '# Review\n\n**Ready to merge?** Yes\n' > "$scratch/review-1.md"
+touch -t 200001010000 "$scratch/review-1.md"
+out="$(cd "$repo" && "$doctor" 2>&1)"
+assert_contains "$out" "stale — review-1.md predates HEAD" "a review older than HEAD is stale"
+assert_contains "$out" "fourth review, escalate first (shipshape:requesting-code-review, step 4)" "and its re-review names the review cap"
 printf '# Review\n\n**Ready to merge?** Yes\n' > "$scratch/review-1.md"
 
 # --- the verdict is the formal line, not the first mention -------------------
