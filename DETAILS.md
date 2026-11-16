@@ -46,7 +46,7 @@ record behind as a side effect. The record cannot exist without the work.
 |---|---|---|
 | `done-gate` | `Stop` | Arms per pull request, one obligation record each, so a cascade's second PR cannot evaporate the first one's debt. Disarms a record only on a review report carrying a verdict, a green `ci-status`, and a smoke log — each **newer than HEAD** — and, with a plan bound, a passing, current verify record for every task in scope, and stamps it `pr-satisfied-<n>` for the merge gate. A "No" from any report that landed after the newest background review was launched still blocks: that review was sent before those findings existed. A foreground review is dated when it returns, so for it the rule reaches only a "No" that landed after it returned. The soft nudge speaks when the outstanding state changes and stays silent while it does not; the hard block on a completion claim never dedupes. On a branch other than the record's it nudges but does not block, and it never disarms. |
 | `merge-gate` | `PreToolUse` | Refuses `gh pr merge` unless the PR carries a fresh satisfaction stamp, one still at the branch's tip, read from the local branch or, once that is gone, from `origin`'s tracking ref (limits under *Where enforcement stops*). It also refuses, on the PR's own branch, while a review report the done gate would still count says No (a reasoned review waiver is honoured, as the done gate honours it). A PR with no record in the session is refused too — earn the evidence or hand the merge to the operator. A reasoned `skip_merge_gate` line in `.shipshape.yaml` stands it down, reviewably. It reads the command with `pr-wrapper-gate`'s pattern, `-R`, `command`, `time`, the commands that run gh for the shell (`timeout`, `env`, …) and the shell keywords included (limits under *Where enforcement stops*), and judges the PR the merge names: a number, a pull URL, or a branch a record names. It refuses a merge that isn't the first command or that something on its line runs alongside, one with a word or prefix it can't read, and one naming another repository (*Which PR a merge names*, below). `gh pr merge --help` merges nothing, and is let through. |
-| `review-capture` | `PostToolUse`, `SubagentStop` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:` — at once for a foreground dispatch, and for a background one (in the field since late October 2026 the only kind the desktop app launches) when that agent stops, matched by its agent id and dated at its launch, so commits made while it read leave it stale. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
+| `review-capture` | `PostToolUse`, `SubagentStop` | Writes the reviewer subagent's return verbatim, on a dispatch marked `whole-branch-review:` — at once for a foreground dispatch, and for a background one (in the field since late October 2026 the only kind the desktop app launches) when that agent reports, matched by its agent id and dated at its launch, so commits made while it read leave it stale. A background agent reports in its last text, which its stop carries, or, in auto mode, through a `SubagentHandback` call that ends its run and leaves its stop without text: the hook then writes the call's report from the call's own `PostToolUse`. Where only the stop reaches the hook, as when this version's script runs under 0.6.8's registration, it reads the call from the agent's transcript at the stop; a session started on 0.6.8 runs 0.6.8's own copy, and gains neither until it loads 0.6.9. A dispatch marked `design-conformance:` files separately as `conformance-*.md` — a different question, and never a substitute for the code review the done gate reads. The hook writing both, rather than the session, is what makes the artifacts mean something (see *Where enforcement stops*). |
 | `pr-wrapper-gate` | `PreToolUse` | Refuses a bare `gh pr create`, its alias `gh pr new`, either with `-R` before or after `pr`, or behind `command`, `time`, a command that runs gh for the shell (`timeout`, `nice`, `env`, `nohup`, `exec`, `sudo`, `xargs`) or a shell keyword (`if`, `then`, `!`, …), and hands back the `shipshape-pr-open` form with the caller's arguments and any `-R`, from the first match outside quotes and comments on, with a heredoc body as written; when the match itself opens `(…)` or `$(…)`, up to the `)` that closes it. Opening a pull request the ordinary way arms nothing, which would silently retire the done gate for that branch. It reads the command as text (limits under *Where enforcement stops*). |
 | `context-watch` | `Stop` | One nudge per threshold toward `write-handoff`, at the seat's handoff point: 70/85% for a lane or solo session, 85/92% for an Architect. Worded as actions, with no prohibitions to echo back; the operator gets the number in a one-line `systemMessage`, so the session has nothing to announce. |
 | `session-start` | `SessionStart` | Injects the entrypoint skill. After a compaction it clears context-watch's markers, so the climb back is nudged again, and points a seated session at its roster file, rulings and handoff. |
@@ -88,7 +88,7 @@ zsh 5.9 and bash 3.2.57.
   `X=$(./switch-to-58) gh pr merge 64`. A review measured the first five with a stub
   gh: each merged feature-58's PR while the gate judged the stamped PR of the branch
   the session was on. `./gh pr merge 64` is refused as unparseable: a gh the gate
-  doesn't know could merge anything. Since 0.6.9 the shared pattern also reaches gh
+  doesn't know could merge anything. Since 0.6.11 the shared pattern also reaches gh
   behind a command that runs it for the shell (`timeout`, `nice`, `env`, `nohup`,
   `exec`, `sudo`, `xargs`, and `command` or `time` with options) and behind a shell
   keyword (`if`, `then`, `else`, `elif`, `do`, `while`, `until`, `!`), where it used
@@ -105,7 +105,7 @@ zsh 5.9 and bash 3.2.57.
   the list in the refusal: `GIT_CONFIG_COUNT=1
   GIT_CONFIG_KEY_0=remote.origin.gh-resolved …`, `GIT_CONFIG_GLOBAL=…`,
   `GIT_COMMON_DIR=…` and `PATH=…` can each send gh to another repository or
-  program, and `X+=1` is refused too. 0.6.9 took `GH_PAGER` and `PAGER` off the
+  program, and `X+=1` is refused too. 0.6.11 took `GH_PAGER` and `PAGER` off the
   list: each names a program gh can run, and a merge needs neither.
 - *Words.* A word is a run of plain characters (letters, digits and `._/:@+,=-`),
   text in single quotes, and text in double quotes that holds no `$`, backtick or
@@ -153,7 +153,7 @@ zsh 5.9 and bash 3.2.57.
   delimiter over 1024 bytes as written; a heredoc with no `--body-file -` before
   it; and a redirection joined to a word (`gh pr merge>out`, `gh pr merge<in`,
   `gh pr merge 58>/dev/null`; for the last, zsh hands gh 58 and bash 3.2 hands it
-  nothing). Refused too, since 0.6.9: a target with a `.git` path component, in any
+  nothing). Refused too, since 0.6.11: a target with a `.git` path component, in any
   case, since macOS paths are case-insensitive (`>.git/HEAD`, `2>>sub/.GIT/config`,
   `&> .Git`), wherever on the merge's line the gate reads it, a later command's
   included; and the same in a pipe stage's words (`| tee .git/HEAD`). The shell opens
@@ -219,7 +219,7 @@ nor see a `gh` function or alias defined before the command.
 If the reading itself breaks (awk missing, awk exiting non-zero, or its output
 stopping before its last record), the gate fails open and says so in the trace.
 With jq missing or broken, every hook reads its payload with python, which since
-0.6.9 takes it on stdin: through its environment, a payload over the system's cap
+0.6.11 takes it on stdin: through its environment, a payload over the system's cap
 (1 MB in all on macOS, 128 KB a string on Linux) kept python from starting, the
 tool name read empty, and a 1.1 MB `gh pr merge 58 --body '…'` went through
 untraced.
@@ -393,8 +393,10 @@ keeps bare `gh pr create` from going around it does.
 
 A hook cannot stop a session from writing a file. `review-capture` closes the
 easy path — the artifact normally exists only because a marked reviewer
-dispatch returned — but a session that set out to forge one could. The gate
-raises the cost from "phrase it confidently" to "knowingly fabricate
+dispatch returned — but a session that set out to forge one could. At a stop
+with no text, `review-capture` reads the report from the subagent's
+transcript, a file the session could also write; forging that is no easier
+than writing the report itself. The gate raises the cost from "phrase it confidently" to "knowingly fabricate
 evidence", which is a different act, and that is the honest claim.
 
 The plan leg proves that the plan as it stands was verified, not that it is the
@@ -440,7 +442,7 @@ some mentions and misses some invocations. Measured examples:
   in parentheses or followed by `|` matches too, so these are refused by this gate and
   by the merge gate (as not first): `grep -rnE "(gh pr merge|gh pr create)" hooks/`,
   `rg '(gh pr create|gh pr new)' skills`, `git commit -m "docs: say what (gh pr merge)
-  does"` and `git log --grep='(gh pr merge)'`. Since 0.6.9, a mention among the words
+  does"` and `git log --grep='(gh pr merge)'`. Since 0.6.11, a mention among the words
   of a command that runs gh matches too, as do words that don't run gh at all:
   `timeout 60 git commit -m "fix gh pr create for forks"` and `command -v gh pr
   create`.
@@ -449,12 +451,12 @@ some mentions and misses some invocations. Measured examples:
   `shipshape-pr-open --fill`. When the match itself opens a group, as
   `(gh pr create --fill)` and `x=$(gh pr create --fill)` do, the hand-back stops at
   the `)` that closes it, on its line or a later one, and both hand back `--fill`.
-  Otherwise it runs to the end of the line, as before 0.6.9: `(cd x && gh pr create
+  Otherwise it runs to the end of the line, as before 0.6.11: `(cd x && gh pr create
   --fill)` hands back `--fill)`, and `url="$(gh pr create --fill)"`, whose `$(…)`
   the shading reads as quoted text, hands back `--fill)"`. Quotes are followed
   across lines, but a heredoc body is read as commands, so an apostrophe in one
   before the invocation opens a quote. With no match outside quotes, the hand-back
-  starts at the first match, quoted or not, as before 0.6.9, passing over at most 16
+  starts at the first match, quoted or not, as before 0.6.11, passing over at most 16
   mentions the shell ends with `)` at once: passing over every one ran the pattern
   once per mention over the rest of the line, and 198 KB of them inside `eval "…"`
   kept the hook running past ten minutes, where it decides nothing.

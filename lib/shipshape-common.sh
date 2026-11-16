@@ -312,8 +312,9 @@ shipshape_field() {
 # The result is an object, not a string: {status, content:[{type,text}], ...}.
 # A background dispatch is a different shape again — status "async_launched",
 # an agentId, and no content, because the agent has not finished. Its report
-# arrives later, on SubagentStop. Prints nothing in that case; the caller
-# remembers the agent and captures the report when it stops.
+# arrives later, on SubagentStop or, in auto mode, on the agent's
+# SubagentHandback call. Prints nothing in that case; the caller remembers the
+# agent and captures the report when it arrives.
 shipshape_agent_text() {
   local payload="${1:-$SHIPSHAPE_PAYLOAD}"
   if command -v jq >/dev/null 2>&1; then
