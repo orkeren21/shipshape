@@ -117,13 +117,15 @@ see `shipshape:receiving-code-review`.
    matters, and what the options are. Two full rounds failing to converge is
    information about the change, not a reason to keep looping.
 
-4. **The review cap.** Count every review of this branch that reports back:
-   scoped re-reviews, unmarked ones and a predecessor session's included, the
-   conformance lane not. Every review counts, whatever changed before it.
-   Start at most four on your own. Before starting each review past the
-   fourth, escalate as in step 3, saying what changed since the last review
-   and what the next would cover. In the field, one branch ran eight reviews in
+4. **The review cap.** Count every review started on this branch, whether or
+   not it reports back: scoped re-reviews, unmarked ones and a predecessor
+   session's included. Every review counts, whatever changed before it. The
+   conformance lane sits outside the count, since it checks the code against
+   the design and the done gate does not read it. Start at most four on your
+   own. Before starting each review past the fourth, escalate as in step 3,
+   saying what changed since the last review and what the next would cover,
+   and start it on their answer. In the field, one branch ran eight reviews in
    three and a half hours: after the first found a code bug, six in a row found
    sentences in the gate's comments and docs that a probe proved false.
 
-The escalation goes in the retro either way, as does reaching round two at all.
+Each escalation goes in the retro, as does reaching round two at all.
