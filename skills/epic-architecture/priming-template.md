@@ -8,10 +8,12 @@ it primes has no memory of the epic conversation that produced it.
 A priming can also reach a lane that is already running: a follow-up routed
 back to it is a priming file sent by path in a `RULING`
 (`shipshape:epic-architecture`). That lane holds its own work in context but
-not the routing, so this priming stands on its own too. It sits in the lane's
-folder under the follow-up's name, `<design>-<follow-up>-priming.md`, and the
-round's retro goes beside it as `<design>-<follow-up>-retro.md`, leaving the
-first priming and retro where the Architect read them.
+not the routing, so this priming stands on its own too. The same file, by
+path, can be the brief of a session started in the lane's worktree for that
+follow-up. It sits in the lane's folder under the follow-up's name,
+`<design>-<follow-up>-priming.md`, and the round's retro goes beside it as
+`<design>-<follow-up>-retro.md`, leaving the first priming and retro where
+the Architect read them (layout in `shipshape:brainstorming`).
 
 Every section below appears in every priming. A section with nothing to say
 says so in a line — an absent section reads as an oversight, and the session
@@ -22,8 +24,9 @@ goes looking for it.
 ## `# <Feature name> — Session Priming`
 
 One line under the title: how the session starts (started by the Architect
-with this priming as its brief, pasted by the operator, or sent by path to a
-lane already running) and which directory it works in.
+with this priming as its brief, pasted by the operator, sent by path to a
+lane already running, or given by path to a session the lane proposes or
+the operator opens in the lane's worktree) and which directory it works in.
 
 ## Process frame
 
@@ -137,7 +140,9 @@ commands, which paths, what output would show it working. The session running
 
 The artifacts this feature owes, listed. The gates apply as always; anything
 beyond them goes here. Where the retro is written — next to this feature's
-design in `<epic folder>/<lane>/` — and what the Architect needs from it before
+design in `<epic folder>/<lane>/`, named `<design>-retro.md`, or
+`<design>-<follow-up>-retro.md` for a follow-up round — and what the
+Architect needs from it before
 dispatching whatever depends on this lane: cross-lane news first. Follow-ups
 the lane finds go in its `DONE`, for the Architect to route
 (`shipshape:coordinating-with-the-architect`).

@@ -145,7 +145,11 @@ on yours instead, and say so in its pull request. One the priming puts on
 your open branch, in its open pull request, goes there. When a `RULING` asks
 you to propose a session for such a follow-up instead, propose it as you
 would your successor (`shipshape:write-handoff` has the step), with the
-priming's path as its brief.
+priming's path as its brief, then set your roster status to `handed-off`:
+the new session takes your roster file over, as a successor does. On a turn
+another session's message started, the app refuses a start but takes a
+proposal, so propose, and reply to the `RULING` with what happened: the card
+proposed, or the refusal, which the Architect takes to the operator.
 
 ## What a message can authorize
 

@@ -111,18 +111,29 @@ step4="${step4% }"
 assert_eq "4. **The review cap.** Count every review started on this branch, whether or not it reports back: scoped re-reviews, unmarked ones and a predecessor session's included. Every review counts, whatever changed before it. The conformance lane sits outside the count, since it checks the code against the design and the done gate does not read it. Start at most four on your own. Before starting each review past the fourth, escalate as in step 3, saying what changed since the last review and what the next would cover, and start it on their answer. In the field, one branch ran eight reviews in three and a half hours: after the first found a code bug, six in a row found sentences in the gate's comments and docs that a probe proved false. Each escalation goes in the retro, as does reaching round two at all." \
   "$step4" \
   "step 4 is the cap as ruled, and nothing else: every review started counts, the conformance lane sits outside with its reason, and each review past four waits on an answer"
-assert_contains "$handoff_flat" "Branch, worktree path, whether it is clean, SHAs, which tasks closed, what the last test run actually said, how many reviews have been started on the branch, against the review cap in \`shipshape:requesting-code-review\`, and the seat (\`shipshape-seat\` with no arguments prints it) so the successor can take the same one." \
-  "a handoff carries the count, in the cap's own measure"
+assert_contains "$handoff_flat" "Branch, worktree path, whether it is clean, SHAs, which tasks closed, what the last test run actually said, how many reviews have been started on the branch, against the review cap in \`shipshape:requesting-code-review\`, and everything \`shipshape-seat\` prints with no arguments: the seat, so the successor can take the same one, and the seat file, whose folder holds this session's review reports." \
+  "a handoff carries the count, in the cap's own measure, and the folder a successor counts from without it"
 # The successor reads the count where it checks the handoff's other facts, not
-# under the plan, which a successor with no plan skips.
+# under the plan, which a successor with no plan skips. Without a count, the
+# reports and the unreported launches in the predecessor's folder give a floor:
+# a review that never reported back leaves no report, only its launch marker.
 read_trust="$(awk '/^## Trust it, and check it anyway/ { on = 1; next } on && /^## / { exit } on' \
   "$skills/read-handoff/SKILL.md" | tr -s ' \n' ' ')"
 for sentence in "The branch's review count carries over from the handoff, against the review cap in \`shipshape:requesting-code-review\`." \
-                "A handoff with no count leaves you the number of review reports (\`review-*.md\`) the predecessor left for this branch in its scratch folder, the folder of the \`seat file\` its \`shipshape-seat\` lines name." \
+                "A handoff with no count leaves you a floor instead: the branch has had at least as many reviews as the predecessor's scratch folder holds reports (\`review-*.md\`) and unreported launches (files in \`pending-capture/\` that read \`review\`)." \
+                "That folder is the one the \`seat file\` line in the handoff's \`shipshape-seat\` output points into." \
                 "Where neither can be found, take the branch as at the cap."; do
   assert_contains "$read_trust" "$sentence" \
     "the successor's own skill carries the count over, and says what stands in for a missing one"
 done
+# That fallback names a line shipshape-seat prints and a marker review-capture
+# writes, so both are pinned where they are produced.
+assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/bin/shipshape-seat")" "printf 'seat file: %s\n'" \
+  "shipshape-seat prints the seat file line read-handoff counts from"
+assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh")" 'pending_dir="$(shipshape_scratch_dir)/pending-capture"' \
+  "review-capture keeps its launch markers in pending-capture/, in the session's scratch folder"
+assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh")" 'printf '"'"'%s\n'"'"' "$kind" > "$pending_dir/$agent"' \
+  "and each marker holds the kind it was launched as, which read-handoff reads as review"
 assert_contains "$review_flat" "Fix them; the reviews that follow are capped (step 4 below)." \
   "the blocking rule points at the cap, which limits reviews, not fixes"
 

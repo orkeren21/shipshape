@@ -24,10 +24,11 @@ carry on from the actual state.
 
 The branch's review count carries over from the handoff, against the review
 cap in `shipshape:requesting-code-review`. A handoff with no count leaves you
-the number of review reports (`review-*.md`) the predecessor left for this
-branch in its scratch folder, the folder of the `seat file` its
-`shipshape-seat` lines name. Where neither can be found, take the branch as
-at the cap.
+a floor instead: the branch has had at least as many reviews as the
+predecessor's scratch folder holds reports (`review-*.md`) and unreported
+launches (files in `pending-capture/` that read `review`). That folder is the
+one the `seat file` line in the handoff's `shipshape-seat` output points into.
+Where neither can be found, take the branch as at the cap.
 
 ## Then confirm, briefly
 

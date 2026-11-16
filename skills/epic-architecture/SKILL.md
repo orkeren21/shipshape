@@ -96,11 +96,12 @@ succession, and the roster does not.
 A session the Architect starts outside the lanes, such as a one-off fix, has
 no priming to say where its follow-ups go, so its brief says it in a line:
 they come back to the Architect, in its report or by message. The brief
-names the Architect's session id and, inside an epic, `roster/architect.md`
-too, since the roster file follows the seat through a succession and the id
-stays with the session that wrote the brief. Without that line the session
-falls back on the desktop app's default and puts each follow-up to the
-operator, as a button or a card.
+names the Architect's session id and, inside an epic, the absolute path of
+the epic's `roster/architect.md` too, since the session has no priming to
+say where the epic folder is, the roster file follows the seat through a
+succession, and the id stays with the session that wrote the brief. Without
+that line the session falls back on the desktop app's default and puts each
+follow-up to the operator, as a button or a card.
 
 ## Splitting
 
@@ -200,14 +201,17 @@ send the path and the entry's ID in a `RULING`. That entry is what the lane
 checks its wider scope against, so it is in the log before the lane reads
 the ruling.
 
-A new session comes last, for a follow-up whose session is gone or out of
-room. On a turn a lane's message started, the app lets this seat only
-propose a session, so a new session costs the operator a click on a card.
-One that belongs on the lane's open branch, in its open pull request, needs
-a session inside the lane's worktree, and only a session already there can
-start one: a `RULING` asks the lane to propose it, as it would a successor.
-With the lane gone, opening a session in that worktree is a manual action
-for the operator.
+A new session comes last, for a follow-up whose session is gone or past its
+handoff point (70%). On a turn a lane's message started, the app lets this
+seat only propose a session, so a new session costs the operator a click on
+a card. One that belongs on the lane's open branch, in its open pull
+request, needs a session inside the lane's worktree, and only a session
+already there can start one: a `RULING` asks the lane to propose it, as it
+would a successor, and the lane replies with what happened. A lane that is
+gone, or whose proposal was refused, leaves a manual action for the
+operator: hand them the worktree's path and the priming's path, so they can
+open a session there. Where the worktree is gone too, a new session in a
+worktree of its own checks the branch out instead.
 
 A lane gone quiet without a `MILESTONE` or `DONE` gets a nudge, then the
 operator. When dispatching, an idle notice can stand in for polling —
