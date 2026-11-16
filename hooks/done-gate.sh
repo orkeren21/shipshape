@@ -150,7 +150,7 @@ case "${leg%%|*}" in
     add "review report — ignored: $detail (empty). An empty file at the right name is not a review; dispatch the reviewer with \"whole-branch-review:\" in the description."
     ;;
   missing)
-    add "review report — no whole-branch review has been captured. Dispatch the reviewer with \"whole-branch-review:\" in the description; the hook writes the report from what it returns, or for a background dispatch from what it says when it stops."
+    add "review report — no whole-branch review has been captured. Dispatch the reviewer with \"whole-branch-review:\" in the description; the hook writes the report from what it returns, or for a background dispatch from the report it hands back or what it says when it stops."
     ;;
   stale)
     add "review report — stale: it predates the current HEAD commit (a background review counts from its launch), so it did not see the code being shipped. Re-review the branch."

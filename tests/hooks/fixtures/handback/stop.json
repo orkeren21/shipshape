@@ -1,0 +1,26 @@
+{
+  "session_id": "c3d522b6-d046-4855-bbb4-e0aad41ccce8",
+  "transcript_path": "/home/user/.claude/projects/-work-repo/c3d522b6-d046-4855-bbb4-e0aad41ccce8.jsonl",
+  "cwd": "/work/repo",
+  "scratchpad_dir": "/tmp/claude/-work-repo/c3d522b6-d046-4855-bbb4-e0aad41ccce8/scratchpad",
+  "prompt_id": "83582250-fc4a-48af-a418-fd3cb2caffd8",
+  "permission_mode": "auto",
+  "agent_id": "a1ca2fe3de1fd175e",
+  "agent_type": "general-purpose",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "SubagentStop",
+  "stop_hook_active": false,
+  "agent_transcript_path": "/home/user/.claude/projects/-work-repo/c3d522b6-d046-4855-bbb4-e0aad41ccce8/subagents/agent-a1ca2fe3de1fd175e.jsonl",
+  "background_tasks": [
+    {
+      "id": "a1ca2fe3de1fd175e",
+      "type": "subagent",
+      "status": "running",
+      "description": "whole-branch-review: headless probe",
+      "agent_type": "general-purpose"
+    }
+  ],
+  "session_crons": []
+}

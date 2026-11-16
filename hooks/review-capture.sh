@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# PostToolUse on Agent/Task, and SubagentStop — capture the whole-branch review
-# report.
+# PostToolUse on Agent/Task and SubagentHandback, and SubagentStop — capture
+# the whole-branch review report.
 #
 # Of the three evidence types the done gate reads, two cannot be faked by
 # construction: ci-status is an exit code from gh, and smoke.log is the output
@@ -28,6 +28,21 @@
 # .claude/worktrees/agent-<id>). Its marker is then found in the session's
 # folder in another checkout, and the report is written beside it.
 #
+# A third shape: in auto mode, Claude Code 2.1.325 gives a subagent a
+# SubagentHandback tool, and tells it that only a call to that tool reaches its
+# caller. The call ends the subagent's run, so its stop carries no
+# last_assistant_message at all (probed headless against the build the desktop
+# app bundles, and seen on every reviewer in the field on 2026-11-15). The
+# hand-back's own PostToolUse fires inside the subagent, carrying its agent_id,
+# the parent's session_id, and the report as tool_input.message, so the report
+# is written there. Where only the stop reaches this script, as when it runs
+# under 0.6.8's registration (this file copied into a 0.6.8 install, or a
+# --plugin-dir tree), the stop names the subagent's transcript, and the hook
+# reads the hand-back call from it, waiting briefly, because the app writes
+# that call to the file after the stop's hooks start (measured: absent when the
+# hook began, present 0.1s later). A session started on 0.6.8 runs the copy in
+# 0.6.8's own plugin folder, so it gains this only if that copy is replaced.
+#
 # A background report is dated at its launch, not its stop. The done gate
 # counts a review fresh when its report is newer than HEAD; a background
 # reviewer reads while the session keeps committing, and dated at the stop
@@ -47,11 +62,12 @@ CONFORMANCE_MARKER="${SHIPSHAPE_CONFORMANCE_MARKER:-design-conformance:}"
 shipshape_read_payload
 shipshape_enabled REVIEW_CAPTURE || exit 0
 
-# write_report <kind> <text> [dated-like] — one file per report, under the
-# kind's prefix, its time taken from dated-like when given. Fails when nothing
-# was written, so a caller can keep what it would otherwise discard.
+# write_report <kind> <text> [dated-like] [source] — one file per report,
+# under the kind's prefix, its time taken from dated-like when given, and the
+# trace naming the source when given. Fails when nothing was written, so a
+# caller can keep what it would otherwise discard.
 write_report() {
-  local kind="$1" report="$2" dated_like="${3:-}" scratch stamp suffix target
+  local kind="$1" report="$2" dated_like="${3:-}" came_from="${4:-}" scratch stamp suffix target
   scratch="$(shipshape_scratch_dir)"
 
   # One file per round: a re-review of the fix diff is a second report, not an
@@ -95,7 +111,203 @@ write_report() {
     shipshape_trace review-capture "could not date $(basename "$target") to its launch; discarded"
     return 1
   fi
-  shipshape_trace review-capture "wrote $(basename "$target") ($(printf '%s' "$report" | wc -c | tr -d ' ') bytes${dated_like:+, dated to its launch})"
+  shipshape_trace review-capture "wrote $(basename "$target") ($(printf '%s' "$report" | wc -c | tr -d ' ') bytes${dated_like:+, dated to its launch}${came_from:+, $came_from})"
+}
+
+# find_pending <agent> <what it did> — sets pending to the agent's launch
+# marker and returns 0, or returns 1 when the agent is no marked dispatch.
+#
+# Every subagent's stop and hand-back arrives here, most of them unmarked, so
+# the marker is looked for without creating the scratch dir: an isolated
+# subagent's events name its own worktree, and looking must not leave a folder
+# in it.
+#
+# Not under the event's own checkout, it is looked for in this session's folder
+# in every other one. The usual reason is isolation: the launch wrote the
+# marker from the session's directory, and an isolated agent's stop names its
+# own worktree. In the one run probed (2.1.309, desktop launch shape) that
+# worktree still existed at the stop and was removed after it; if it is already
+# gone, the hook stays in its own directory and searches from there. Searched
+# whenever the marker is missing, not only when the event's checkout has no
+# folder for the session, because the agent's worktree can hold one: the same
+# probe saw the agent's commands run there with this session's id, so a wrapper
+# that records evidence writes there, and the Bash gates firing for its
+# commands resolve there. A marker older hooks left in the main checkout is
+# found the same way, and its report lands beside it too, where the doctor
+# names it. The hook moves to the marker's checkout, so the report and the
+# trace land there.
+find_pending() {
+  local agent="$1" did="$2" other where
+  pending="$(shipshape_scratch_path)/pending-capture/$agent"
+  [ -f "$pending" ] && return 0
+  while IFS= read -r other; do
+    [ -n "$other" ] || continue
+    [ -f "$other/pending-capture/$agent" ] || continue
+    # Untraced: a checkout that cannot be entered hides the marker from the
+    # test above, so this fails only when it vanished in between, taking its
+    # trace with it.
+    cd -- "${other%/.shipshape/*}" >/dev/null 2>&1 || return 1
+    pending="$other/pending-capture/$agent"
+    where="$(shipshape_field cwd)"
+    shipshape_trace review-capture \
+      "marked agent $agent $did in ${where:-a directory its payload did not name}, away from its marker; capturing beside the marker"
+    return 0
+  done <<SHIPSHAPE_OTHERS
+$(shipshape_other_scratch_dirs "$(shipshape_scratch_path)")
+SHIPSHAPE_OTHERS
+  return 1
+}
+
+# pending_kind — what the marker at $pending was launched as. A marker naming
+# anything else is dropped, and nothing is printed.
+pending_kind() {
+  local kind
+  kind="$(cat "$pending" 2>/dev/null)"
+  case "$kind" in
+    review|conformance) printf '%s\n' "$kind" ;;
+    *) rm -f "$pending" ;;
+  esac
+}
+
+# handback_in <transcript> — the hand-back in the transcript's last lines, as
+# one state line, followed by the report when the state is "delivered":
+#   none       the last assistant entry is not a SubagentHandback call
+#   refused    the call's result says it was not delivered
+#   empty      the call carried no report
+#   delivered  otherwise; a call whose result is not written yet counts,
+#              because its stop follows it, and the report is the reviewer's
+#              either way
+# Only the tail is read: a hand-back ends the run, so only its result and a
+# few attachments follow it. A line still being written does not parse, and
+# is skipped.
+handback_in() {
+  local tail_lines
+  tail_lines="$(tail -n 50 -- "$1" 2>/dev/null)" || return 0
+  if command -v jq >/dev/null 2>&1; then
+    local out status
+    out="$(printf '%s\n' "$tail_lines" | jq -Rrn '
+      [inputs | fromjson? | select(type == "object")] as $all
+      | ([$all[] | select(.type == "assistant")] | last) as $last
+      | ([($last.message.content // [])[]? | select(type == "object" and .type == "tool_use" and .name == "SubagentHandback")] | last) as $call
+      | if $call == null then "none"
+        else
+          ([$all[] | select(.type == "user") | (.message.content // [])[]?
+            | select(type == "object" and .type == "tool_result" and .tool_use_id == $call.id)] | last) as $result
+          | ([$result.content? | if type == "string" then .
+                elif type == "array" then (.[]? | select(type == "object" and .type == "text") | .text)
+                else empty end
+              | fromjson? | .success?] | any(. == false)) as $refused
+          | ($call.input.message // "" | tostring) as $report
+          | if $refused then "refused" elif $report == "" then "empty" else "delivered\n" + $report end
+        end' 2>/dev/null)"
+    status=$?
+    if [ "$status" -eq 0 ]; then
+      printf '%s' "$out"
+      return 0
+    fi
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    # On stdin, not in the environment: a reviewer's tail runs to a megabyte,
+    # past what one environment string may hold.
+    printf '%s\n' "$tail_lines" | python3 -c '
+import json, sys
+entries = []
+for line in sys.stdin.read().splitlines():
+    try:
+        entry = json.loads(line)
+    except Exception:
+        continue
+    if isinstance(entry, dict):
+        entries.append(entry)
+def blocks(entry):
+    content = (entry.get("message") or {}).get("content")
+    return [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
+last = [e for e in entries if e.get("type") == "assistant"][-1:]
+calls = [b for b in (blocks(last[0]) if last else [])
+         if b.get("type") == "tool_use" and b.get("name") == "SubagentHandback"]
+if not calls:
+    sys.stdout.write("none")
+    sys.exit(0)
+call = calls[-1]
+results = [b for e in entries if e.get("type") == "user" for b in blocks(e)
+           if b.get("type") == "tool_result" and b.get("tool_use_id") == call.get("id")]
+refused = False
+if results:
+    content = results[-1].get("content")
+    texts = [content] if isinstance(content, str) else [
+        b.get("text") for b in (content or []) if isinstance(b, dict) and b.get("type") == "text"]
+    for text in texts:
+        try:
+            if json.loads(text).get("success") is False:
+                refused = True
+        except Exception:
+            pass
+report = (call.get("input") or {}).get("message") or ""
+if refused:
+    sys.stdout.write("refused")
+elif not isinstance(report, str) or report == "":
+    sys.stdout.write("empty")
+else:
+    sys.stdout.write("delivered\n" + report)
+' 2>/dev/null
+  fi
+  return 0
+}
+
+# handback_from_transcript <agent> — the report the agent handed back, read
+# from the transcript its stop names, waiting up to SHIPSHAPE_HANDBACK_WAIT
+# tenths of a second (default 50) for a delivered call to be written. Anything
+# short of that is read again until the deadline: the stop's hooks start
+# before the last lines land, so a refused call seen first may be followed by a
+# delivered one. The deadline is in time as well as in reads, because a read
+# of a large tail is not instant. Returns 1 when the stop names no transcript
+# to read, and 2, traced, when it read one and found no report it can write.
+handback_from_transcript() {
+  local agent="$1" path wait limit started tries=0 out state="none"
+  path="$(shipshape_field agent_transcript_path)"
+  case "$path" in
+    /*) : ;;
+    *) return 1 ;;
+  esac
+  # The file is named for the agent; one named for another is not this
+  # agent's report.
+  if [ "${path##*/}" != "agent-$agent.jsonl" ]; then
+    shipshape_trace review-capture \
+      "marked agent $agent stopped with no text, and its stop names a transcript that is not its own; still waiting for its report"
+    return 2
+  fi
+  wait="${SHIPSHAPE_HANDBACK_WAIT:-50}"
+  case "$wait" in ''|*[!0-9]*) wait=50 ;; esac
+  limit=$(((wait + 9) / 10))
+  started=$SECONDS
+  while :; do
+    out="$(handback_in "$path")"
+    case "${out%%$'\n'*}" in
+      delivered)
+        printf '%s' "${out#*$'\n'}"
+        return 0
+        ;;
+      refused | empty) state="${out%%$'\n'*}" ;;
+    esac
+    [ "$tries" -lt "$wait" ] && [ $((SECONDS - started)) -lt "$limit" ] || break
+    sleep 0.1 2>/dev/null || sleep 1
+    tries=$((tries + 1))
+  done
+  case "$state" in
+    refused)
+      shipshape_trace review-capture \
+        "marked agent $agent stopped after a hand-back that was not delivered; still waiting for its report"
+      ;;
+    empty)
+      shipshape_trace review-capture \
+        "marked agent $agent handed back an empty report; still waiting for its report"
+      ;;
+    *)
+      shipshape_trace review-capture \
+        "marked agent $agent stopped with no text, and no hand-back reached its transcript within $((wait / 10)).$((wait % 10))s; still waiting for its report"
+      ;;
+  esac
+  return 2
 }
 
 # --- a background dispatch finishing -----------------------------------------
@@ -103,55 +315,54 @@ write_report() {
 if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
   agent="$(shipshape_safe_id "$(shipshape_field agent_id)" "")"
   [ -n "$agent" ] || exit 0
-  # Every subagent's stop arrives here, most of them unmarked, so the marker is
-  # looked for without creating the scratch dir: an isolated subagent's stop
-  # names its own worktree, and looking must not leave a folder in it.
-  pending="$(shipshape_scratch_path)/pending-capture/$agent"
-  if [ ! -f "$pending" ]; then
-    # Not under the stop's own checkout, so looked for in this session's
-    # folder in every other one. The usual reason is isolation: the launch
-    # wrote the marker from the session's directory, and an isolated agent's
-    # stop names its own worktree. In the one run probed (2.1.309, desktop
-    # launch shape) that worktree still existed at the stop and was removed
-    # after it; if it is already gone, the hook stays in its own directory and
-    # searches from there. Searched whenever the marker is missing, not only
-    # when the stop's checkout has no folder for the session, because the
-    # agent's worktree can hold one: the same probe saw the agent's commands
-    # run there with this session's id, so a wrapper that records evidence
-    # writes there, and the Bash gates firing for its commands resolve there. A
-    # marker older hooks left in the main checkout is found the same way, and
-    # its report lands beside it too, where the doctor names it. The hook
-    # moves to the marker's checkout, so the report and the trace land there.
-    while IFS= read -r other; do
-      [ -n "$other" ] || continue
-      [ -f "$other/pending-capture/$agent" ] || continue
-      # Untraced: a checkout that cannot be entered hides the marker from the
-      # test above, so this fails only when it vanished in between, taking
-      # its trace with it.
-      cd -- "${other%/.shipshape/*}" >/dev/null 2>&1 || break
-      pending="$other/pending-capture/$agent"
-      stopped_in="$(shipshape_field cwd)"
-      shipshape_trace review-capture \
-        "marked agent $agent stopped in ${stopped_in:-a directory its stop did not name}, away from its marker; capturing beside the marker"
-      break
-    done <<SHIPSHAPE_OTHERS
-$(shipshape_other_scratch_dirs "$(shipshape_scratch_path)")
-SHIPSHAPE_OTHERS
-  fi
-  [ -f "$pending" ] || exit 0
-  kind="$(cat "$pending" 2>/dev/null)"
-  case "$kind" in
-    review|conformance) : ;;
-    *) rm -f "$pending"; exit 0 ;;
-  esac
+  find_pending "$agent" "stopped" || exit 0
+  kind="$(pending_kind)"
+  [ -n "$kind" ] || exit 0
+  came_from=""
   report="$(shipshape_field last_assistant_message)"
   if [ -z "$report" ]; then
-    # Left pending: a resumed agent stops again, and that stop may carry text.
-    shipshape_trace review-capture "marked agent $agent stopped with no text; still waiting for its report"
-    exit 0
+    report="$(handback_from_transcript "$agent")"
+    case "$?" in
+      0) came_from="from the hand-back in its transcript" ;;
+      1)
+        # Left pending: a resumed agent stops again, and that stop may carry
+        # text.
+        shipshape_trace review-capture "marked agent $agent stopped with no text; still waiting for its report"
+        exit 0
+        ;;
+      *) exit 0 ;;
+    esac
   fi
   # The pending file was written at launch, so its time is the launch time.
-  write_report "$kind" "$report" "$pending" && rm -f "$pending"
+  write_report "$kind" "$report" "$pending" "$came_from" && rm -f "$pending"
+  exit 0
+fi
+
+# --- a reviewer handing back its report ---------------------------------------
+#
+# Registered under PostToolUse with the dispatch tools. It fires inside the
+# subagent, so agent_id names the subagent, not the session.
+
+if [ "$(shipshape_field tool_name)" = "SubagentHandback" ]; then
+  agent="$(shipshape_safe_id "$(shipshape_field agent_id)" "")"
+  [ -n "$agent" ] || exit 0
+  find_pending "$agent" "handed back" || exit 0
+  kind="$(pending_kind)"
+  [ -n "$kind" ] || exit 0
+  # A call that says it reached no one leaves the agent pending; it may hand
+  # back again. Only an explicit false counts, so a result shape this hook does
+  # not know still captures the report.
+  if [ "$(shipshape_field tool_response.success)" = "false" ]; then
+    shipshape_trace review-capture \
+      "marked agent $agent's hand-back was not delivered; still waiting for its report"
+    exit 0
+  fi
+  report="$(shipshape_field tool_input.message)"
+  if [ -z "$report" ]; then
+    shipshape_trace review-capture "marked agent $agent handed back an empty report; still waiting for its report"
+    exit 0
+  fi
+  write_report "$kind" "$report" "$pending" "from its hand-back" && rm -f "$pending"
   exit 0
 fi
 
@@ -213,7 +424,7 @@ if shipshape_agent_is_async; then
     exit 0
   fi
   shipshape_trace review-capture \
-    "marked dispatch launched in the background as agent $agent; its report is captured when it stops"
+    "marked dispatch launched in the background as agent $agent; its report is captured when it hands it back or stops"
   exit 0
 fi
 
