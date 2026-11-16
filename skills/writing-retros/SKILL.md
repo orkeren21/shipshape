@@ -5,7 +5,8 @@ description: Use when a feature session is finishing, before reporting done - re
 
 # Writing retros
 
-One retro per feature session. It is read by the Epic Architect before it
+One retro per feature session, and one more per follow-up round a lane takes
+on from a second priming. It is read by the Epic Architect before it
 dispatches anything that depends on this lane, and by whoever tunes the process
 next month. Write it for them.
 
@@ -65,7 +66,8 @@ converging, say so and say what came of it.
 ## Where it lives
 
 Next to the design document it retrospects, in the work item's folder:
-`<design>-retro.md` (layout in `shipshape:brainstorming`). A retro in some
+`<design>-retro.md`, or `<design>-<follow-up>-retro.md` for a follow-up round
+(layout in `shipshape:brainstorming`). A retro in some
 other tree is a retro the next lane's Architect does not find. The escapes
 ledger is the deliberate exception: it is tracked, because it has to be
 visible from other machines to be worth anything.

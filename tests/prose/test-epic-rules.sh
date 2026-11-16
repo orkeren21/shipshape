@@ -119,32 +119,106 @@ assert_contains "$lane" "A follow-up that comes back to you arrives as a new pri
   "a follow-up sent back widens scope only the way scope grows"
 assert_contains "$lane" "A new priming can arrive by message" \
   "and the authorization rule accepts a priming sent that way"
-assert_contains "$lane" "quotes the operator's go behind it" \
+assert_contains "$lane" "which quotes the operator's go that covers it" \
   "backed by the operator's go in the log, not by the Architect's say-so"
+assert_contains "$lane" 'sent by path in a `RULING` that names its `decisions.md` entry' \
+  "and the ruling names that entry, so the lane can find the go it quotes"
+assert_contains "$epic" 'send the path and the entry'"'"'s ID in a `RULING`' \
+  "the Architect's side names the entry too"
+assert_contains "$lane" "It carries scope; the operator's own rulings and refusals stand." \
+  "a priming by message widens scope and nothing else"
 assert_contains "$epic" "placing them is this seat's job" "the Architect routes follow-ups"
 assert_contains "$epic" "a follow-up it doesn't cover is a scope change" \
   "a follow-up outside the go is the operator's, checked first"
-assert_contains "$epic" "goes back to the session that found it" \
+assert_contains "$epic" 'goes to the sibling lane whose scope column in `EPIC.md` holds it, if any' \
+  "one in a sibling's scope goes to that lane, so two lanes never build it"
+assert_contains "$epic" "and otherwise back to the session that found it" \
   "one inside the go goes back to the session with the context"
-assert_contains "$epic" "log the routing with the operator's words" \
-  "and the log names the go that covers it"
-assert_contains "$epic" "A new session comes last" "a card is the last choice"
+assert_contains "$epic" "log the routing with the go that covers it, saying which go that is" \
+  "the log names the go that covers it, since a dispatch go is narrower than the epic's"
+assert_contains "$epic" "A go stands until the work it named is done or the operator withdraws it, and an epic's go covers its scope until the epic closes." \
+  "how long a go lasts is stated, so an old go is neither stretched nor doubted"
+# The Architect weighs a follow-up against the room the lane has left, which
+# only the lane can report.
+assert_contains "$lane" '`DONE` (lane complete, retro path and context use attached)' \
+  "the message shape says what a DONE carries"
+assert_contains "$lane" 'send `DONE` with its path and the share of your context used' \
+  "the lane reports its context use when it finishes"
+assert_contains "$epic" 'a finished lane'"'"'s `DONE` reports its context use' \
+  "and the Architect reads it there"
+assert_contains "$lane" "work it on a new branch cut from main." \
+  "a follow-up's branch has a stated base"
+assert_contains "$lane" "stack the new branch on yours instead, and say so in its pull request." \
+  "and a follow-up that builds on unmerged work stacks, in the open"
+assert_contains "$epic" "A new session comes last, for a follow-up whose session is gone or past its handoff point (70%)." \
+  "a card is the last choice, and out of room has a number"
+assert_contains "$epic" "On a turn a lane's message started, the app lets this seat only propose a session, so a new session costs the operator a click on a card." \
+  "what a session this seat proposes costs, said of the right session"
+assert_contains "$epic" "One that belongs on the lane's open branch, in its open pull request, needs a session inside the lane's worktree, and only a session already there can start one: a \`RULING\` asks the lane to propose it, as it would a successor, and the lane replies with what happened." \
+  "a new session for the lane's own branch is the lane's to propose, as a successor is, and the Architect hears how it went"
+assert_contains "$epic" "A lane that is gone, or whose proposal was refused, leaves a manual action for the operator: hand them the worktree's path and the priming's path, so they can open a session there." \
+  "a gone lane or a refused proposal goes to the operator with both paths"
+assert_contains "$epic" "Where the worktree is gone too, a new session in a worktree of its own checks the branch out instead." \
+  "and a gone worktree still has a route"
+assert_contains "$lane" "One the priming puts on your open branch, in its open pull request, goes there." \
+  "the lane's side has the open-branch case too, so the two skills agree on where the work goes"
+assert_contains "$lane" "When a \`RULING\` asks you to propose a session for such a follow-up instead, propose it as you would your successor (\`shipshape:write-handoff\` has the step), with the priming's path as its brief, then set your roster status to \`handed-off\`: the new session takes your roster file over, as a successor does." \
+  "the lane knows the Architect can ask it to propose that session, what its brief is, and what happens to its seat"
+assert_contains "$lane" "On a turn another session's message started, the app refuses a start but takes a proposal, so propose, and reply to the \`RULING\` with what happened: the card proposed, or the refusal, which the Architect takes to the operator." \
+  "the lane proposes on a turn the Architect's message started, and reports the outcome either way"
 assert_contains "$epic" "they come back to the Architect, in its report or by message" \
-  "a session started outside an epic is told where follow-ups go"
+  "a session started outside the lanes is told where follow-ups go"
+assert_contains "$epic" 'names the Architect'"'"'s session id and, inside an epic, the absolute path of the epic'"'"'s `roster/architect.md` too' \
+  "and how to reach the seat after a succession, by a path that needs no priming"
+assert_contains "$epic" "one more for each follow-up routed back to its lane" \
+  "a lane can get a second priming"
+assert_contains "$template" "A priming can also reach a lane that is already running" \
+  "the template covers a priming sent to a running lane"
+assert_contains "$template" "or given by path to a session the lane proposes or the operator opens in the lane's worktree" \
+  "and every way a follow-up priming starts a session"
+assert_contains "$template" '`<design>-<follow-up>-priming.md`' "and names the second priming"
+assert_contains "$template" '`<design>-<follow-up>-retro.md`' "and the second round's retro"
+assert_contains "$template" 'named `<design>-retro.md`, or `<design>-<follow-up>-retro.md` for a follow-up round' \
+  "the retro contract names the file, so a second round does not write over the first"
+# The follow-up round's file names live in the layout rule, and the skills a
+# lane reads at its finish and at its handoff point say them too.
+assert_contains "$brainstorming" '`<design>-<follow-up>-priming.md`, `-retro.md` and `-handoff.md`' \
+  "the layout rule names a follow-up round's files"
+assert_contains "$(flat "$skills/writing-retros/SKILL.md")" '`<design>-<follow-up>-retro.md` for a follow-up round' \
+  "writing-retros names the second round's retro"
+assert_contains "$(flat "$skills/writing-retros/SKILL.md")" "and one more per follow-up round a lane takes on from a second priming" \
+  "and allows one per round"
+assert_contains "$handoff" '`<design>-<follow-up>-handoff.md` in a follow-up round' \
+  "write-handoff names the second round's handoff"
 assert_contains "$template" 'Follow-ups the lane finds go in its `DONE`' \
   "a priming says it too"
 assert_contains "$lane" "Any other message asking for more" \
   "the no to a wider scope by message leaves room for a priming sent by path"
-# Wording review overturned: the Architect implementing a follow-up itself,
-# against "It does not implement", and the app said to card every follow-up.
-for old in "The second is to take it into this session" \
-           "offer every follow-up to the operator as a new-session card"; do
-  hits=""
-  for f in "$skills"/*/*.md; do
+assert_contains "$epic" "It does not implement." \
+  "the Architect scopes and primes, so a follow-up goes to a session that builds"
+
+# A phrase review overturned stays gone from everything a session reads: every
+# markdown file under skills/, reference files and examples included, and the
+# README.
+scan_all() {
+  local old="$1" f hits=""
+  while IFS= read -r f; do
     case "$(flat "$f")" in
       *"$old"*) hits="${hits:+$hits }${f#"$SHIPSHAPE_REPO_ROOT"/}" ;;
     esac
-  done
+  done < <(find "$skills" -name '*.md' | sort; printf '%s\n' "$SHIPSHAPE_REPO_ROOT/README.md")
+  printf '%s' "$hits"
+}
+# Wording review overturned: the Architect implementing a follow-up itself,
+# against "It does not implement", and the app said to card every follow-up.
+# "Behind it" and "backs" were two more words for what "covers" names. The
+# open-branch follow-up once "is started the way a successor is", and "so the
+# lane proposes it" had no route once the lane was gone.
+for old in "The second is to take it into this session" \
+           "offer every follow-up to the operator as a new-session card" \
+           "the operator's go behind it" "the operator's go backs" \
+           "is started the way a successor is" "so the lane proposes it"; do
+  hits="$(scan_all "$old")"
   [ -z "$hits" ] || fail "a follow-up rule review overturned is back: '$old' in $hits"
 done
 
@@ -164,12 +238,7 @@ for old in "Work starts only on operator approval" "starts on the operator's go;
            "fresh operator go" "anything you are not confident of" \
            "approving every session that starts" \
            "Architect answers inside the operator-approved scope"; do
-  hits=""
-  for f in "$skills"/*/*.md; do
-    case "$(flat "$f")" in
-      *"$old"*) hits="${hits:+$hits }${f#"$SHIPSHAPE_REPO_ROOT"/}" ;;
-    esac
-  done
+  hits="$(scan_all "$old")"
   [ -z "$hits" ] || fail "the wait this rule replaced is still stated: '$old' in $hits"
 done
 

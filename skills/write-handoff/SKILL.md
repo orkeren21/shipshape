@@ -19,10 +19,11 @@ every case the step in flight gets finished, not dropped mid-edit.
 
 **Current state, verified.** Not what you believe — what you just checked.
 Branch, worktree path, whether it is clean, SHAs, which tasks closed, what the
-last test run actually said, how many reviews the branch has had against the
-review cap in `shipshape:requesting-code-review`, and the seat
-(`shipshape-seat` with no arguments prints it) so the successor can take the
-same one. Verify each claim as you write it; a handoff's
+last test run actually said, how many reviews have been started on the branch,
+against the review cap in `shipshape:requesting-code-review`, and everything
+`shipshape-seat` prints with no arguments: the seat, so the successor can take
+the same one, and the seat file, whose folder holds this session's review
+reports. Verify each claim as you write it; a handoff's
 value is entirely in being trustworthy, and one wrong fact makes the successor
 distrust all of it.
 
@@ -58,7 +59,8 @@ so the successor knows to look.
 
 ## Where it goes
 
-Next to the work item's design document: `<design>-handoff.md` (layout in
+Next to the work item's design document: `<design>-handoff.md`, or
+`<design>-<follow-up>-handoff.md` in a follow-up round (layout in
 `shipshape:brainstorming`), gitignored like everything else internal. In an
 epic a lane's goes in `<epic folder>/<lane>/` and an Architect's at the epic's
 root, since `roster/` holds seat files only.

@@ -80,6 +80,9 @@ the path wherever it is used: the notes folder sits under `Application Support`.
 The design document starts the folder. The plan, the retro and any handoff are
 its siblings, named after it — `<design>-plan.md`, `<design>-retro.md`,
 `<design>-handoff.md` — so "where is this feature's retro" is never a search.
+A follow-up round a lane takes on from a second priming names its files after
+the follow-up too — `<design>-<follow-up>-priming.md`, `-retro.md` and
+`-handoff.md` — so the first round's files stay where they were read.
 In an epic they sit in `<epic folder>/<lane>/`, written there from the start
 where the lane can. A lane that drafted in its worktree's `docs/shipshape/work/`
 copies them over before its `DONE`, because a worktree takes that tree with it.
