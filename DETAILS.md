@@ -32,13 +32,13 @@ record behind as a side effect. The record cannot exist without the work.
 
 | Wrapper | Wraps | Leaves behind |
 |---|---|---|
-| `shipshape-pr-open` | `gh pr create` | `pr-armed` — arms the done gate |
-| `shipshape-ci-watch` | `gh pr checks --watch` | `ci-status` — green means *mergeable*, not "the checks that ran passed". A pull request blocked only on a human approval, with a clean check rollup, is recorded `green-pending-review` and accepted. |
+| `shipshape-pr-open` | `gh pr create` | `pr-armed` — arms the done gate. The record names the PR's branch: `--head`'s when given, the current one otherwise. A `--head` branch checked out in another worktree gets its record in the session's folder there; one checked out nowhere is filed here, and stderr says it cannot be judged until it is checked out. |
+| `shipshape-ci-watch` | `gh pr checks --watch` | `ci-status` — green means *mergeable*, not "the checks that ran passed". A pull request blocked only on a human approval, with a clean check rollup, is recorded `green-pending-review` and accepted. It names the PR it watched (`number=`), and given a PR this session has a record for, it files where that PR is judged. A `ci-status` counts only for its own PR's record, judged in that folder, on the branch checked out there; one from an older wrapper, with no `number=`, reads as before. A PR opened with `--web` has a record with no number, so its CI counts only when the `ci-status` names the branch and commit it watched (`head_branch=`, `head_oid=`) and those are what is checked out there. |
 | `shipshape-verify` | a task's verify command | `verify/<task-id>`, one for each id in a comma-separated list, from a single run |
 | `shipshape-plan` | nothing — records a fact | `plan` — the file whose fences the plan leg reads, the branch it was bound on, and any `--tasks` scope with its required reason. Refuses a plan the leg could not read. A record counts only from the binding on, so another plan's `t1` cannot pass this one's. `--clear` leaves a `plan-cleared` record naming what was dropped, why, and the branch it was bound on, and says where it put it. There is one for the session in each checkout, and a later `--clear` replaces it; the doctor, `shipshape-plan` and `shipshape-pr-open` show it on any branch. It stands until that same plan is bound again. Binding another plan prints the one it replaced. |
 | `shipshape-smoke` | any command | `smoke.log` |
 | `shipshape-seat` | nothing — records a fact | `seat` — whether the session is an Architect, a lane or solo, its epic folder and its handoff. context-watch picks thresholds from it; session-start re-orients a compacted session from it. Also prints the session id a roster file needs. |
-| `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. Names any other checkout's folder for the same session: where older hooks in a desktop-app worktree session left their half of the evidence, or what a subagent working in its own worktree left there. Always exits 0; diagnosis is not enforcement. `--json` prints the same evaluation as one object (format 1): each leg's state in the evaluator's own word, the seat, the scratch path, reviewers still running, and the armed PRs. shipdeck draws its band from it. |
+| `shipshape-doctor` | nothing — read-only | no artifact. Prints the per-PR obligation state, each evidence leg against HEAD, active waivers, and what the merge gate would say. A folder of the session's in another worktree that judges one of its PRs gets a section of its own, its legs judged from inside that worktree; any other folder is named, with what it holds: where older hooks in a desktop-app worktree session left their half of the evidence, or what a subagent working in its own worktree left there. Always exits 0; diagnosis is not enforcement. `--json` prints the same evaluation as one object (format 1): each leg's state in the evaluator's own word, the seat, the scratch path, reviewers still running, the armed PRs, and (additively) the session's other `folders`, each with the PRs it judges and its legs. shipdeck draws its band from it. |
 
 ## The hooks
 
@@ -60,6 +60,34 @@ wrappers run (measured for a session that stays in the directory it was
 launched in). Its own directory can be another checkout: the desktop app
 launches a worktree session with `--project-config-root` at the main checkout,
 and its hooks then start there (measured with the app's Claude Code 2.1.309).
+
+**A pull request from a second worktree.** A session can open a PR from a
+worktree other than its own. Its record is then judged in the worktree where
+the record's branch is checked out, from the session's folder there, against
+that worktree's HEAD; `lib/shipshape-common.sh` decides where a record is
+(`shipshape_find_record`: the own folder first, then the others in
+`git worktree list` order) and where it is judged (`shipshape_judging_dir`),
+and the gates, `shipshape-ci-watch` and the doctor ask it and nothing else. The
+merge gate moves into that worktree and judges there as it would here, so
+`gh pr merge <number>` works from any of the session's worktrees; the not-first
+refusal is unchanged, so `cd <worktree> && gh pr merge` is still refused. The
+done gate judges such a PR there too and stamps it there, and what it still
+owes goes into the soft nudge, naming the worktree, never into the hard block
+(leftover records in old worktrees are likely, and the merge gate judges these
+PRs in full). A record in another folder whose branch is checked out here joins
+this branch's records: judged on this checkout's legs, stamped here, and able to
+hold a completion claim. A record in another folder whose branch is checked out nowhere is
+a leftover: the done gate skips it, and the merge gate still judges it by
+number, on its stamp. A whole-branch review files where the commit on its
+dispatch's `Head:` line is checked out on a branch (the launch checkout first,
+then a single other one, then the one already holding the session's folder);
+with no such line, or no winner, it files where it was launched. Routing says
+where a report is filed, never whether it counts: the `Head:` line is
+prompt text, which the gates otherwise never read, and here it only picks a
+folder, the report is still judged against that folder's HEAD by its launch
+time and its verdict. A `--head owner:branch` is judged against the local
+branch of that name, as every stamp is judged against the local ref first. When git cannot list
+worktrees, every reader falls back to the session's own folder and traces it.
 
 **Which PR a merge names.** The merge gate judges a merge only when it is the
 first command in the text, it knows the shape of every word on the merge's line

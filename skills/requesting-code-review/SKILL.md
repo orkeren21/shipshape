@@ -53,6 +53,14 @@ lock — nothing stops a determined session writing the file itself. It raises
 the cost from confident phrasing to knowing fabrication, and that is the whole
 claim.
 
+**Fill the template's `Head:` line with the full SHA of the commit under
+review.** The hook files the report in the worktree that has that commit
+checked out on a branch, because a pull request is judged where its branch is
+checked out. For a pull request opened from a second worktree, take the SHA
+there (`git -C <worktree> rev-parse HEAD`), and the report lands beside that
+pull request's record even though the reviewer is dispatched from here. With no
+`Head:` line the report files in this checkout.
+
 Hand the reviewer a package: the diff, what the change was meant to do, where
 to look and, with a plan bound or cleared, what `shipshape-plan` prints and any
 plan it replaced, so a narrowed scope gets read. Never your session history — history puts the reviewer on your

@@ -110,18 +110,26 @@ shipshape_scratch_root() {
 # cannot follow into one of them. The doctor lists them: older hooks resolved
 # from their own directory, which in a desktop-app worktree session is the
 # main checkout, so a session that ran them has part of its evidence there,
-# and a subagent working in its own worktree leaves a folder in it. The gates
-# read only the session's own folder; naming the other one is what keeps a
-# split from passing for missing evidence.
+# and a subagent working in its own worktree leaves a folder in it. Since
+# 0.6.13 the gates, ci-watch and the doctor also read them for records, through
+# shipshape_find_record and shipshape_judging_dir. When git cannot list the
+# worktrees of a repository, the answer is no other folder, which is what every
+# reader saw before 0.6.13, and the trace says so (into a folder that already
+# exists, so looking never creates one).
 # Looks, never creates. Under SHIPSHAPE_SCRATCH_ROOT the folder does not
 # depend on the checkout, so there is no other one to find.
 shipshape_other_scratch_dirs() {
-  local scratch="$1" sid here line candidate
+  local scratch="$1" sid here line candidate listing
   [ -z "${SHIPSHAPE_SCRATCH_ROOT:-}" ] || return 0
   sid="$(shipshape_session_id)"
   [ "$sid" != "unknown" ] || return 0
   here="$(cd "$scratch" 2>/dev/null && pwd -P)"
-  git worktree list --porcelain 2>/dev/null | while IFS= read -r line; do
+  if ! listing="$(git worktree list --porcelain 2>/dev/null)"; then
+    git rev-parse --git-dir >/dev/null 2>&1 &&
+      shipshape_trace_into "${SHIPSHAPE_TRACE_DIR:-$scratch}" records "git cannot list worktrees; reading only this checkout's folder"
+    return 0
+  fi
+  printf '%s\n' "$listing" | while IFS= read -r line; do
     case "$line" in
       "worktree "*) candidate="${line#worktree }/.shipshape/$sid" ;;
       *) continue ;;
@@ -130,6 +138,146 @@ shipshape_other_scratch_dirs() {
     [ "$(cd "$candidate" && pwd -P)" = "$here" ] && continue
     printf '%s\n' "$candidate"
   done
+}
+
+# ---------------------------------------------------------------------------
+# Where a record is, and where it is judged
+# ---------------------------------------------------------------------------
+#
+# A session can open a pull request from a second worktree. Its record, CI and
+# smoke then sit in the session's folder there, while its reviews may sit in
+# the session's own. The rule: a record is judged in the worktree where its
+# branch is checked out, against that worktree's HEAD, from the session's
+# folder there. shipshape_find_record and shipshape_judging_dir are the one
+# place that decides. The gates, ci-watch and the doctor ask them and nothing
+# else, so no two readers can disagree about where a PR's evidence lives.
+#
+# Each falls back to the session's own folder when git cannot list worktrees,
+# which is how every reader behaved before, and says so in the trace. Under
+# SHIPSHAPE_SCRATCH_ROOT the folder does not depend on the checkout, so there
+# is no other folder to find.
+
+# shipshape_worktrees -> one line per worktree git lists whose directory still
+# exists: path, HEAD, branch (refs/heads/ stripped, empty when detached),
+# split on the ASCII unit separator. Returns 1 when git cannot list them.
+shipshape_worktrees() {
+  local listing us path head branch
+  listing="$(git worktree list --porcelain 2>/dev/null)" || return 1
+  [ -n "$listing" ] || return 1
+  us="$(printf '\037')"
+  printf '%s\n' "$listing" | awk -v us="$us" '
+    function emit() { if (path != "") print path us head us branch; path = ""; head = ""; branch = "" }
+    /^worktree / { emit(); path = substr($0, 10); next }
+    /^HEAD / { head = substr($0, 6); next }
+    /^branch refs\/heads\// { branch = substr($0, 19); next }
+    END { emit() }
+  ' | while IFS="$us" read -r path head branch; do
+    [ -d "$path" ] || continue
+    printf '%s%s%s%s%s\n' "$path" "$us" "$head" "$us" "$branch"
+  done
+  return 0
+}
+
+# shipshape_branch_checkout <branch> -> the worktree that has refs/heads/<branch>
+# checked out, or nothing: the first git lists, as git refuses to check one
+# branch out in two worktrees unless forced (`git worktree add --force`,
+# `git checkout --ignore-other-worktrees`; git-worktree(1)). Returns 1 when git
+# cannot list worktrees.
+shipshape_branch_checkout() {
+  local want="$1" rows us path head branch
+  [ -n "$want" ] || return 0
+  rows="$(shipshape_worktrees)" || return 1
+  us="$(printf '\037')"
+  while IFS="$us" read -r path head branch; do
+    [ -n "$path" ] || continue
+    if [ "$branch" = "$want" ]; then
+      printf '%s\n' "$path"
+      return 0
+    fi
+  done <<SHIPSHAPE_WORKTREES
+$rows
+SHIPSHAPE_WORKTREES
+  return 0
+}
+
+# shipshape_same_place <a> <b> -> 0 when both name the same existing directory.
+# git's worktree list, show-toplevel and a payload's cwd can spell one place
+# differently: on macOS /tmp is a symlink to /private/tmp, and a cwd may name
+# the link while git names the target. So paths are compared resolved.
+shipshape_same_place() {
+  local a b
+  a="$(cd -- "$1" 2>/dev/null && pwd -P)" || return 1
+  b="$(cd -- "$2" 2>/dev/null && pwd -P)" || return 1
+  [ -n "$a" ] && [ "$a" = "$b" ]
+}
+
+# shipshape_checkout_of <folder> -> the checkout a session folder sits in.
+shipshape_checkout_of() {
+  printf '%s\n' "${1%/.shipshape/*}"
+}
+
+# shipshape_find_record <number> [quiet] -> this session's record for that PR:
+# the own folder's first, then the other folders' in `git worktree list`
+# order. When the number turns up in more than one folder, the first wins and
+# the trace names them all, unless quiet. Only numbered records: the
+# un-numbered pr-armed older wrappers wrote is honoured in the own folder
+# alone, by the gates that read it.
+shipshape_find_record() {
+  local number own dir found="" all=""
+  number="$(shipshape_safe_id "$1" "")"
+  [ -n "$number" ] || return 0
+  own="$(shipshape_scratch_path)"
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    [ -f "$dir/pr-armed-$number" ] || continue
+    [ -n "$found" ] || found="$dir/pr-armed-$number"
+    all="$all${all:+, }$dir"
+  done <<SHIPSHAPE_DIRS
+$own
+$(shipshape_other_scratch_dirs "$own")
+SHIPSHAPE_DIRS
+  [ -n "$found" ] || return 0
+  if [ -z "${2:-}" ] && [ "$all" != "${found%/pr-armed-*}" ]; then
+    shipshape_trace records "PR #$number has a record in more than one folder ($all); using ${found%/pr-armed-*}"
+  fi
+  printf '%s\n' "$found"
+}
+
+# shipshape_judging_dir <record> -> the folder a record's evidence is judged
+# in: this session's folder in the worktree whose branch is the record's
+# branch=, or the record's own folder when no worktree has that branch checked
+# out (or the record names none). The folder may not exist yet. The own
+# folder is printed exactly as shipshape_scratch_path prints it, and the
+# record's folder exactly as the record's path holds it, so a caller can tell
+# them apart by comparing strings.
+shipshape_judging_dir() {
+  local record="$1" home branch checkout sid own
+  home="$(dirname -- "$record")"
+  if [ -n "${SHIPSHAPE_SCRATCH_ROOT:-}" ]; then
+    printf '%s\n' "$home"
+    return 0
+  fi
+  sid="$(shipshape_session_id)"
+  branch="$(sed -n 's/^branch=//p' "$record" 2>/dev/null | head -1)"
+  if [ "$sid" = "unknown" ] || [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then
+    printf '%s\n' "$home"
+    return 0
+  fi
+  if ! checkout="$(shipshape_branch_checkout "$branch")"; then
+    shipshape_trace records "git cannot list worktrees; $(basename -- "$record") is judged in its own folder, $home"
+    printf '%s\n' "$home"
+    return 0
+  fi
+  if [ -z "$checkout" ] || shipshape_same_place "$checkout" "$(shipshape_checkout_of "$home")"; then
+    printf '%s\n' "$home"
+    return 0
+  fi
+  own="$(shipshape_scratch_path)"
+  if shipshape_same_place "$checkout" "$(shipshape_scratch_root)"; then
+    printf '%s\n' "$own"
+    return 0
+  fi
+  printf '%s/.shipshape/%s\n' "$checkout" "$sid"
 }
 
 # Prints .shipshape/<session-id> without creating it, for callers that only
@@ -173,10 +321,18 @@ shipshape_branch_tip() { # <branch>
 
 # One line per event, appended to the session's trace log. This is what makes a
 # fail-open gate answerable after the fact: it says what it saw and what it did.
+#
+# A gate that moves into another worktree to judge a PR there keeps tracing
+# into the session's own folder by setting SHIPSHAPE_TRACE_DIR to it first:
+# the trace a reader opens is the one where the session runs.
 shipshape_trace() {
   local hook="$1"
   shift
   local dir
+  if [ -n "${SHIPSHAPE_TRACE_DIR:-}" ] && [ -d "$SHIPSHAPE_TRACE_DIR" ]; then
+    shipshape_trace_into "$SHIPSHAPE_TRACE_DIR" "$hook" "$@"
+    return 0
+  fi
   dir="$(shipshape_scratch_dir 2>/dev/null)" || return 0
   shipshape_trace_into "$dir" "$hook" "$@"
 }
@@ -702,11 +858,60 @@ shipshape_leg_review() { # <scratch>
   printf '%s|%s' "$verdict" "$(basename "$review")"
 }
 
+# A ci-status names the PR it watched (number=, since 0.6.13). It counts only
+# for that PR's record, judged in this folder, on the branch checked out here:
+# `shipshape-ci-watch 72` run in one worktree used to count as CI for the PR of
+# whichever branch that worktree had out. A record judged here on a branch that
+# is not checked out here (a --head branch checked out nowhere, a leftover) is
+# judged on its stamp, never on these legs, so its CI does not count for the
+# branch that is. One with no number=, from an older wrapper, is read as before.
+# A PR opened with --web has a record with no number (pr-armed-unknown-<epoch>):
+# its CI counts only when the ci-status says it watched the branch checked out
+# here, at the commit checked out here (head_branch= and head_oid=, gh pr view's
+# headRefName and headRefOid), and such a record names that branch. A branch
+# name alone is not enough: a fork's PR, or an earlier PR from the same branch
+# name, shares it. A record with no branch= matches no branch, so its CI counts
+# for nothing here: the done gate stamps every such record from this
+# checkout's legs, and its CI would pay for the others. An ignored one reads
+# missing, its detail naming its PR.
 shipshape_leg_ci() { # <scratch>
-  local scratch="$1"
+  local scratch="$1" ci_number record here unknown record_branch watched watched_oid
   if [ ! -f "$scratch/ci-status" ]; then
     printf 'missing|'
     return 0
+  fi
+  ci_number="$(sed -n -e '/^--- checks ---$/q' -e 's/^number=//p' "$scratch/ci-status" 2>/dev/null | head -1)"
+  if [ -n "$ci_number" ]; then
+    ci_number="$(shipshape_safe_id "$ci_number" "")"
+    here="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    record=""
+    [ -z "$ci_number" ] || record="$(shipshape_find_record "$ci_number" quiet)"
+    # An older wrapper's un-numbered record counts where it sits.
+    if [ -z "$record" ] && [ -n "$ci_number" ] && [ -f "$scratch/pr-armed" ] &&
+      { [ "$(sed -n 's/^number=//p' "$scratch/pr-armed" 2>/dev/null | head -1)" = "$ci_number" ] ||
+        sed -n 's/^url=//p' "$scratch/pr-armed" 2>/dev/null | grep -q "/pull/$ci_number\$"; }; then
+      record="$scratch/pr-armed"
+    fi
+    watched="$(sed -n -e '/^--- checks ---$/q' -e 's/^head_branch=//p' "$scratch/ci-status" 2>/dev/null | head -1)"
+    watched_oid="$(sed -n -e '/^--- checks ---$/q' -e 's/^head_oid=//p' "$scratch/ci-status" 2>/dev/null | head -1)"
+    if [ -z "$record" ] && [ -n "$here" ] && [ "$here" != "HEAD" ] && [ "$watched" = "$here" ] &&
+      [ -n "$watched_oid" ] && [ "$watched_oid" = "$(git rev-parse HEAD 2>/dev/null)" ]; then
+      for unknown in "$scratch"/pr-armed-unknown-*; do
+        [ -f "$unknown" ] || continue
+        if [ "$(sed -n 's/^branch=//p' "$unknown" 2>/dev/null | head -1)" = "$here" ]; then
+          record="$unknown"
+          break
+        fi
+      done
+    fi
+    record_branch=""
+    [ -z "$record" ] || record_branch="$(sed -n 's/^branch=//p' "$record" 2>/dev/null | head -1)"
+    if [ -z "$record" ] ||
+      ! shipshape_same_place "$(shipshape_judging_dir "$record")" "$scratch" ||
+      { [ -n "$here" ] && [ "$record_branch" != "$here" ]; }; then
+      printf 'missing|for PR #%s, not judged on this checkout' "${ci_number:-unknown}"
+      return 0
+    fi
   fi
   if ! grep -qE '^result=green(-pending-review)?$' "$scratch/ci-status" 2>/dev/null; then
     printf 'not-green|%s' \
