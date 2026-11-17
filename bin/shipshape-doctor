@@ -69,14 +69,43 @@ plan_cleared="$(shipshape_plan_cleared "$scratch")"
 merge_waived=""
 shipshape_waived merge_gate && merge_waived="yes"
 
+# ---- reviewers still out, as review-capture leaves them -----------------------
+#
+# A background reviewer is out while review-capture's bare marker,
+# pending-capture/<agent>, exists; its mtime is the launch. Once the agent's
+# report is written the marker is renamed <agent>.reported, which is not out.
+# Agent ids are safe ids, which never hold a dot, so any name with one is not a
+# marker. Only the kinds review-capture writes count. A <agent>.held file
+# beside a marker is a stop's text that had no verdict: the doctor shows its
+# first line, so a reviewer that paused and never came back can be seen. It is
+# not evidence.
+#
+# One line per reviewer: agent, kind, launch (epoch seconds), held first line,
+# split on the ASCII unit separator (see the records below).
+
+sep="$(printf '\037')"
+out_reviewers=""
+for pending in "$scratch"/pending-capture/*; do
+  [ -f "$pending" ] || continue
+  case "$(basename "$pending")" in *.*) continue ;; esac
+  kind="$(head -1 "$pending" 2>/dev/null)"
+  case "$kind" in review|conformance) : ;; *) continue ;; esac
+  since="$(shipshape_mtime "$pending")" || since=""
+  held_line=""
+  if [ -f "$pending.held" ]; then
+    held_line="$(head -1 "$pending.held" 2>/dev/null | tr -d '\000-\037' | cut -c1-200)"
+    [ -n "$held_line" ] || held_line="(blank first line)"
+  fi
+  out_reviewers="$out_reviewers$(basename "$pending")$sep$kind$sep$since$sep$held_line
+"
+done
+
 # ---- the obligation records, as the merge gate judges them ------------------
 #
 # One line per record: number, url, branch, state (owing|stale|satisfied),
 # the head it was satisfied at, and the branch's head now. Fields are split on
 # the ASCII unit separator: a tab is IFS whitespace, so an empty field (a
 # record with no url) would collapse and shift every field after it.
-
-sep="$(printf '\037')"
 
 record_files=""
 for record_file in "$scratch"/pr-armed-*; do
@@ -139,17 +168,14 @@ if [ -n "$json_mode" ]; then
     seat_json="null"
   fi
 
-  # A background reviewer is out while review-capture's pending file exists;
-  # its mtime is the launch. Only the kinds review-capture writes count.
   pending_json=""
-  for pending in "$scratch"/pending-capture/*; do
-    [ -f "$pending" ] || continue
-    kind="$(head -1 "$pending" 2>/dev/null)"
-    case "$kind" in review|conformance) : ;; *) continue ;; esac
-    since="$(shipshape_mtime "$pending")" || since=""
-    pending_json="$pending_json${pending_json:+,}$(printf '{"agent":%s,"kind":%s,"since":%s}' \
-      "$(str "$(basename "$pending")")" "$(str "$kind")" "${since:-null}")"
-  done
+  while IFS="$sep" read -r agent kind since held_line; do
+    [ -n "$agent" ] || continue
+    pending_json="$pending_json${pending_json:+,}$(printf '{"agent":%s,"kind":%s,"since":%s,"held":%s}' \
+      "$(str "$agent")" "$(str "$kind")" "${since:-null}" "$(str "$held_line")")"
+  done <<SHIPSHAPE_PENDING
+$out_reviewers
+SHIPSHAPE_PENDING
 
   prs_json=""
   while IFS="$sep" read -r n url br st _ _; do
@@ -272,6 +298,16 @@ case "${plan_leg%%|*}" in
     [ -z "$plan_cleared" ] || printf '           cleared: %s\n' "$plan_cleared"
     ;;
 esac
+
+while IFS="$sep" read -r agent kind since held_line; do
+  [ -n "$agent" ] || continue
+  launched=""
+  [ -n "$since" ] && launched="$(date -u -r "$since" "+%Y-%m-%d %H:%M:%SZ" 2>/dev/null || date -u -d "@$since" "+%Y-%m-%d %H:%M:%SZ" 2>/dev/null)"
+  leg_line out "$kind agent $agent, launched ${launched:-at an unknown time}, has not reported"
+  [ -z "$held_line" ] || printf '           last stop, held (no verdict): %s\n' "$held_line"
+done <<SHIPSHAPE_PENDING
+$out_reviewers
+SHIPSHAPE_PENDING
 
 if [ -n "$merge_waived" ]; then
   leg_line merge "gate waived — $(shipshape_waiver_line merge_gate)"

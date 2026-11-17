@@ -304,6 +304,24 @@ esac
 printf 'nonsense\n' > "$scratch/pending-capture/agent-c3"
 out="$(json)"
 assert_not_contains "$out" "agent-c3" "a pending file of an unknown kind is not a reviewer"
+assert_eq "null" "$(SS_JSON="$out" python3 -c 'import json,os; print(json.dumps(json.loads(os.environ["SS_JSON"])["pending"][0]["held"]))')" \
+  "a reviewer with nothing held carries held: null"
+
+# Once its report is written, review-capture renames the marker
+# <agent>.reported, which keeps the launch time and reads "review" still. That
+# reviewer is not out. A <agent>.held file is a stop's text with no verdict,
+# kept beside a reviewer that is still out; the doctor shows its first line.
+rm -f "$scratch/pending-capture/agent-c3"
+mv "$scratch/pending-capture/agent-b2" "$scratch/pending-capture/agent-b2.reported"
+printf "The test run is still going. I'll wait for it to finish.\nsecond line\n" > "$scratch/pending-capture/agent-a1.held"
+printf 'held text of a reported one\n' > "$scratch/pending-capture/agent-b2.held"
+out="$(json)"
+assert_eq "1" "$(SS_JSON="$out" python3 -c 'import json,os; print(len(json.loads(os.environ["SS_JSON"])["pending"]))')" \
+  "a .reported marker is not a reviewer still out, and a .held file is not one either"
+assert_eq "agent-a1" "$(jget "$out" pending.0.agent)" "the bare marker is"
+assert_eq "The test run is still going. I'll wait for it to finish." "$(jget "$out" pending.0.held)" \
+  "with the first line of what it held"
+assert_not_contains "$out" "held text of a reported one" "a reported reviewer's held text is not shown"
 rm -rf "$scratch/pending-capture"
 
 # --- armed pull requests -----------------------------------------------------------

@@ -137,6 +137,13 @@ stop_payload_for() { # stop_payload_for <agent id> <last message>
     "$session" "$(json_string "$1")" "$(json_string "$2")"
 }
 
+# A stop's text is written when it answers "Ready to merge?". One that does
+# not may be a reviewer pausing on its own background work, and is held for
+# the report that follows (tests/hooks/test-review-capture-interim.sh).
+STOP_REPORT="$REPORT
+
+**Ready to merge?** With fixes"
+
 rm -f "$scratch"/review-*.md "$scratch"/conformance-*.md
 rm -rf "$scratch/pending-capture"
 run_hook review-capture.sh "$(async_payload "whole-branch-review: backgrounded")" "$repo" >/dev/null
@@ -145,21 +152,21 @@ assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
 assert_file "$scratch/pending-capture/abc123" "it remembers the marked agent by its id"
 assert_contains "$(cat "$scratch/trace.log")" "abc123" "and the trace names the agent it is waiting on"
 
-run_hook review-capture.sh "$(stop_payload_for abc123 "$REPORT")" "$repo" >/dev/null
+run_hook review-capture.sh "$(stop_payload_for abc123 "$STOP_REPORT")" "$repo" >/dev/null
 captured="$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)"
 [ -n "$captured" ] || fail "when that agent stops, its report is written"
-[ -n "$captured" ] && assert_eq "$REPORT" "$(cat "$captured")" "verbatim, from what the reviewer returned"
+[ -n "$captured" ] && assert_eq "$STOP_REPORT" "$(cat "$captured")" "verbatim, from what the reviewer returned"
 assert_no_file "$scratch/pending-capture/abc123" "and the agent is no longer pending"
+assert_file "$scratch/pending-capture/abc123.reported" "its marker is kept as reported, for a later report"
 assert_eq "0" "$(hook_status)" "SubagentStop is never blocked by it"
-assert_eq "" "$(hook_field "$(run_hook review-capture.sh "$(stop_payload_for abc123 "$REPORT")" "$repo")" decision)" \
+assert_eq "" "$(hook_field "$(run_hook review-capture.sh "$(stop_payload_for abc123 "$STOP_REPORT")" "$repo")" decision)" \
   "and it answers nothing that could hold the subagent"
 
-rm -f "$scratch"/review-*.md
-run_hook review-capture.sh "$(stop_payload_for abc123 "$REPORT")" "$repo" >/dev/null
-assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
-  "a second stop of the same agent writes nothing more: it was captured once"
+assert_eq "1" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | wc -l | tr -d ' ')" \
+  "a second stop of the same agent with the same report writes nothing more: it was captured once"
 
-run_hook review-capture.sh "$(stop_payload_for someone-else "$REPORT")" "$repo" >/dev/null
+rm -f "$scratch"/review-*.md
+run_hook review-capture.sh "$(stop_payload_for someone-else "$STOP_REPORT")" "$repo" >/dev/null
 assert_eq "" "$(find "$scratch" -maxdepth 1 -name 'review-*.md' | head -1)" \
   "an agent that was never a marked dispatch is left alone"
 

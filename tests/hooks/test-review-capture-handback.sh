@@ -88,11 +88,14 @@ assert_contains "$(cat "$scratch/trace.log")" "wrote $(basename "${captured:-rev
   "the trace says the hook wrote it"
 assert_contains "$(cat "$scratch/trace.log")" "hand-back" "and that it came from the hand-back"
 
-# The stop that follows has nothing left to do.
-run_hook review-capture.sh "$(fixture stop.json)" "$repo" >/dev/null
+# The stop that follows has nothing left to do: its transcript ends in the
+# same hand-back, which is already written.
+cp "$fixtures/transcript.jsonl" "$transcript"
+SHIPSHAPE_HANDBACK_WAIT=5 run_hook review-capture.sh "$(fixture stop.json)" "$repo" >/dev/null
 assert_eq "1" "$(reports | wc -l | tr -d ' ')" "the stop after a captured hand-back writes nothing more"
 assert_not_contains "$(cat "$scratch/trace.log")" "stopped with no text" \
   "and does not report the reviewer as silent"
+assert_contains "$(cat "$scratch/trace.log")" "already written" "it says the report is already written"
 
 # --- a hand-back that was not delivered --------------------------------------
 
@@ -231,10 +234,10 @@ reset
 launch
 cp "$fixtures/transcript.jsonl" "$transcript"
 run_hook review-capture.sh \
-  "$(fixture stop.json '.last_assistant_message = "TEXT REPORT"')" "$repo" >/dev/null
+  "$(fixture stop.json '.last_assistant_message = "TEXT REPORT\n\n**Ready to merge?** Yes"')" "$repo" >/dev/null
 captured="$(reports | head -1)"
-[ -n "$captured" ] && assert_eq "TEXT REPORT" "$(cat "$captured")" \
-  "a stop that carries text is captured from that text, as before"
+[ -n "$captured" ] && assert_eq "$(printf 'TEXT REPORT\n\n**Ready to merge?** Yes')" "$(cat "$captured")" \
+  "a stop that carries a report is captured from that text, as before, not from the transcript"
 [ -n "$captured" ] || fail "a stop that carries text is captured"
 
 reset

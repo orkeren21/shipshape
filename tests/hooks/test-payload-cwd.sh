@@ -182,6 +182,14 @@ assert_no_file "$wt_scratch/pending-capture/iso9" "and the marker is consumed"
 assert_no_file "$agent_wt/.shipshape" "the reviewer's own worktree is left as it was"
 assert_contains "$(wt_trace)" "stopped in $agent_wt, away from its marker" \
   "the trace says where the agent stopped"
+# The stop after it, with no text and nothing to read, finds the marker as
+# reported. Nothing is captured, so where it stopped is not news.
+before="$(wt_trace | grep -c 'away from its marker')"
+run_hook review-capture.sh "$(stop_in "$agent_wt" iso9 "")" "$main" >/dev/null
+assert_eq "$before" "$(wt_trace | grep -c 'away from its marker')" \
+  "a reported isolated reviewer's later stop does not claim to capture beside its marker"
+assert_eq "1" "$(find "$wt_scratch" -maxdepth 1 -name 'review-*.md' | wc -l | tr -d ' ')" \
+  "and writes nothing more"
 main_clean "isolated capture"
 
 # The reason the search runs whenever the marker is missing, rather than only
