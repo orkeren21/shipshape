@@ -109,6 +109,21 @@ the gates instead of a hunch.
 Outcome first, in plain English, for someone who saw none of the work. See
 `shipshape:plain-english-reporting`.
 
+## A pull request from a second worktree
+
+A pull request is judged in the worktree where its branch is checked out, from
+this session's folder there, against that worktree's HEAD. So when the branch
+lives in another worktree, run its wrappers inside it, as
+`cd <worktree> && shipshape-ci-watch` and `cd <worktree> && shipshape-smoke
+<command>`; a smoke run from here records this checkout's HEAD, whatever
+directory the command reads. Dispatch the review from anywhere, with the
+template's `Head:` line holding the full SHA from that worktree. Merge by number,
+`gh pr merge <number>`, from any of the session's worktrees.
+
+`shipshape-pr-open --head <branch>` records that branch, and files the record in
+the worktree that has it checked out. A branch checked out nowhere is not
+judged until it is, so check it out in a worktree first.
+
 ## What "done" is not
 
 Reaching the end of the task list is not done. Tests passing locally is not

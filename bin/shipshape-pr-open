@@ -34,6 +34,39 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 127
 fi
 
+# The branch the PR is opened from. gh takes it from --head (or -H) when one is
+# given, and from the current branch otherwise. The record names that branch,
+# because the gates judge a record against its branch's tip: recording the
+# caller's branch for a --head PR had them judge the PR against another branch
+# (EnvPlode PR 92, 2026-11-17). An owner: prefix names a fork, and the branch
+# is what follows it. Read before gh runs, from the arguments only.
+# The value of any other flag that takes one is skipped, so a title or body
+# that reads "--head" is not taken for the flag. gh 2.96.0's `gh pr create
+# --help` lists them.
+head_branch=""
+want_head=""
+skip_value=""
+for arg in "$@"; do
+  if [ -n "$want_head" ]; then
+    head_branch="$arg"
+    want_head=""
+    continue
+  fi
+  if [ -n "$skip_value" ]; then
+    skip_value=""
+    continue
+  fi
+  case "$arg" in
+    --) break ;;
+    --head|-H) want_head=yes ;;
+    -a|--assignee|-B|--base|-b|--body|-F|--body-file|-l|--label|-m|--milestone|-p|--project|-R|--repo|-r|--reviewer|-T|--template|-t|--title)
+      skip_value=yes ;;
+    --head=*) head_branch="${arg#--head=}" ;;
+    -H?*) head_branch="${arg#-H}" ;;
+  esac
+done
+head_branch="${head_branch#*:}"
+
 out="$(gh pr create "$@" 2>&1)"
 status=$?
 
@@ -66,6 +99,33 @@ url="${pull_url:-$(printf '%s\n' "$out" | grep -o 'https://[^[:space:]]*' | tail
 
 scratch="$(shipshape_scratch_dir)"
 
+# Where the record is filed. A PR is judged in the worktree that has its branch
+# checked out, so a --head branch checked out in another worktree gets its
+# record in the session's folder there, where its CI and smoke will be. One
+# checked out nowhere is filed here, and cannot be judged until it is checked
+# out somewhere: stderr says so, because stdout is gh's.
+branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+if [ -n "$head_branch" ]; then
+  branch="$head_branch"
+  if [ "$head_branch" != "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" ]; then
+    if ! head_checkout="$(shipshape_branch_checkout "$head_branch")"; then
+      shipshape_trace pr-open "git cannot list worktrees; the record for $head_branch is filed here"
+    elif [ -z "$head_checkout" ]; then
+      echo "shipshape-pr-open: $head_branch is not checked out in any worktree, so this PR's evidence cannot be judged until it is. Check it out (git worktree add <path> $head_branch), then run its wrappers there." >&2
+      shipshape_trace pr-open "$head_branch is checked out nowhere; the record is filed here, and judged only once it is checked out"
+    elif [ -z "${SHIPSHAPE_SCRATCH_ROOT:-}" ] && [ "$(shipshape_session_id)" != "unknown" ] &&
+      ! shipshape_same_place "$head_checkout" "$(shipshape_scratch_root)"; then
+      head_scratch="$head_checkout/.shipshape/$(shipshape_session_id)"
+      if mkdir -p "$head_scratch" 2>/dev/null; then
+        scratch="$head_scratch"
+        echo "shipshape-pr-open: $head_branch is checked out in $head_checkout, so the record is filed there; run this PR's wrappers there (cd $head_checkout && shipshape-ci-watch, shipshape-smoke)." >&2
+      else
+        shipshape_trace pr-open "cannot create $head_scratch; the record for $head_branch is filed here"
+      fi
+    fi
+  fi
+fi
+
 # The obligation is tracked per PR, keyed by its number, so a later PR in the
 # same session arms its own record instead of overwriting this one's — the
 # cascade where PR #2's arming evaporated PR #1's unmet evidence was a field
@@ -85,13 +145,13 @@ record="pr-armed-$(shipshape_safe_id "$number" "unknown")"
 {
   printf 'url=%s\n' "$url"
   printf 'number=%s\n' "$number"
-  printf 'branch=%s\n' "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  printf 'branch=%s\n' "$branch"
   printf 'timestamp=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'epoch=%s\n' "$(date -u +%s)"
 } > "$scratch/$record"
 cp "$scratch/$record" "$scratch/pr-armed" 2>/dev/null
 
-shipshape_trace pr-open "armed done gate for $url ($record)"
+shipshape_trace pr-open "armed done gate for $url ($record, branch $branch, in $scratch)"
 
 # The last moment a forgotten binding can be noticed, since with no plan bound the
 # leg reads none, and none settles. A clearing is named too, and never instead: it

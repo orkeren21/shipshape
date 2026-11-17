@@ -40,6 +40,9 @@ shipshape_enabled DONE_GATE || exit 0
 [ "$(shipshape_field stop_hook_active)" = "true" ] && exit 0
 
 scratch="$(shipshape_scratch_dir)"
+# Judging a PR checked out in another worktree moves into it, in a subshell;
+# the trace stays in this folder, where the session runs.
+export SHIPSHAPE_TRACE_DIR="$scratch"
 
 # ---- the obligation records -------------------------------------------------
 #
@@ -57,7 +60,8 @@ if [ -z "$records" ] && [ -f "$scratch/pr-armed" ]; then
   records="$scratch/pr-armed
 "
 fi
-[ -n "$records" ] || exit 0
+other_dirs="$(shipshape_other_scratch_dirs "$scratch")"
+[ -n "$records" ] || [ -n "$other_dirs" ] || exit 0
 
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 current_head="$(git rev-parse HEAD 2>/dev/null)"
@@ -69,6 +73,14 @@ record_number() {
     *)        basename "$1" | sed 's/^pr-armed-//' ;;
   esac
 }
+
+# A record whose branch is checked out in another worktree is judged there,
+# from the session's folder in it (shipshape_judging_dir decides). One line per
+# such record: number, record, judging folder, split on the unit separator.
+us="$(printf '\037')"
+away=""
+away_add() { away="$away$1$us$2$us$3
+"; }
 
 # The gate's evidence checks describe the branch the session is on, so each
 # record is classified by branch. Records for the current branch are judged on
@@ -85,6 +97,15 @@ while IFS= read -r record_file; do
   rec_branch="$(record_field "$record_file" branch)"
   rec_number="$(record_number "$record_file")"
   if [ -n "$rec_branch" ] && [ -n "$current_branch" ] && [ "$rec_branch" != "$current_branch" ]; then
+    # Checked out in another worktree: judged there, below, never on a stamp
+    # here, and never toward the downgrade path.
+    if [ "$rec_number" != "legacy" ]; then
+      judge="$(shipshape_judging_dir "$record_file")"
+      if [ "$judge" != "$scratch" ]; then
+        away_add "$rec_number" "$record_file" "$judge"
+        continue
+      fi
+    fi
     stamp="$scratch/pr-satisfied-$rec_number"
     settled=no
     if [ -f "$stamp" ]; then
@@ -110,6 +131,35 @@ while IFS= read -r record_file; do
 done <<SHIPSHAPE_RECORDS
 $records
 SHIPSHAPE_RECORDS
+
+# The session's records in its other folders. A number this folder already
+# holds is this folder's, and the first other folder to hold one wins, as
+# shipshape_find_record decides for the merge gate. A record whose branch is
+# checked out here belongs with this branch's records. One whose branch is
+# checked out nowhere is a leftover, and skipped: the merge gate still finds it
+# by number. The rest are judged where their branch is.
+while IFS= read -r other; do
+  [ -n "$other" ] || continue
+  for record_file in "$other"/pr-armed-*; do
+    [ -f "$record_file" ] || continue
+    rec_number="$(record_number "$record_file")"
+    [ ! -f "$scratch/pr-armed-$rec_number" ] || continue
+    [ "$(shipshape_find_record "$rec_number" quiet)" = "$record_file" ] || continue
+    judge="$(shipshape_judging_dir "$record_file")"
+    if [ "$judge" = "$scratch" ]; then
+      case " $current_numbers" in
+        *" $rec_number "*) : ;;
+        *) current_numbers="$current_numbers$rec_number " ;;
+      esac
+    else
+      away_add "$rec_number" "$record_file" "$judge"
+    fi
+  done
+done <<SHIPSHAPE_OTHERS
+$other_dirs
+SHIPSHAPE_OTHERS
+
+[ -n "$records" ] || [ -n "$away" ] || [ -n "$current_numbers" ] || exit 0
 
 missing=""
 add() { missing="${missing}  - $1
@@ -176,7 +226,7 @@ leg="$(shipshape_leg_ci "$scratch")"
 detail="${leg#*|}"
 case "${leg%%|*}" in
   missing)
-    add "ci-status — CI has not been watched to a verdict. Run shipshape-ci-watch."
+    add "ci-status — CI has not been watched to a verdict${detail:+ (the ci-status here is $detail)}. Run shipshape-ci-watch."
     ;;
   not-green)
     add "ci-status — not green (merge state ${detail:-unknown}). Diagnose, fix, and run shipshape-ci-watch again."
@@ -305,7 +355,102 @@ if [ -n "$current_numbers" ]; then
   done
 fi
 
-if [ -z "$missing" ] && [ -z "$elsewhere_lines" ]; then
+# ---- pull requests checked out in other worktrees ---------------------------
+#
+# Each is judged from inside the worktree that has its branch checked out,
+# with the same leg functions and that worktree's waivers, against its HEAD,
+# and its stamp is written or removed in the session's folder there, where the
+# merge gate reads it. What one still owes goes into the soft nudge, naming
+# the worktree. It never raises the hard block: leftover records in old
+# worktrees are likely, and a block there would trap a session on a PR it
+# replaced. The merge gate judges these PRs in full.
+owed_phrase() { # <leg> <state|detail>
+  local state="${2%%|*}" detail="${2#*|}"
+  case "$1:$state" in
+    review:missing)    printf 'review report — none captured there' ;;
+    review:empty)      printf 'review report — ignored, empty (%s)' "$detail" ;;
+    review:stale)      printf 'review report — stale, it predates that HEAD (%s)' "$detail" ;;
+    review:no-verdict) printf 'review report — no verdict (%s)' "$detail" ;;
+    review:verdict-no) printf 'review report — the verdict is no (%s)' "$detail" ;;
+    ci:missing)        printf 'ci-status — not watched there%s' "${detail:+ ($detail)}" ;;
+    ci:not-green)      printf 'ci-status — not green (merge state %s)' "${detail:-unknown}" ;;
+    ci:stale)          printf 'ci-status — stale, it predates that HEAD' ;;
+    smoke:missing)     printf 'smoke.log — none there' ;;
+    smoke:stale)       printf 'smoke.log — stale, gathered against %s' "$(printf '%s' "$detail" | cut -c1-8)" ;;
+    smoke:no-runs)     printf 'smoke.log — no completed run' ;;
+    smoke:failures)    printf 'smoke.log — %s of %s commands exited non-zero' "${detail%%/*}" "${detail#*/}" ;;
+    *)                 printf '%s — %s%s' "$1" "$state" "${detail:+: $detail}" ;;
+  esac
+}
+
+# judge_away <number> <record> <folder> — prints what the PR still owes, one
+# phrase per line, or nothing when it is settled. Exits 3 when the worktree
+# cannot be entered and 4 when its branch is no longer the record's.
+judge_away() {
+  local number="$1" record="$2" folder="$3" checkout branch leg status owed=""
+  checkout="$(shipshape_checkout_of "$folder")"
+  cd -- "$checkout" >/dev/null 2>&1 || return 3
+  branch="$(record_field "$record" branch)"
+  [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "$branch" ] || return 4
+  for leg in review ci smoke plan; do
+    shipshape_waived "$leg" && continue
+    status="$(shipshape_leg_"$leg" "$folder")"
+    case "$status" in
+      ok\|* | none\|*) : ;;
+      *) owed="$owed$(owed_phrase "$leg" "$status")
+" ;;
+    esac
+  done
+  if [ -z "$owed" ]; then
+    mkdir -p "$folder" 2>/dev/null
+    {
+      printf 'head=%s\n' "$(git rev-parse HEAD 2>/dev/null)"
+      printf 'branch=%s\n' "$branch"
+      printf 'epoch=%s\n' "$(date -u +%s)"
+    } > "$folder/pr-satisfied-$number" 2>/dev/null
+  else
+    rm -f "$folder/pr-satisfied-$number"
+    printf '%s' "$owed"
+  fi
+  return 0
+}
+
+away_lines=""
+away_checkouts=""
+while IFS="$us" read -r away_number away_record away_folder; do
+  [ -n "$away_number" ] || continue
+  away_checkout="$(shipshape_checkout_of "$away_folder")"
+  owed="$(judge_away "$away_number" "$away_record" "$away_folder")"
+  case "$?" in
+    3)
+      shipshape_trace done-gate "PR #$away_number is checked out in $away_checkout, which cannot be entered; not judged"
+      continue
+      ;;
+    4)
+      shipshape_trace done-gate "PR #$away_number: $away_checkout no longer has its branch checked out; not judged"
+      continue
+      ;;
+  esac
+  if [ -z "$owed" ]; then
+    shipshape_trace done-gate "PR #$away_number is judged in $away_checkout: settled, stamped there"
+    continue
+  fi
+  shipshape_trace done-gate "PR #$away_number is judged in $away_checkout: evidence still outstanding there"
+  away_lines="${away_lines}  - PR #$away_number (worktree $away_checkout) still owes: $(printf '%s' "$owed" | paste -sd ';' - | sed 's/;/; /g').
+"
+  case "$away_checkouts" in
+    *"$us$away_checkout$us"*) : ;;
+    *) away_checkouts="$away_checkouts$us$away_checkout$us" ;;
+  esac
+done <<SHIPSHAPE_AWAY
+$away
+SHIPSHAPE_AWAY
+if [ -n "$away_lines" ]; then
+  away_lines="${away_lines}  Run a PR's wrappers inside its worktree (cd <worktree> && shipshape-ci-watch <number>, and the same for shipshape-smoke), fill the reviewer template's Head: line with that worktree's full HEAD, and merge by number from anywhere.
+"
+fi
+
+if [ -z "$missing" ] && [ -z "$elsewhere_lines" ] && [ -z "$away_lines" ]; then
   # Forgetting the last nudge here is what lets the next debt speak: a fresh
   # PR whose outstanding list happens to read identically must not inherit
   # this one's silence.
@@ -373,7 +518,11 @@ if [ "$claim" = yes ] && [ -z "$missing" ] && [ -n "$elsewhere_lines" ]; then
   nudge_once "ShipShape — pull requests opened this session still owe evidence:
 
 $elsewhere_lines
-You are on $current_branch now, so this is a note rather than a refusal." \
+You are on $current_branch now, so this is a note rather than a refusal.${away_lines:+
+
+Pull requests checked out in other worktrees still owe evidence there:
+
+$away_lines}" \
     "DOWNGRADE-BRANCH-MISMATCH completion claim on $current_branch while other branches' pull requests owe evidence; nudged instead of blocking"
 fi
 
@@ -385,6 +534,10 @@ $missing"
 Other pull requests from this session are also still owing:
 
 $elsewhere_lines"
+  [ -n "$away_lines" ] && block_text="$block_text
+Pull requests checked out in other worktrees still owe evidence there (a note, not part of this refusal):
+
+$away_lines"
   shipshape_trace done-gate "blocked a completion claim; outstanding evidence follows"
   shipshape_emit_block "$block_text
 Each of these is an artifact a gate reads, not a statement to make. Produce them, then say the branch is done." done_gate_unfinished
@@ -403,6 +556,13 @@ if [ -n "$elsewhere_lines" ]; then
   nudge_text="${nudge_text}ShipShape — pull requests from other branches this session still owe evidence:
 
 $elsewhere_lines"
+fi
+if [ -n "$away_lines" ]; then
+  [ -n "$nudge_text" ] && nudge_text="$nudge_text
+"
+  nudge_text="${nudge_text}ShipShape — pull requests checked out in other worktrees still owe evidence there:
+
+$away_lines"
 fi
 if [ -n "$waived_lines" ]; then
   nudge_text="$nudge_text

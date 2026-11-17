@@ -113,6 +113,8 @@ if shipshape_waived merge_gate; then
 fi
 
 scratch="$(shipshape_scratch_dir)"
+# A PR judged in another worktree moves the gate there; the trace stays here.
+export SHIPSHAPE_TRACE_DIR="$scratch"
 record_field() { grep "^$2=" "$1" 2>/dev/null | head -1 | cut -d= -f2-; }
 
 # An unexplained waiver is not honored, and gets said in whichever refusal
@@ -150,20 +152,29 @@ fi
 # The PR a branch's obligation record names: its number, "legacy" for the
 # un-numbered record older wrappers wrote, or nothing. Read from the records,
 # not the network: a PreToolUse hook that waits on an API call is a gate
-# sessions learn to resent, then disable.
+# sessions learn to resent, then disable. The session's own folder first, then
+# its folders in other worktrees, the order shipshape_find_record reads them
+# in. The un-numbered record is honoured in the own folder alone.
 number_for_branch() { # <branch>
-  local record_file
-  for record_file in "$scratch"/pr-armed-*; do
-    [ -f "$record_file" ] || continue
-    if [ "$(record_field "$record_file" branch)" = "$1" ]; then
-      basename "$record_file" | sed 's/^pr-armed-//'
+  local record_file dir
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    for record_file in "$dir"/pr-armed-*; do
+      [ -f "$record_file" ] || continue
+      if [ "$(record_field "$record_file" branch)" = "$1" ]; then
+        basename "$record_file" | sed 's/^pr-armed-//'
+        return
+      fi
+    done
+    if [ "$dir" = "$scratch" ] && [ -f "$scratch/pr-armed" ] \
+      && [ "$(record_field "$scratch/pr-armed" branch)" = "$1" ]; then
+      printf 'legacy'
       return
     fi
-  done
-  if [ -f "$scratch/pr-armed" ] \
-    && [ "$(record_field "$scratch/pr-armed" branch)" = "$1" ]; then
-    printf 'legacy'
-  fi
+  done <<SHIPSHAPE_DIRS
+$scratch
+$(shipshape_other_scratch_dirs "$scratch")
+SHIPSHAPE_DIRS
 }
 
 # ---- the merge's words ------------------------------------------------------
@@ -671,19 +682,54 @@ number="$(shipshape_safe_id "$number" "unknown")"
 # line inside, so it is matched by the branch that resolved to "legacy" above,
 # or by its URL naming the merged PR. Its stamp is pr-satisfied-legacy, the
 # name the done gate already writes.
+#
+# A numbered record can sit in any of the session's folders: one opened from a
+# second worktree is filed there. shipshape_find_record reads the own folder
+# first, then the others; the un-numbered record is matched in the own folder
+# only, after the own numbered one and before any other folder's.
 record="$scratch/pr-armed-$number"
 stamp="$scratch/pr-satisfied-$number"
+found=""
+[ "$number" = "legacy" ] || found="$(shipshape_find_record "$number")"
 if [ "$number" = "legacy" ]; then
   record="$scratch/pr-armed"
   stamp="$scratch/pr-satisfied-legacy"
-elif [ ! -f "$record" ] && [ -f "$scratch/pr-armed" ]; then
+elif [ ! -f "$record" ] && [ -f "$scratch/pr-armed" ] && {
   legacy_number="$(record_field "$scratch/pr-armed" number)"
   legacy_url="$(record_field "$scratch/pr-armed" url)"
-  if [ "$legacy_number" = "$number" ] || \
-     printf '%s' "$legacy_url" | grep -q "/pull/$number\$"; then
-    record="$scratch/pr-armed"
-    stamp="$scratch/pr-satisfied-legacy"
+  [ "$legacy_number" = "$number" ] ||
+    printf '%s' "$legacy_url" | grep -q "/pull/$number\$"
+}; then
+  record="$scratch/pr-armed"
+  stamp="$scratch/pr-satisfied-legacy"
+elif [ -n "$found" ]; then
+  record="$found"
+fi
+
+# ---- where the PR is judged --------------------------------------------------
+#
+# In the worktree that has the record's branch checked out, from the session's
+# folder there (shipshape_judging_dir decides, for the done gate too, so the
+# two cannot disagree about where the stamp is). The gate moves into that
+# checkout and judges there exactly as it judges here: the stamp against the
+# branch's tip, the live legs against that HEAD, a late "No", and that
+# checkout's waivers. A checkout that cannot be entered leaves the gate judging
+# from this folder, as it did before, and the trace says so.
+judge="$scratch"
+judge_note=""
+if [ "$number" != "legacy" ] && [ "$record" != "$scratch/pr-armed" ] && [ -f "$record" ]; then
+  judge="$(shipshape_judging_dir "$record")"
+  if [ "$judge" != "$scratch" ]; then
+    judge_checkout="$(shipshape_checkout_of "$judge")"
+    if cd -- "$judge_checkout" >/dev/null 2>&1; then
+      shipshape_trace merge-gate "PR #$number is judged in $judge_checkout"
+      judge_note=" It is judged in $judge_checkout, so its evidence is earned there: cd $judge_checkout && shipshape-ci-watch $number, the same for shipshape-smoke, and a review whose Head: line names that worktree's HEAD."
+    else
+      shipshape_trace merge-gate "PR #$number would be judged in $judge_checkout, which cannot be entered; judging from $scratch"
+      judge="$scratch"
+    fi
   fi
+  stamp="$judge/pr-satisfied-$number"
 fi
 
 # A repository named by -R/--repo, or by the URL, must be the one the record's
@@ -731,7 +777,7 @@ record_branch="$(record_field "$record" branch)"
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
 legs_current=no
 if [ -n "$record_branch" ] && [ "$record_branch" = "$current_branch" ] \
-  && shipshape_legs_settled "$scratch"; then
+  && shipshape_legs_settled "$judge"; then
   legs_current=yes
 fi
 
@@ -740,8 +786,16 @@ if [ ! -f "$stamp" ]; then
     shipshape_trace merge-gate "allowed: PR #$number legs settled live; stamp arrives on the next stop"
     exit 0
   fi
-  shipshape_trace merge-gate "denied: PR #$number armed but not satisfied"
-  shipshape_emit_deny "PR #$number still owes its evidence set. The done gate stamps a PR satisfied when the whole-branch review, green CI, the scoped smoke and any bound plan are all present and fresh; that stamp is what this merge needs, and it does not exist yet. shipshape-doctor shows exactly which legs are outstanding.$unreasoned_note" \
+  # A record whose branch no worktree has checked out is judged on its stamp
+  # alone, and only a checkout of its branch can earn one. --head names a
+  # branch without checking it out, so this is how such a PR first reads.
+  nowhere_note=""
+  if [ -n "$record_branch" ] && [ "$record_branch" != "$current_branch" ] \
+    && [ -z "$(shipshape_branch_checkout "$record_branch" 2>/dev/null)" ]; then
+    nowhere_note=" Its branch, $record_branch, is not checked out in any worktree, so its evidence cannot be judged until it is: check it out (git worktree add <path> $record_branch), earn the evidence there, and merge by number."
+  fi
+  shipshape_trace merge-gate "denied: PR #$number armed but not satisfied${judge_note:+ (judged in $(shipshape_checkout_of "$judge"))}"
+  shipshape_emit_deny "PR #$number still owes its evidence set. The done gate stamps a PR satisfied when the whole-branch review, green CI, the scoped smoke and any bound plan are all present and fresh; that stamp is what this merge needs, and it does not exist yet.$judge_note$nowhere_note shipshape-doctor shows exactly which legs are outstanding.$unreasoned_note" \
     merge_gate_unsatisfied "shipshape-ci-watch $number"
   exit 0
 fi
@@ -760,7 +814,7 @@ if [ -n "$branch_head" ] && [ "$stamp_head" != "$branch_head" ]; then
     exit 0
   fi
   shipshape_trace merge-gate "denied: PR #$number stamp is stale ($stamp_head vs $branch_head)"
-  shipshape_emit_deny "PR #$number's evidence is stale: it was earned at $(printf '%s' "$stamp_head" | cut -c1-8), but $stamp_branch now points at $(printf '%s' "$branch_head" | cut -c1-8). A commit landed after the evidence, so the evidence no longer describes what would merge. Re-earn it — re-review if the diff changed, re-run CI, re-smoke, run any bound plan's verify commands again — and the done gate will re-stamp. Past the branch's fourth review, escalate first (shipshape:requesting-code-review, step 4).$unreasoned_note" \
+  shipshape_emit_deny "PR #$number's evidence is stale: it was earned at $(printf '%s' "$stamp_head" | cut -c1-8), but $stamp_branch now points at $(printf '%s' "$branch_head" | cut -c1-8). A commit landed after the evidence, so the evidence no longer describes what would merge. Re-earn it — re-review if the diff changed, re-run CI, re-smoke, run any bound plan's verify commands again — and the done gate will re-stamp. Past the branch's fourth review, escalate first (shipshape:requesting-code-review, step 4).$judge_note$unreasoned_note" \
     merge_gate_stale "shipshape-ci-watch $number"
   exit 0
 fi
@@ -774,11 +828,11 @@ fi
 # shipshape_legs_settled honour it, or the two gates would disagree forever.
 if [ -n "$record_branch" ] && [ "$record_branch" = "$current_branch" ] \
   && ! shipshape_waived review; then
-  live_review="$(shipshape_leg_review "$scratch")"
+  live_review="$(shipshape_leg_review "$judge")"
   case "$live_review" in
     verdict-no\|*)
       shipshape_trace merge-gate "denied: PR #$number stamped, but ${live_review#*|} says no"
-      shipshape_emit_deny "PR #$number is stamped satisfied, but a review report — ${live_review#*|} — says it is not ready to merge, and it landed after the newest review was launched, so no review has answered it. Fix what it found and get a review launched after it, and past the branch's fourth review, escalate first (shipshape:requesting-code-review, step 4). When that review says yes, this merge goes through.$unreasoned_note" \
+      shipshape_emit_deny "PR #$number is stamped satisfied, but a review report — ${live_review#*|} — says it is not ready to merge, and it landed after the newest review was launched, so no review has answered it. Fix what it found and get a review launched after it, and past the branch's fourth review, escalate first (shipshape:requesting-code-review, step 4). When that review says yes, this merge goes through.$judge_note$unreasoned_note" \
         merge_gate_late_no
       exit 0
       ;;

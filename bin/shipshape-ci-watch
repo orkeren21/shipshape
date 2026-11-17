@@ -33,12 +33,41 @@ lib="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../lib" && pwd)"
 MERGE_STATE_ATTEMPTS="${SHIPSHAPE_MERGE_STATE_ATTEMPTS:-3}"
 MERGE_STATE_DELAY="${SHIPSHAPE_MERGE_STATE_RETRY_DELAY:-5}"
 
+# Where ci-status is filed, and which PR it names. Given a PR number or URL
+# for which this session has a record, it is filed in that PR's judging folder:
+# the session's folder in the worktree that has the PR's branch checked out
+# (shipshape_judging_dir decides, as it does for the gates). Otherwise it is
+# filed where this runs. Either way it names the PR it watched, number=, read
+# from the url gh pr view returns, so the CI leg can ignore a ci-status filed
+# beside some other PR's record.
+pr=""
+pr_number=""
+target_dir() {
+  local found judge
+  if [ -n "$pr" ] && [ -n "$pr_number" ]; then
+    found="$(shipshape_find_record "$pr_number")"
+    if [ -n "$found" ]; then
+      judge="$(shipshape_judging_dir "$found")"
+      if mkdir -p "$judge" 2>/dev/null; then
+        printf '%s\n' "$judge"
+        return 0
+      fi
+      shipshape_trace ci-watch "cannot create $judge for PR #$pr_number; filing where this runs"
+    fi
+  fi
+  shipshape_scratch_dir
+}
+
 record() { # record <result> <checks_exit> <merge_state> <checks_output> [review_decision]
   shipshape_enabled CI_WATCH || return 0
   local scratch
-  scratch="$(shipshape_scratch_dir)"
+  scratch="$(target_dir)"
+  if [ "$scratch" != "$(shipshape_scratch_path)" ]; then
+    shipshape_trace ci-watch "PR #$pr_number is judged in $(shipshape_checkout_of "$scratch"); ci-status filed there"
+  fi
   {
     printf 'result=%s\n' "$1"
+    [ -z "$pr_number" ] || printf 'number=%s\n' "$pr_number"
     printf 'checks_exit=%s\n' "$2"
     printf 'merge_state=%s\n' "$3"
     printf 'review_decision=%s\n' "${5:-}"
@@ -60,6 +89,12 @@ pr=""
 case "${1:-}" in
   ''|-*) : ;;
   *) pr="$1"; shift ;;
+esac
+
+# Until gh pr view answers, the number is read from the argument itself.
+case "$pr" in
+  *[!0-9]*) pr_number="$(printf '%s' "$pr" | sed -n 's#^https://.*/pull/\([0-9][0-9]*\)\(/.*\)\{0,1\}$#\1#p')" ;;
+  *) pr_number="$pr" ;;
 esac
 
 if [ -n "$pr" ]; then
@@ -88,6 +123,8 @@ while [ "$attempt" -le "$MERGE_STATE_ATTEMPTS" ]; do
     break
   fi
 
+  view_number="$(shipshape_json_get "$view_out" url | sed -n 's#.*/pull/\([0-9][0-9]*\).*#\1#p')"
+  [ -z "$view_number" ] || pr_number="$view_number"
   merge_state="$(shipshape_json_get "$view_out" mergeStateStatus)"
   review_decision="$(shipshape_json_get "$view_out" reviewDecision)"
   [ -n "$merge_state" ] || merge_state="UNKNOWN"

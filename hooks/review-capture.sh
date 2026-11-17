@@ -545,6 +545,99 @@ if [ -z "$kind" ]; then
 fi
 [ -n "$kind" ] || exit 0
 
+# ---- where the report files -------------------------------------------------
+#
+# A review describes one commit, and is judged in the worktree that has that
+# commit's branch checked out. A session that opened its PR from a second
+# worktree dispatches its reviewer from its own, so the report would land
+# beside the wrong record. The dispatch says which commit it reviews, on the
+# reviewer template's Head: line (**Head:** <sha>), and that decides:
+#
+#   - the first hex token of 7 to 40 characters on the first Head: line,
+#     resolved to a full commit with git rev-parse, never compared as a prefix
+#   - the worktrees whose HEAD is that commit and which are on a branch; a
+#     detached one is a reviewer's own checkout (/tmp/review-<sha>), never a
+#     target
+#   - the launch checkout wins when it is one of them; otherwise the only one;
+#     otherwise the only one already holding this session's folder
+#
+# With no winner, or no Head: line, the report files where it always has, and
+# the trace says why. Routing decides where a report is filed, never whether it
+# counts: it is still judged against that checkout's HEAD, by its launch time,
+# with its verdict.
+route_dispatch() { # <prompt> -> moves into the checkout the report files in
+  local text="$1" line token commit rows us path head branch own_top sid
+  local candidates="" count=0 holder="" holders=0 chosen="" why=""
+  [ -z "${SHIPSHAPE_SCRATCH_ROOT:-}" ] || return 0
+  sid="$(shipshape_session_id)"
+  [ "$sid" != "unknown" ] || return 0
+  own_top="$(shipshape_scratch_root)"
+  line="$(printf '%s\n' "$text" | grep -E -m1 '^[[:space:]>*_#|-]*Head[*_]*:' 2>/dev/null)"
+  if [ -z "$line" ]; then
+    shipshape_trace review-capture "marked dispatch names no Head: commit; files in $own_top, where it was launched"
+    return 0
+  fi
+  token="$(printf '%s' "${line#*Head}" | tr -c 'A-Za-z0-9' '\n' |
+    grep -E -m1 '^[0-9A-Fa-f]{7,40}$' 2>/dev/null)"
+  if [ -z "$token" ]; then
+    shipshape_trace review-capture "marked dispatch's Head: line holds no commit; files in $own_top, where it was launched"
+    return 0
+  fi
+  commit="$(git rev-parse --verify --quiet "$token^{commit}" 2>/dev/null)"
+  if [ -z "$commit" ]; then
+    shipshape_trace review-capture "marked dispatch's Head: $token resolves to no commit here; files in $own_top, where it was launched"
+    return 0
+  fi
+  if ! rows="$(shipshape_worktrees)"; then
+    shipshape_trace review-capture "marked dispatch for $(printf '%s' "$commit" | cut -c1-8): git cannot list worktrees; files in $own_top, where it was launched"
+    return 0
+  fi
+  us="$(printf '\037')"
+  while IFS="$us" read -r path head branch; do
+    [ -n "$path" ] && [ -n "$branch" ] && [ "$head" = "$commit" ] || continue
+    if shipshape_same_place "$path" "$own_top"; then
+      chosen="$own_top"
+      break
+    fi
+    candidates="$candidates$path
+"
+    count=$((count + 1))
+    if [ -d "$path/.shipshape/$sid" ]; then
+      holder="$path"
+      holders=$((holders + 1))
+    fi
+  done <<SHIPSHAPE_WORKTREES
+$rows
+SHIPSHAPE_WORKTREES
+  if [ -z "$chosen" ]; then
+    if [ "$count" -eq 1 ]; then
+      chosen="${candidates%?}"
+    elif [ "$count" -gt 1 ] && [ "$holders" -eq 1 ]; then
+      chosen="$holder"
+    elif [ "$count" -eq 0 ]; then
+      why="no worktree on a branch has it checked out"
+    else
+      why="$count worktrees have it checked out on a branch, and not one alone holds this session's folder"
+    fi
+  fi
+  if [ -z "$chosen" ]; then
+    shipshape_trace review-capture "marked dispatch for $(printf '%s' "$commit" | cut -c1-8): $why; files in $own_top, where it was launched"
+    return 0
+  fi
+  # Traced here, where the session runs, before moving: what follows (the
+  # marker, the report, their trace lines) lands in the chosen checkout, as it
+  # does for a marker found away from its stop.
+  if [ "$chosen" != "$own_top" ] && ! (cd -- "$chosen" >/dev/null 2>&1); then
+    shipshape_trace review-capture "marked dispatch for $(printf '%s' "$commit" | cut -c1-8) would file in $chosen, which cannot be entered; files in $own_top, where it was launched"
+    return 0
+  fi
+  shipshape_trace review-capture "marked dispatch for $(printf '%s' "$commit" | cut -c1-8) files in $chosen"
+  [ "$chosen" = "$own_top" ] || cd -- "$chosen" >/dev/null 2>&1 || :
+  return 0
+}
+
+route_dispatch "$prompt"
+
 # A backgrounded dispatch has not produced a report yet. Remember which agent
 # carries the marker; its SubagentStop brings the report. A launch with no
 # agent id leaves nothing to match on, and the trace says so plainly rather
