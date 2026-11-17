@@ -43,6 +43,16 @@
 # hook began, present 0.1s later). A session started on 0.6.8 runs the copy in
 # 0.6.8's own plugin folder, so it gains this only if that copy is replaced.
 #
+# A stop is not always the end. A reviewer that starts a command in the
+# background and waits for it ends its turn, and that stop carries the turn's
+# text ("The test run is still going. I'll wait for it to finish."). When the
+# command finishes, the reviewer is woken and reports for real (EnvPlode,
+# 2026-11-17: the hand-back came 36 seconds after the stop). So a review stop
+# whose text has no verdict is held, not written, and the marker stays. A
+# hand-back, and a foreground return, are final, and written as they are. Once
+# an agent's report is written its marker is renamed <agent>.reported, so a
+# later report from it is written beside the first instead of being dropped.
+#
 # A background report is dated at its launch, not its stop. The done gate
 # counts a review fresh when its report is newer than HEAD; a background
 # reviewer reads while the session keeps committing, and dated at the stop
@@ -116,6 +126,8 @@ write_report() {
 
 # find_pending <agent> <what it did> — sets pending to the agent's launch
 # marker and returns 0, or returns 1 when the agent is no marked dispatch.
+# Sets reported to "yes" when the marker is the agent's .reported one: its
+# report is already written, and what arrives now is one more.
 #
 # Every subagent's stop and hand-back arrives here, most of them unmarked, so
 # the marker is looked for without creating the scratch dir: an isolated
@@ -136,26 +148,98 @@ write_report() {
 # found the same way, and its report lands beside it too, where the doctor
 # names it. The hook moves to the marker's checkout, so the report and the
 # trace land there.
+#
+# The bare marker is looked for everywhere before the .reported one, so an
+# agent still out is never mistaken for one that has reported.
 find_pending() {
-  local agent="$1" did="$2" other where
-  pending="$(shipshape_scratch_path)/pending-capture/$agent"
-  [ -f "$pending" ] && return 0
-  while IFS= read -r other; do
-    [ -n "$other" ] || continue
-    [ -f "$other/pending-capture/$agent" ] || continue
-    # Untraced: a checkout that cannot be entered hides the marker from the
-    # test above, so this fails only when it vanished in between, taking its
-    # trace with it.
-    cd -- "${other%/.shipshape/*}" >/dev/null 2>&1 || return 1
-    pending="$other/pending-capture/$agent"
-    where="$(shipshape_field cwd)"
-    shipshape_trace review-capture \
-      "marked agent $agent $did in ${where:-a directory its payload did not name}, away from its marker; capturing beside the marker"
-    return 0
-  done <<SHIPSHAPE_OTHERS
-$(shipshape_other_scratch_dirs "$(shipshape_scratch_path)")
+  local agent="$1" did="$2" own others other name where
+  reported=""
+  own="$(shipshape_scratch_path)"
+  others="$(shipshape_other_scratch_dirs "$own")"
+  for name in "$agent" "$agent.reported"; do
+    [ "$name" = "$agent" ] || reported="yes"
+    pending="$own/pending-capture/$name"
+    [ -f "$pending" ] && return 0
+    while IFS= read -r other; do
+      [ -n "$other" ] || continue
+      [ -f "$other/pending-capture/$name" ] || continue
+      # Untraced: a checkout that cannot be entered hides the marker from the
+      # test above, so this fails only when it vanished in between, taking its
+      # trace with it.
+      cd -- "${other%/.shipshape/*}" >/dev/null 2>&1 || return 1
+      pending="$other/pending-capture/$name"
+      where="$(shipshape_field cwd)"
+      shipshape_trace review-capture \
+        "marked agent $agent $did in ${where:-a directory its payload did not name}, away from its marker; capturing beside the marker"
+      return 0
+    done <<SHIPSHAPE_OTHERS
+$others
 SHIPSHAPE_OTHERS
+  done
+  reported=""
   return 1
+}
+
+# already_written <kind> <report> — whether this exact report already sits
+# beside the marker, dated to the same launch. A reviewer that hands back in
+# auto mode reaches the hook twice: at the hand-back's PostToolUse, and at its
+# stop, which reads the same hand-back from the transcript.
+already_written() {
+  local kind="$1" report="$2" dir launched candidate
+  dir="${pending%/pending-capture/*}"
+  launched="$(shipshape_mtime "$pending")" || return 1
+  for candidate in "$dir/$kind"-*.md; do
+    [ -f "$candidate" ] || continue
+    [ "$(shipshape_mtime "$candidate")" = "$launched" ] || continue
+    printf '%s' "$report" | cmp -s - "$candidate" && return 0
+  done
+  return 1
+}
+
+# deliver <kind> <report> [source] — write a marked agent's report, dated to its
+# launch, and mark the agent reported. The marker is renamed, not deleted: a
+# rename keeps its modification time, which is the launch, and a later report
+# from the same agent still finds it. A reviewer that pauses on its own
+# background work stops with interim text, then hands back its real report; a
+# deleted marker dropped that report without a trace (EnvPlode, 2026-11-17).
+deliver() {
+  local kind="$1" report="$2" came_from="${3:-}"
+  if [ -n "$reported" ]; then
+    if already_written "$kind" "$report"; then
+      shipshape_trace review-capture "marked agent $agent's report is already written; nothing more to write"
+      return 0
+    fi
+    shipshape_trace review-capture "marked agent $agent reported again; writing it beside its first"
+    write_report "$kind" "$report" "$pending" "$came_from"
+    return
+  fi
+  write_report "$kind" "$report" "$pending" "$came_from" || return 1
+  if ! mv -f -- "$pending" "$pending.reported" 2>/dev/null; then
+    rm -f -- "$pending"
+    shipshape_trace review-capture \
+      "could not mark agent $agent as reported; a later report from it will not be captured"
+  fi
+}
+
+# hold <report> — keep a stop's text that is not yet a report. Saved beside the
+# marker as <agent>.held, overwritten by each later stop, and read only by the
+# doctor. It is not evidence.
+hold() {
+  local report="$1" held bytes
+  held="${pending%/*}/$agent.held"
+  bytes="$(printf '%s' "$report" | wc -c | tr -d ' ')"
+  if ! { printf '%s' "$report" > "$held"; } 2>/dev/null; then
+    shipshape_trace review-capture \
+      "marked agent $agent stopped with $bytes bytes and no verdict; not written, and its text could not be kept; still waiting for its report"
+    return 0
+  fi
+  if [ -n "$reported" ]; then
+    shipshape_trace review-capture \
+      "marked agent $agent stopped again with $bytes bytes and no verdict; held, beside the report it already gave"
+    return 0
+  fi
+  shipshape_trace review-capture \
+    "marked agent $agent stopped with $bytes bytes and no verdict; held, still waiting for its report"
 }
 
 # pending_kind — what the marker at $pending was launched as. A marker naming
@@ -321,6 +405,10 @@ if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
   came_from=""
   report="$(shipshape_field last_assistant_message)"
   if [ -z "$report" ]; then
+    # An agent that has reported and now stops with no text has nothing to
+    # add here: any hand-back it made was written at that call's own
+    # PostToolUse. This is the stop that follows every auto-mode hand-back.
+    [ -z "$reported" ] || exit 0
     report="$(handback_from_transcript "$agent")"
     case "$?" in
       0) came_from="from the hand-back in its transcript" ;;
@@ -333,8 +421,20 @@ if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
       *) exit 0 ;;
     esac
   fi
+  # A stop's own text may not be the report. A reviewer that waits on a
+  # background command ends its turn to wait, and that turn's stop carries
+  # text like "the test run is still going"; the real report comes at a later
+  # stop or hand-back. A review stop with no verdict is held for it. A
+  # conformance report has no verdict line to tell the two apart, so it is
+  # written, and a later one lands beside it. A report read from a hand-back is
+  # final, verdict or not.
+  if [ "$kind" = "review" ] && [ -z "$came_from" ] &&
+     [ "$(shipshape_review_verdict <(printf '%s' "$report"))" = "no-verdict" ]; then
+    hold "$report"
+    exit 0
+  fi
   # The pending file was written at launch, so its time is the launch time.
-  write_report "$kind" "$report" "$pending" "$came_from" && rm -f "$pending"
+  deliver "$kind" "$report" "$came_from"
   exit 0
 fi
 
@@ -362,7 +462,7 @@ if [ "$(shipshape_field tool_name)" = "SubagentHandback" ]; then
     shipshape_trace review-capture "marked agent $agent handed back an empty report; still waiting for its report"
     exit 0
   fi
-  write_report "$kind" "$report" "$pending" "from its hand-back" && rm -f "$pending"
+  deliver "$kind" "$report" "from its hand-back"
   exit 0
 fi
 

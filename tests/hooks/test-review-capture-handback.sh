@@ -231,10 +231,10 @@ reset
 launch
 cp "$fixtures/transcript.jsonl" "$transcript"
 run_hook review-capture.sh \
-  "$(fixture stop.json '.last_assistant_message = "TEXT REPORT"')" "$repo" >/dev/null
+  "$(fixture stop.json '.last_assistant_message = "TEXT REPORT\n\n**Ready to merge?** Yes"')" "$repo" >/dev/null
 captured="$(reports | head -1)"
-[ -n "$captured" ] && assert_eq "TEXT REPORT" "$(cat "$captured")" \
-  "a stop that carries text is captured from that text, as before"
+[ -n "$captured" ] && assert_eq "$(printf 'TEXT REPORT\n\n**Ready to merge?** Yes')" "$(cat "$captured")" \
+  "a stop that carries a report is captured from that text, as before, not from the transcript"
 [ -n "$captured" ] || fail "a stop that carries text is captured"
 
 reset

@@ -35,6 +35,33 @@ assert_eq "0" "$status" "an unarmed session is healthy, not an error"
 assert_contains "$out" "nothing armed" "and the doctor says so plainly"
 [ -d "$scratch" ] && fail "asking for a diagnosis created the scratch directory"
 
+# --- a reviewer still out --------------------------------------------------------
+#
+# review-capture leaves pending-capture/<agent> while a background reviewer is
+# out, and renames it <agent>.reported once the report is written. A stop with
+# no verdict is held in <agent>.held: a reviewer that paused and never came
+# back shows here without opening files.
+
+mkdir -p "$scratch/pending-capture"
+printf 'review\n' > "$scratch/pending-capture/aa1ab1781e125868c"
+TZ=UTC touch -t 202611170727.27 "$scratch/pending-capture/aa1ab1781e125868c"
+printf "The test run is still going. I'll wait for it to finish.\nmore\n" > "$scratch/pending-capture/aa1ab1781e125868c.held"
+printf 'review\n' > "$scratch/pending-capture/a5b90152cfdd0d972.reported"
+printf 'paused once, then reported\n' > "$scratch/pending-capture/a5b90152cfdd0d972.held"
+out="$(cd "$repo" && "$doctor" 2>&1)"
+assert_contains "$out" "review agent aa1ab1781e125868c, launched 2026-11-17 07:27:27Z, has not reported" \
+  "a reviewer still out is named, with its launch"
+assert_contains "$out" "last stop, held (no verdict): The test run is still going. I'll wait for it to finish." \
+  "with the first line it held"
+assert_not_contains "$out" "more" "and only the first"
+assert_not_contains "$out" "a5b90152cfdd0d972" "a reported reviewer is not out"
+assert_not_contains "$out" "paused once, then reported" "and its held text is not shown"
+rm -f "$scratch/pending-capture/aa1ab1781e125868c.held"
+out="$(cd "$repo" && "$doctor" 2>&1)"
+assert_contains "$out" "has not reported" "a reviewer out with nothing held is still named"
+assert_not_contains "$out" "last stop, held" "with no held line"
+rm -rf "$scratch"
+
 # --- a mixed session: one PR satisfied, one owing ----------------------------
 
 mkdir -p "$scratch"

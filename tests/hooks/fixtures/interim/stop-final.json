@@ -1,0 +1,27 @@
+{
+  "session_id": "bf2441f5-af8c-4644-a66e-500cb3865459",
+  "transcript_path": "/home/user/.claude/projects/-work-repo/bf2441f5-af8c-4644-a66e-500cb3865459.jsonl",
+  "cwd": "/work/repo",
+  "scratchpad_dir": "/tmp/claude/-work-repo/bf2441f5-af8c-4644-a66e-500cb3865459/scratchpad",
+  "prompt_id": "2d4a0c1d-c006-4f74-aa7d-14bff940e919",
+  "permission_mode": "bypassPermissions",
+  "agent_id": "ae38e69ffb8be997c",
+  "agent_type": "general-purpose",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "SubagentStop",
+  "stop_hook_active": false,
+  "agent_transcript_path": "/home/user/.claude/projects/-work-repo/bf2441f5-af8c-4644-a66e-500cb3865459/subagents/agent-ae38e69ffb8be997c.jsonl",
+  "last_assistant_message": "## Review\n\n**Ready to merge?** Yes",
+  "background_tasks": [
+    {
+      "id": "ae38e69ffb8be997c",
+      "type": "subagent",
+      "status": "running",
+      "description": "whole-branch-review: probe",
+      "agent_type": "general-purpose"
+    }
+  ],
+  "session_crons": []
+}

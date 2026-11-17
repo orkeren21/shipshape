@@ -120,7 +120,7 @@ assert_contains "$handoff_flat" "Branch, worktree path, whether it is clean, SHA
 read_trust="$(awk '/^## Trust it, and check it anyway/ { on = 1; next } on && /^## / { exit } on' \
   "$skills/read-handoff/SKILL.md" | tr -s ' \n' ' ')"
 for sentence in "The branch's review count carries over from the handoff, against the review cap in \`shipshape:requesting-code-review\`." \
-                "A handoff with no count leaves you a floor instead: the branch has had at least as many reviews as the predecessor's scratch folder holds reports (\`review-*.md\`) and unreported launches (files in \`pending-capture/\` that read \`review\`)." \
+                "A handoff with no count leaves you a floor instead: the branch has had at least as many reviews as the predecessor's scratch folder holds reports (\`review-*.md\`) and unreported launches (files in \`pending-capture/\` that read \`review\` and whose names do not end in \`.reported\`)." \
                 "That folder is the one the \`seat file\` line in the handoff's \`shipshape-seat\` output points into." \
                 "Where neither can be found, take the branch as at the cap."; do
   assert_contains "$read_trust" "$sentence" \
@@ -134,6 +134,8 @@ assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh")" 'pending
   "review-capture keeps its launch markers in pending-capture/, in the session's scratch folder"
 assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh")" 'printf '"'"'%s\n'"'"' "$kind" > "$pending_dir/$agent"' \
   "and each marker holds the kind it was launched as, which read-handoff reads as review"
+assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh")" 'mv -f -- "$pending" "$pending.reported"' \
+  "and a marker whose report is written is renamed .reported, which read-handoff leaves out of the unreported launches"
 assert_contains "$review_flat" "Fix them; the reviews that follow are capped (step 4 below)." \
   "the blocking rule points at the cap, which limits reviews, not fixes"
 

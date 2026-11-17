@@ -1,0 +1,32 @@
+{
+  "session_id": "bf2441f5-af8c-4644-a66e-500cb3865459",
+  "transcript_path": "/home/user/.claude/projects/-work-repo/bf2441f5-af8c-4644-a66e-500cb3865459.jsonl",
+  "cwd": "/work/repo",
+  "scratchpad_dir": "/tmp/claude/-work-repo/bf2441f5-af8c-4644-a66e-500cb3865459/scratchpad",
+  "prompt_id": "2d4a0c1d-c006-4f74-aa7d-14bff940e919",
+  "permission_mode": "bypassPermissions",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Agent",
+  "tool_input": {
+    "description": "whole-branch-review: probe",
+    "prompt": "Probe task. Step A: use the Bash tool with run_in_background: true to run the command `sleep 20 && echo done`. Step B: then END YOUR TURN immediately with exactly this text and nothing else: 'The test run is still going. I'll wait for it to finish.' Do not poll, do not sleep, do not call any other tool. Step C: when you are later notified that the background command finished, reply with exactly: '## Review\n\n**Ready to merge?** Yes'",
+    "subagent_type": "general-purpose",
+    "run_in_background": true
+  },
+  "tool_response": {
+    "isAsync": true,
+    "status": "async_launched",
+    "agentId": "ae38e69ffb8be997c",
+    "description": "whole-branch-review: probe",
+    "resolvedModel": "claude-sonnet-5-5",
+    "prompt": "Probe task. Step A: use the Bash tool with run_in_background: true to run the command `sleep 20 && echo done`. Step B: then END YOUR TURN immediately with exactly this text and nothing else: 'The test run is still going. I'll wait for it to finish.' Do not poll, do not sleep, do not call any other tool. Step C: when you are later notified that the background command finished, reply with exactly: '## Review\n\n**Ready to merge?** Yes'",
+    "outputFile": "/tmp/claude/-work-repo/bf2441f5-af8c-4644-a66e-500cb3865459/tasks/ae38e69ffb8be997c.output",
+    "canReadOutputFile": true,
+    "canContinueAgent": true
+  },
+  "tool_use_id": "toolu_01DL89GLKS6VvdjKqjmLjNds",
+  "duration_ms": 5
+}
