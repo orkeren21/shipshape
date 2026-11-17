@@ -41,11 +41,34 @@ fi
 # (EnvPlode PR 92, 2026-11-17). An owner: prefix names a fork, and the branch
 # is what follows it. Read before gh runs, from the arguments only.
 # The value of any other flag that takes one is skipped, so a title or body
-# that reads "--head" is not taken for the flag. gh 2.96.0's `gh pr create
-# --help` lists them.
+# that reads "--head" is not taken for the flag. Short flags cluster as pflag
+# reads them: -dH x and -dHx name x, as -H=x does. The flags are the ones
+# `gh help pr create` lists in gh 2.96.0: boolean -d, -e, -f and -w, and -a, -B,
+# -b, -F, -H, -l, -m, -p, -R, -r, -T and -t with a value; --recover has no
+# short form.
 head_branch=""
 want_head=""
 skip_value=""
+read_short() { # <cluster without its dash>
+  local rest="$1" c
+  while [ -n "$rest" ]; do
+    c="${rest%"${rest#?}"}"
+    rest="${rest#?}"
+    case "$c" in
+      d|e|f|w) : ;;
+      H)
+        rest="${rest#=}"
+        if [ -n "$rest" ]; then head_branch="$rest"; else want_head=yes; fi
+        return
+        ;;
+      a|B|b|F|l|m|p|R|r|T|t)
+        [ -n "$rest" ] || skip_value=yes
+        return
+        ;;
+      *) return ;;
+    esac
+  done
+}
 for arg in "$@"; do
   if [ -n "$want_head" ]; then
     head_branch="$arg"
@@ -58,11 +81,12 @@ for arg in "$@"; do
   fi
   case "$arg" in
     --) break ;;
-    --head|-H) want_head=yes ;;
-    -a|--assignee|-B|--base|-b|--body|-F|--body-file|-l|--label|-m|--milestone|-p|--project|-R|--repo|-r|--reviewer|-T|--template|-t|--title)
-      skip_value=yes ;;
+    --head) want_head=yes ;;
     --head=*) head_branch="${arg#--head=}" ;;
-    -H?*) head_branch="${arg#-H}" ;;
+    --assignee|--base|--body|--body-file|--label|--milestone|--project|--recover|--repo|--reviewer|--template|--title)
+      skip_value=yes ;;
+    --*) : ;;
+    -?*) read_short "${arg#-}" ;;
   esac
 done
 head_branch="${head_branch#*:}"

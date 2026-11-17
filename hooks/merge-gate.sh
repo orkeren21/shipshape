@@ -723,7 +723,12 @@ if [ "$number" != "legacy" ] && [ "$record" != "$scratch/pr-armed" ] && [ -f "$r
     judge_checkout="$(shipshape_checkout_of "$judge")"
     if cd -- "$judge_checkout" >/dev/null 2>&1; then
       shipshape_trace merge-gate "PR #$number is judged in $judge_checkout"
-      judge_note=" It is judged in $judge_checkout, so its evidence is earned there: cd $judge_checkout && shipshape-ci-watch $number, the same for shipshape-smoke, and a review whose Head: line names that worktree's HEAD."
+      # Earning advice only where the branch is checked out: a folder that
+      # merely holds a leftover record is judged on its stamp, and evidence
+      # gathered there would describe another branch.
+      if [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "$(record_field "$record" branch)" ]; then
+        judge_note=" It is judged in $judge_checkout, where its branch is checked out, so its evidence is earned there: cd $judge_checkout && shipshape-ci-watch $number, the same for shipshape-smoke, and a review whose Head: line names that worktree's HEAD."
+      fi
     else
       shipshape_trace merge-gate "PR #$number would be judged in $judge_checkout, which cannot be entered; judging from $scratch"
       judge="$scratch"
@@ -791,11 +796,25 @@ if [ ! -f "$stamp" ]; then
   # branch without checking it out, so this is how such a PR first reads.
   nowhere_note=""
   if [ -n "$record_branch" ] && [ "$record_branch" != "$current_branch" ] \
-    && [ -z "$(shipshape_branch_checkout "$record_branch" 2>/dev/null)" ]; then
+    && branch_where="$(shipshape_branch_checkout "$record_branch")" && [ -z "$branch_where" ]; then
     nowhere_note=" Its branch, $record_branch, is not checked out in any worktree, so its evidence cannot be judged until it is: check it out (git worktree add <path> $record_branch), earn the evidence there, and merge by number."
   fi
+  # Judged in another worktree, the refusal says what is owed there, since
+  # shipshape-doctor run here shows this checkout's legs first.
+  owed_note=""
+  if [ -n "$judge_note" ]; then
+    for leg in review ci smoke plan; do
+      shipshape_waived "$leg" && continue
+      leg_status="$(shipshape_leg_"$leg" "$judge")"
+      case "$leg_status" in
+        ok\|* | none\|*) : ;;
+        *) owed_note="$owed_note${owed_note:+, }$leg ${leg_status%%|*}" ;;
+      esac
+    done
+    [ -z "$owed_note" ] || owed_note=" There it still owes: $owed_note."
+  fi
   shipshape_trace merge-gate "denied: PR #$number armed but not satisfied${judge_note:+ (judged in $(shipshape_checkout_of "$judge"))}"
-  shipshape_emit_deny "PR #$number still owes its evidence set. The done gate stamps a PR satisfied when the whole-branch review, green CI, the scoped smoke and any bound plan are all present and fresh; that stamp is what this merge needs, and it does not exist yet.$judge_note$nowhere_note shipshape-doctor shows exactly which legs are outstanding.$unreasoned_note" \
+  shipshape_emit_deny "PR #$number still owes its evidence set. The done gate stamps a PR satisfied when the whole-branch review, green CI, the scoped smoke and any bound plan are all present and fresh; that stamp is what this merge needs, and it does not exist yet.$judge_note$owed_note$nowhere_note shipshape-doctor shows exactly which legs are outstanding.$unreasoned_note" \
     merge_gate_unsatisfied "shipshape-ci-watch $number"
   exit 0
 fi

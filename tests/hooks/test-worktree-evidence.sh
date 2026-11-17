@@ -126,8 +126,10 @@ denied "$out" && fail "gh pr merge 72 from W1 is allowed: $(reason "$out")"
 assert_contains "$(cat "$s1/trace.log")" "PR #72 is judged in $w2" "the merge gate traces where it judged"
 assert_contains "$(cat "$s1/trace.log")" "allowed: PR #72 satisfied" "and allows on the stamp there"
 
+: > "$s1/trace.log"
 out="$(merge "$w1" "gh pr merge contract")"
 denied "$out" && fail "gh pr merge naming W2's branch from W1 is judged in W2 and allowed: $(reason "$out")"
+assert_contains "$(cat "$s1/trace.log")" "PR #72 is judged in $w2" "a merge naming the branch is judged in W2 too"
 
 out="$(merge "$w1" "cd $w2 && gh pr merge 72")"
 denied "$out" || fail "cd W2 && gh pr merge 72 is still refused as not first"
@@ -170,6 +172,7 @@ stop "$w1" >/dev/null
 out="$(merge "$w1" "gh pr merge 72")"
 denied "$out" || fail "the merge gate judges W2, where the review is missing, and refuses"
 assert_contains "$(reason "$out")" "$w2" "naming W2"
+assert_contains "$(reason "$out")" "There it still owes: review missing" "and saying the review is what it owes there"
 
 # --- Head: naming a commit checked out in both W1 and W2 ----------------------
 
@@ -218,7 +221,7 @@ wrapper "$w1" https://github.com/acme/widget/pull/5 shipshape-pr-open --title t 
 wrapper "$w1" https://github.com/acme/widget/pull/99 shipshape-ci-watch 99 >/dev/null 2>&1
 assert_contains "$(cat "$s1/ci-status" 2>/dev/null)" "number=99" "with no record anywhere, ci-status files where it runs"
 out="$(stop "$w1")"
-assert_contains "$(hook_field "$out" systemMessage)" "for PR #99, judged elsewhere" \
+assert_contains "$(hook_field "$out" systemMessage)" "for PR #99, not judged on this checkout" \
   "and W1's own PR 5 does not count CI watched for PR 99"
 
 # --- PR 92's shape: --head from W1 -------------------------------------------
@@ -249,6 +252,47 @@ wrapper "$w1" https://github.com/acme/widget/pull/95 shipshape-ci-watch 95 >/dev
 out="$(merge "$w1" "gh pr merge 95")"
 denied "$out" || fail "the merge gate refuses a PR whose branch is checked out nowhere"
 assert_contains "$(reason "$out")" "not checked out in any worktree" "saying why"
+
+# PR 95's CI is filed here, and judged here on its stamp: it must not count as
+# CI for the branch this checkout has out (review 1, Major 1).
+wrapper "$w1" https://github.com/acme/widget/pull/5 shipshape-pr-open --title t --body b >/dev/null 2>&1
+wrapper "$w1" https://github.com/acme/widget/pull/95 shipshape-ci-watch 95 >/dev/null 2>&1
+mkdir -p "$s1" && printf '%s' "$YES" > "$s1/review-own.md"
+out="$(merge "$w1" "gh pr merge 5")"
+denied "$out" || fail "CI watched for a PR whose branch is checked out nowhere does not settle this checkout's PR 5"
+out="$(stop "$w1")"
+assert_contains "$(hook_field "$out" systemMessage)" "for PR #95, not judged on this checkout" "the nudge says whose ci-status it is"
+
+# Clustered short flags name the head too, as pflag reads them.
+wrapper "$w1" https://github.com/acme/widget/pull/96 shipshape-pr-open -dH contract --title t >/dev/null 2>&1
+assert_contains "$(cat "$s2/pr-armed-96" 2>/dev/null)" "branch=contract" "-dH contract names the head"
+wrapper "$w1" https://github.com/acme/widget/pull/97 shipshape-pr-open -H=contract --title t >/dev/null 2>&1
+assert_contains "$(cat "$s2/pr-armed-97" 2>/dev/null)" "branch=contract" "-H=contract names contract, not =contract"
+
+# --- a PR opened with --web --------------------------------------------------
+#
+# gh prints no pull URL, so the record is pr-armed-unknown-<epoch>, while
+# ci-watch reads the real number from gh pr view. That CI still counts for the
+# branch the record names.
+
+fixture web
+GH_STUB_CREATE_OUTPUT="Opening github.com/acme/widget/pull/new in your browser." \
+  wrapper "$w1" "" shipshape-pr-open --web >/dev/null 2>&1
+ls "$s1"/pr-armed-unknown-* >/dev/null 2>&1 || fail "a --web PR leaves an unnumbered record"
+wrapper "$w1" https://github.com/acme/widget/pull/41 shipshape-ci-watch >/dev/null 2>&1
+out="$(stop "$w1")"
+assert_not_contains "$(hook_field "$out" systemMessage)" "ci-status" "its CI counts for the branch it was opened from"
+
+# --- a record in another folder for the branch checked out here ---------------
+#
+# It belongs with this branch's records: judged on this checkout's legs, and a
+# completion claim with them outstanding is held.
+
+fixture adopted
+mkdir -p "$s2"
+printf 'url=https://github.com/acme/widget/pull/80\nnumber=80\nbranch=static-scan\n' > "$s2/pr-armed-80"
+out="$(stop "$w1" "All done — the branch is complete and ready to merge.")"
+assert_eq "block" "$(hook_field "$out" decision)" "a record for this branch, filed in another folder, holds the claim here"
 
 # --- the doctor, with two folders --------------------------------------------
 
