@@ -25,6 +25,7 @@
 #   GH_STUB_ROLLUP         statusCheckRollup JSON array from `gh pr view`
 #                          (default: one SUCCESS context)
 #   GH_STUB_PR_STATE       state from `gh pr view`            (default OPEN)
+#   GH_STUB_HEAD_REF       headRefName from `gh pr view`      (default empty)
 
 make_gh_stub() {
   local dir="$1"
@@ -76,10 +77,10 @@ lint	pass	14s}"
     if [ -z "$rollup" ]; then
       rollup='[{"name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]'
     fi
-    printf '{"mergeStateStatus":"%s","reviewDecision":"%s","statusCheckRollup":%s,"url":"%s","state":"%s"}\n' \
+    printf '{"mergeStateStatus":"%s","reviewDecision":"%s","statusCheckRollup":%s,"url":"%s","state":"%s","headRefName":"%s"}\n' \
       "$state" "${GH_STUB_REVIEW_DECISION:-}" "$rollup" \
       "${GH_STUB_PR_URL:-https://github.com/acme/widget/pull/7}" \
-      "${GH_STUB_PR_STATE:-OPEN}"
+      "${GH_STUB_PR_STATE:-OPEN}" "${GH_STUB_HEAD_REF:-}"
     exit 0
     ;;
 esac

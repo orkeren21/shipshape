@@ -268,6 +268,10 @@ wrapper "$w1" https://github.com/acme/widget/pull/96 shipshape-pr-open -dH contr
 assert_contains "$(cat "$s2/pr-armed-96" 2>/dev/null)" "branch=contract" "-dH contract names the head"
 wrapper "$w1" https://github.com/acme/widget/pull/97 shipshape-pr-open -H=contract --title t >/dev/null 2>&1
 assert_contains "$(cat "$s2/pr-armed-97" 2>/dev/null)" "branch=contract" "-H=contract names contract, not =contract"
+wrapper "$w1" https://github.com/acme/widget/pull/98 shipshape-pr-open -dHcontract --title t >/dev/null 2>&1
+assert_contains "$(cat "$s2/pr-armed-98" 2>/dev/null)" "branch=contract" "-dHcontract names contract"
+wrapper "$w1" https://github.com/acme/widget/pull/91 shipshape-pr-open --recover -H --title t >/dev/null 2>&1
+assert_contains "$(cat "$s1/pr-armed-91" 2>/dev/null)" "branch=static-scan" "--recover's value is not read as a flag"
 
 # --- a PR opened with --web --------------------------------------------------
 #
@@ -279,9 +283,21 @@ fixture web
 GH_STUB_CREATE_OUTPUT="Opening github.com/acme/widget/pull/new in your browser." \
   wrapper "$w1" "" shipshape-pr-open --web >/dev/null 2>&1
 ls "$s1"/pr-armed-unknown-* >/dev/null 2>&1 || fail "a --web PR leaves an unnumbered record"
-wrapper "$w1" https://github.com/acme/widget/pull/41 shipshape-ci-watch >/dev/null 2>&1
+GH_STUB_HEAD_REF=static-scan wrapper "$w1" https://github.com/acme/widget/pull/41 shipshape-ci-watch >/dev/null 2>&1
+assert_contains "$(cat "$s1/ci-status")" "head_branch=static-scan" "ci-status names the branch it watched"
 out="$(stop "$w1")"
 assert_not_contains "$(hook_field "$out" systemMessage)" "ci-status" "its CI counts for the branch it was opened from"
+
+# CI watched for some other PR, one this session has no record for, does not
+# settle the --web PR (review 2, Major 1).
+printf '%s' "$YES" > "$s1/review-own.md"
+wrapper "$w1" "" shipshape-smoke true >/dev/null 2>&1
+GH_STUB_HEAD_REF=someone-else wrapper "$w1" https://github.com/acme/widget/pull/99 shipshape-ci-watch 99 >/dev/null 2>&1
+out="$(merge "$w1" "gh pr merge")"
+denied "$out" || fail "CI for an unrecorded PR on another branch does not settle a --web PR"
+wrapper "$w1" https://github.com/acme/widget/pull/99 shipshape-ci-watch 99 >/dev/null 2>&1
+out="$(merge "$w1" "gh pr merge")"
+denied "$out" || fail "nor does CI that names no branch"
 
 # --- a record in another folder for the branch checked out here ---------------
 #
