@@ -49,6 +49,16 @@ fixture() {
      | ${3:-.}" "$here/fixtures/$1"
 }
 
+# transcript_with <agent> <report> — the reviewer's transcript, ending in a
+# delivered hand-back of that report (the real fixture, its message replaced).
+transcript_with() {
+  {
+    sed -n 1p "$here/fixtures/handback/transcript.jsonl"
+    sed -n 2p "$here/fixtures/handback/transcript.jsonl" | jq -c --arg m "$2" '.message.content[0].input.message = $m'
+    sed -n 3p "$here/fixtures/handback/transcript.jsonl"
+  } > "$work/subagents/agent-$1.jsonl"
+}
+
 reports() { find "$scratch" -maxdepth 1 -name "${1:-review}-*.md" | sort; }
 count() { reports "${1:-review}" | wc -l | tr -d ' '; }
 trace() { cat "$scratch/trace.log" 2>/dev/null; }
@@ -129,11 +139,37 @@ assert_eq "$launched_now" "$(mtime "$scratch/pending-capture/$agent.reported")" 
   "and still carries the launch time"
 assert_eq "ok" "$(leg | cut -d'|' -f1)" "the review leg reads the Yes"
 
-# The stop that follows every auto-mode hand-back has no text. It adds nothing.
+# The stop that follows every auto-mode hand-back has no text, and its
+# transcript ends in the same hand-back. It adds nothing.
+transcript_with "$agent" "$YES"
 rm -f "$scratch/trace.log"
-silent_stop "$agent"
+SHIPSHAPE_HANDBACK_WAIT=5 silent_stop "$agent"
 assert_eq "1" "$(count)" "the silent stop after the hand-back writes nothing more"
-assert_eq "" "$(trace)" "and says nothing: the reviewer is not waiting"
+assert_contains "$(trace)" "marked agent $agent's report is already written; nothing more to write" \
+  "and says the report is already written"
+assert_not_contains "$(trace)" "still waiting" "not that the reviewer is still waiting"
+rm -f "$work/subagents/agent-$agent.jsonl"
+
+# A reported reviewer's stop with nothing in its transcript owes nothing.
+rm -f "$scratch/trace.log"
+SHIPSHAPE_HANDBACK_WAIT=2 silent_stop "$agent"
+assert_eq "1" "$(count)" "a reported reviewer's empty stop writes nothing"
+assert_contains "$(trace)" "its report is already written" "and the trace says nothing is owed"
+assert_not_contains "$(trace)" "still waiting" "rather than that it is still waiting"
+
+# The hand-back's PostToolUse and the stop after it can run together. One
+# report is written, and neither says the marker could not be kept.
+reset
+FRESH=1 launch "$agent"
+transcript_with "$agent" "$YES"
+( cd "$repo" && fixture handback/handback.json "$agent" | jq -c --arg m "$YES" '.tool_input.message = $m' \
+    | bash "$HOOKS_DIR/review-capture.sh" ) &
+( cd "$repo" && fixture handback/stop.json "$agent" | SHIPSHAPE_HANDBACK_WAIT=5 bash "$HOOKS_DIR/review-capture.sh" ) &
+wait
+assert_eq "1" "$(count)" "a hand-back and its stop together write one report"
+assert_not_contains "$(trace)" "could not mark agent" "and no trace says the marker was lost"
+assert_file "$scratch/pending-capture/$agent.reported" "the reviewer is marked reported"
+rm -f "$work/subagents/agent-$agent.jsonl"
 
 # The second field reviewer paused twice; each stop overwrites the held text.
 reset
@@ -187,9 +223,17 @@ assert_contains "$(trace)" "marked agent $agent reported again; writing it besid
 assert_eq "verdict-no" "$(leg | cut -d'|' -f1)" \
   "an earlier No from the same launch still stands, as for any No landing after a launch"
 
+# Under 0.6.8's registration only stops reach the hook. A hand-back after a
+# written stop is then read from the transcript at the stop that follows it.
+transcript_with "$agent" "$(printf '## Review, again\n\n**Ready to merge?** With fixes')"
+SHIPSHAPE_HANDBACK_WAIT=5 silent_stop "$agent"
+assert_eq "3" "$(count)" "a hand-back read at a later stop is written beside the earlier reports"
+assert_contains "$(cat "$(reports | tail -1)")" "Review, again" "and it is that hand-back"
+rm -f "$work/subagents/agent-$agent.jsonl"
+
 # A pause from an agent that has reported is held too, and writes nothing.
 stop_with "$agent" "$PAUSE"
-assert_eq "2" "$(count)" "a reported reviewer's later pause is held, not written"
+assert_eq "3" "$(count)" "a reported reviewer's later pause is held, not written"
 assert_contains "$(trace)" "marked agent $agent stopped again with 56 bytes and no verdict; held, beside the report it already gave" \
   "and the trace does not call it still waiting"
 assert_file "$scratch/pending-capture/$agent.reported" "and it stays reported"
@@ -197,7 +241,7 @@ assert_no_file "$scratch/pending-capture/$agent" "not out again"
 
 # The same report arriving twice is written once.
 stop_with "$agent" "$NO"
-assert_eq "2" "$(count)" "a report already written for this launch is not written again"
+assert_eq "3" "$(count)" "a report already written for this launch is not written again"
 assert_contains "$(trace)" "marked agent $agent's report is already written" "and the trace says why"
 
 # --- final reports are written as they are ------------------------------------------

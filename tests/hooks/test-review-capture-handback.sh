@@ -88,11 +88,14 @@ assert_contains "$(cat "$scratch/trace.log")" "wrote $(basename "${captured:-rev
   "the trace says the hook wrote it"
 assert_contains "$(cat "$scratch/trace.log")" "hand-back" "and that it came from the hand-back"
 
-# The stop that follows has nothing left to do.
-run_hook review-capture.sh "$(fixture stop.json)" "$repo" >/dev/null
+# The stop that follows has nothing left to do: its transcript ends in the
+# same hand-back, which is already written.
+cp "$fixtures/transcript.jsonl" "$transcript"
+SHIPSHAPE_HANDBACK_WAIT=5 run_hook review-capture.sh "$(fixture stop.json)" "$repo" >/dev/null
 assert_eq "1" "$(reports | wc -l | tr -d ' ')" "the stop after a captured hand-back writes nothing more"
 assert_not_contains "$(cat "$scratch/trace.log")" "stopped with no text" \
   "and does not report the reviewer as silent"
+assert_contains "$(cat "$scratch/trace.log")" "already written" "it says the report is already written"
 
 # --- a hand-back that was not delivered --------------------------------------
 

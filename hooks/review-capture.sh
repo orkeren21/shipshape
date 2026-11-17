@@ -46,8 +46,11 @@
 # A stop is not always the end. A reviewer that starts a command in the
 # background and waits for it ends its turn, and that stop carries the turn's
 # text ("The test run is still going. I'll wait for it to finish."). When the
-# command finishes, the reviewer is woken and reports for real (EnvPlode,
-# 2026-11-17: the hand-back came 36 seconds after the stop). So a review stop
+# command finishes, the reviewer is woken and reports for real. Seen in the
+# field in auto mode (EnvPlode, 2026-11-17: a SubagentHandback 36 seconds after
+# the stop), and probed headless against 2.1.325 in bypassPermissions mode,
+# where the report came as a second SubagentStop under the same agent_id with
+# its final text (tests/hooks/fixtures/interim/). So a review stop
 # whose text has no verdict is held, not written, and the marker stays. A
 # hand-back, and a foreground return, are final, and written as they are. Once
 # an agent's report is written its marker is renamed <agent>.reported, so a
@@ -168,6 +171,10 @@ find_pending() {
       # trace with it.
       cd -- "${other%/.shipshape/*}" >/dev/null 2>&1 || return 1
       pending="$other/pending-capture/$name"
+      # A reported agent's event usually has nothing to capture (the stop
+      # after its hand-back), so where it happened is not news. Whatever it
+      # does capture is traced as written again, beside the marker.
+      [ -z "$reported" ] || return 0
       where="$(shipshape_field cwd)"
       shipshape_trace review-capture \
         "marked agent $agent $did in ${where:-a directory its payload did not name}, away from its marker; capturing beside the marker"
@@ -180,10 +187,22 @@ SHIPSHAPE_OTHERS
   return 1
 }
 
+# still_waiting — how a trace about a stop that captured nothing ends: an agent
+# still out is waited for, while one that has reported has nothing owed.
+still_waiting() {
+  if [ -n "$reported" ]; then
+    printf 'its report is already written'
+  else
+    printf 'still waiting for its report'
+  fi
+}
+
 # already_written <kind> <report> — whether this exact report already sits
 # beside the marker, dated to the same launch. A reviewer that hands back in
 # auto mode reaches the hook twice: at the hand-back's PostToolUse, and at its
-# stop, which reads the same hand-back from the transcript.
+# stop, which reads the same hand-back from the transcript (for a session
+# running this script under 0.6.8's registration, which has no hand-back
+# PostToolUse, that read is the only capture).
 already_written() {
   local kind="$1" report="$2" dir launched candidate
   dir="${pending%/pending-capture/*}"
@@ -196,29 +215,53 @@ already_written() {
   return 1
 }
 
-# deliver <kind> <report> [source] — write a marked agent's report, dated to its
-# launch, and mark the agent reported. The marker is renamed, not deleted: a
-# rename keeps its modification time, which is the launch, and a later report
-# from the same agent still finds it. A reviewer that pauses on its own
+# deliver <kind> <report> [source] — mark the agent reported and write its
+# report, dated to its launch. The marker is renamed, not deleted: a rename
+# keeps its modification time, which is the launch, and a later report from
+# the same agent still finds it. A reviewer that pauses on its own
 # background work stops with interim text, then hands back its real report; a
 # deleted marker dropped that report without a trace (EnvPlode, 2026-11-17).
 deliver() {
-  local kind="$1" report="$2" came_from="${3:-}"
-  if [ -n "$reported" ]; then
-    if already_written "$kind" "$report"; then
-      shipshape_trace review-capture "marked agent $agent's report is already written; nothing more to write"
+  local kind="$1" report="$2" came_from="${3:-}" claimed tries
+  if [ -z "$reported" ]; then
+    # Claim the agent first: the rename is atomic, so when a hand-back's
+    # PostToolUse and the stop after it both find the bare marker, one claims
+    # it and the other learns it lost. The rename keeps the launch time, so
+    # the report is dated from the claimed marker.
+    claimed="$pending.reported"
+    if mv -- "$pending" "$claimed" 2>/dev/null; then
+      pending="$claimed"
+      if ! write_report "$kind" "$report" "$pending" "$came_from"; then
+        # Out again, so a later event may still capture it.
+        mv -- "$pending" "${pending%.reported}" 2>/dev/null
+        return 1
+      fi
       return 0
     fi
-    shipshape_trace review-capture "marked agent $agent reported again; writing it beside its first"
-    write_report "$kind" "$report" "$pending" "$came_from"
-    return
+    if [ ! -e "$claimed" ]; then
+      # The marker cannot be renamed: write as before, and say what is lost.
+      write_report "$kind" "$report" "$pending" "$came_from" || return 1
+      rm -f -- "$pending"
+      shipshape_trace review-capture \
+        "could not mark agent $agent as reported; a later report from it will not be captured"
+      return 0
+    fi
+    # Another event claimed it a moment ago. Give its write a second to land
+    # before judging whether this report is one more.
+    pending="$claimed"
+    reported="yes"
+    tries=0
+    while [ "$tries" -lt 10 ] && ! already_written "$kind" "$report"; do
+      sleep 0.1 2>/dev/null || break
+      tries=$((tries + 1))
+    done
   fi
-  write_report "$kind" "$report" "$pending" "$came_from" || return 1
-  if ! mv -f -- "$pending" "$pending.reported" 2>/dev/null; then
-    rm -f -- "$pending"
-    shipshape_trace review-capture \
-      "could not mark agent $agent as reported; a later report from it will not be captured"
+  if already_written "$kind" "$report"; then
+    shipshape_trace review-capture "marked agent $agent's report is already written; nothing more to write"
+    return 0
   fi
+  shipshape_trace review-capture "marked agent $agent reported again; writing it beside its first"
+  write_report "$kind" "$report" "$pending" "$came_from"
 }
 
 # hold <report> — keep a stop's text that is not yet a report. Saved beside the
@@ -230,7 +273,7 @@ hold() {
   bytes="$(printf '%s' "$report" | wc -c | tr -d ' ')"
   if ! { printf '%s' "$report" > "$held"; } 2>/dev/null; then
     shipshape_trace review-capture \
-      "marked agent $agent stopped with $bytes bytes and no verdict; not written, and its text could not be kept; still waiting for its report"
+      "marked agent $agent stopped with $bytes bytes and no verdict; not written, and its text could not be kept; $(still_waiting)"
     return 0
   fi
   if [ -n "$reported" ]; then
@@ -357,7 +400,7 @@ handback_from_transcript() {
   # agent's report.
   if [ "${path##*/}" != "agent-$agent.jsonl" ]; then
     shipshape_trace review-capture \
-      "marked agent $agent stopped with no text, and its stop names a transcript that is not its own; still waiting for its report"
+      "marked agent $agent stopped with no text, and its stop names a transcript that is not its own; $(still_waiting)"
     return 2
   fi
   wait="${SHIPSHAPE_HANDBACK_WAIT:-50}"
@@ -380,15 +423,15 @@ handback_from_transcript() {
   case "$state" in
     refused)
       shipshape_trace review-capture \
-        "marked agent $agent stopped after a hand-back that was not delivered; still waiting for its report"
+        "marked agent $agent stopped after a hand-back that was not delivered; $(still_waiting)"
       ;;
     empty)
       shipshape_trace review-capture \
-        "marked agent $agent handed back an empty report; still waiting for its report"
+        "marked agent $agent handed back an empty report; $(still_waiting)"
       ;;
     *)
       shipshape_trace review-capture \
-        "marked agent $agent stopped with no text, and no hand-back reached its transcript within $((wait / 10)).$((wait % 10))s; still waiting for its report"
+        "marked agent $agent stopped with no text, and no hand-back reached its transcript within $((wait / 10)).$((wait % 10))s; $(still_waiting)"
       ;;
   esac
   return 2
@@ -405,17 +448,17 @@ if [ "$(shipshape_field hook_event_name)" = "SubagentStop" ]; then
   came_from=""
   report="$(shipshape_field last_assistant_message)"
   if [ -z "$report" ]; then
-    # An agent that has reported and now stops with no text has nothing to
-    # add here: any hand-back it made was written at that call's own
-    # PostToolUse. This is the stop that follows every auto-mode hand-back.
-    [ -z "$reported" ] || exit 0
+    # For an agent that has reported, this is usually the stop after its
+    # hand-back, which the transcript read finds already written. It is read
+    # all the same: under 0.6.8's registration the read is the only capture of
+    # a hand-back that follows a written stop.
     report="$(handback_from_transcript "$agent")"
     case "$?" in
       0) came_from="from the hand-back in its transcript" ;;
       1)
         # Left pending: a resumed agent stops again, and that stop may carry
         # text.
-        shipshape_trace review-capture "marked agent $agent stopped with no text; still waiting for its report"
+        shipshape_trace review-capture "marked agent $agent stopped with no text; $(still_waiting)"
         exit 0
         ;;
       *) exit 0 ;;
@@ -454,12 +497,12 @@ if [ "$(shipshape_field tool_name)" = "SubagentHandback" ]; then
   # not know still captures the report.
   if [ "$(shipshape_field tool_response.success)" = "false" ]; then
     shipshape_trace review-capture \
-      "marked agent $agent's hand-back was not delivered; still waiting for its report"
+      "marked agent $agent's hand-back was not delivered; $(still_waiting)"
     exit 0
   fi
   report="$(shipshape_field tool_input.message)"
   if [ -z "$report" ]; then
-    shipshape_trace review-capture "marked agent $agent handed back an empty report; still waiting for its report"
+    shipshape_trace review-capture "marked agent $agent handed back an empty report; $(still_waiting)"
     exit 0
   fi
   deliver "$kind" "$report" "from its hand-back"
