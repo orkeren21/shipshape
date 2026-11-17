@@ -283,15 +283,27 @@ fixture web
 GH_STUB_CREATE_OUTPUT="Opening github.com/acme/widget/pull/new in your browser." \
   wrapper "$w1" "" shipshape-pr-open --web >/dev/null 2>&1
 ls "$s1"/pr-armed-unknown-* >/dev/null 2>&1 || fail "a --web PR leaves an unnumbered record"
-GH_STUB_HEAD_REF=static-scan wrapper "$w1" https://github.com/acme/widget/pull/41 shipshape-ci-watch >/dev/null 2>&1
+w1_head="$(git -C "$w1" rev-parse HEAD)"
+GH_STUB_HEAD_REF=static-scan GH_STUB_HEAD_OID="$w1_head" \
+  wrapper "$w1" https://github.com/acme/widget/pull/41 shipshape-ci-watch >/dev/null 2>&1
 assert_contains "$(cat "$s1/ci-status")" "head_branch=static-scan" "ci-status names the branch it watched"
+assert_contains "$(cat "$s1/ci-status")" "head_oid=$w1_head" "and the commit"
 out="$(stop "$w1")"
 assert_not_contains "$(hook_field "$out" systemMessage)" "ci-status" "its CI counts for the branch it was opened from"
+printf '%s' "$YES" > "$s1/review-own.md"
+wrapper "$w1" "" shipshape-smoke true >/dev/null 2>&1
+out="$(merge "$w1" "gh pr merge")"
+denied "$out" && fail "a --web PR with its own CI, review and smoke merges: $(reason "$out")"
+
+# A PR from another fork, or an earlier PR, with the same branch name: its CI
+# ran on other code, and does not count (review 3, Minor 1).
+GH_STUB_HEAD_REF=static-scan GH_STUB_HEAD_OID=0123456789abcdef0123456789abcdef01234567 \
+  wrapper "$w1" https://github.com/acme/widget/pull/50 shipshape-ci-watch 50 >/dev/null 2>&1
+out="$(merge "$w1" "gh pr merge")"
+denied "$out" || fail "CI for another PR on a branch of the same name, at another commit, does not settle a --web PR"
 
 # CI watched for some other PR, one this session has no record for, does not
 # settle the --web PR (review 2, Major 1).
-printf '%s' "$YES" > "$s1/review-own.md"
-wrapper "$w1" "" shipshape-smoke true >/dev/null 2>&1
 GH_STUB_HEAD_REF=someone-else wrapper "$w1" https://github.com/acme/widget/pull/99 shipshape-ci-watch 99 >/dev/null 2>&1
 out="$(merge "$w1" "gh pr merge")"
 denied "$out" || fail "CI for an unrecorded PR on another branch does not settle a --web PR"
@@ -309,6 +321,21 @@ mkdir -p "$s2"
 printf 'url=https://github.com/acme/widget/pull/80\nnumber=80\nbranch=static-scan\n' > "$s2/pr-armed-80"
 out="$(stop "$w1" "All done — the branch is complete and ready to merge.")"
 assert_eq "block" "$(hook_field "$out" decision)" "a record for this branch, filed in another folder, holds the claim here"
+
+# --- a record with no branch= -------------------------------------------------
+#
+# Its CI counts for nothing here: the done gate stamps such a record from this
+# checkout's legs, so its CI would pay for the PR beside it (review 3, Minor 2).
+
+fixture branchless
+wrapper "$w1" https://github.com/acme/widget/pull/80 shipshape-pr-open --title t --body b >/dev/null 2>&1
+printf 'url=https://github.com/acme/widget/pull/72\nnumber=72\n' > "$s1/pr-armed-72"
+printf '%s' "$YES" > "$s1/review-own.md"
+wrapper "$w1" "" shipshape-smoke true >/dev/null 2>&1
+wrapper "$w1" https://github.com/acme/widget/pull/72 shipshape-ci-watch 72 >/dev/null 2>&1
+stop "$w1" >/dev/null
+out="$(merge "$w1" "gh pr merge 80")"
+denied "$out" || fail "CI watched for a record with no branch does not settle PR 80 beside it"
 
 # --- the doctor, with two folders --------------------------------------------
 

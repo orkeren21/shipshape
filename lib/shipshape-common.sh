@@ -867,11 +867,15 @@ shipshape_leg_review() { # <scratch>
 # branch that is. One with no number=, from an older wrapper, is read as before.
 # A PR opened with --web has a record with no number (pr-armed-unknown-<epoch>):
 # its CI counts only when the ci-status says it watched the branch checked out
-# here (head_branch=, gh pr view's headRefName) and such a record names that
-# branch. A record with no branch= constrains no branch, as the done gate and
-# the plan leg read it. An ignored one reads missing, its detail naming its PR.
+# here, at the commit checked out here (head_branch= and head_oid=, gh pr view's
+# headRefName and headRefOid), and such a record names that branch. A branch
+# name alone is not enough: a fork's PR, or an earlier PR from the same branch
+# name, shares it. A record with no branch= matches no branch, so its CI counts
+# for nothing here: the done gate stamps every such record from this
+# checkout's legs, and its CI would pay for the others. An ignored one reads
+# missing, its detail naming its PR.
 shipshape_leg_ci() { # <scratch>
-  local scratch="$1" ci_number record here unknown record_branch watched
+  local scratch="$1" ci_number record here unknown record_branch watched watched_oid
   if [ ! -f "$scratch/ci-status" ]; then
     printf 'missing|'
     return 0
@@ -889,7 +893,9 @@ shipshape_leg_ci() { # <scratch>
       record="$scratch/pr-armed"
     fi
     watched="$(sed -n -e '/^--- checks ---$/q' -e 's/^head_branch=//p' "$scratch/ci-status" 2>/dev/null | head -1)"
-    if [ -z "$record" ] && [ -n "$here" ] && [ "$here" != "HEAD" ] && [ "$watched" = "$here" ]; then
+    watched_oid="$(sed -n -e '/^--- checks ---$/q' -e 's/^head_oid=//p' "$scratch/ci-status" 2>/dev/null | head -1)"
+    if [ -z "$record" ] && [ -n "$here" ] && [ "$here" != "HEAD" ] && [ "$watched" = "$here" ] &&
+      [ -n "$watched_oid" ] && [ "$watched_oid" = "$(git rev-parse HEAD 2>/dev/null)" ]; then
       for unknown in "$scratch"/pr-armed-unknown-*; do
         [ -f "$unknown" ] || continue
         if [ "$(sed -n 's/^branch=//p' "$unknown" 2>/dev/null | head -1)" = "$here" ]; then
@@ -902,7 +908,7 @@ shipshape_leg_ci() { # <scratch>
     [ -z "$record" ] || record_branch="$(sed -n 's/^branch=//p' "$record" 2>/dev/null | head -1)"
     if [ -z "$record" ] ||
       ! shipshape_same_place "$(shipshape_judging_dir "$record")" "$scratch" ||
-      { [ -n "$here" ] && [ -n "$record_branch" ] && [ "$record_branch" != "$here" ]; }; then
+      { [ -n "$here" ] && [ "$record_branch" != "$here" ]; }; then
       printf 'missing|for PR #%s, not judged on this checkout' "${ci_number:-unknown}"
       return 0
     fi

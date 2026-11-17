@@ -38,12 +38,14 @@ MERGE_STATE_DELAY="${SHIPSHAPE_MERGE_STATE_RETRY_DELAY:-5}"
 # the session's folder in the worktree that has the PR's branch checked out
 # (shipshape_judging_dir decides, as it does for the gates). Otherwise it is
 # filed where this runs. Either way it names the PR it watched, number=, read
-# from the url gh pr view returns, and the branch it watched, head_branch=,
-# from its headRefName (both measured with gh 2.96.0's `gh pr view --json`), so
+# from the url gh pr view returns, and the branch and commit it watched,
+# head_branch= and head_oid=, from its headRefName and headRefOid (measured
+# with gh 2.96.0's `gh pr view --json`), so
 # the CI leg can ignore a ci-status filed beside some other PR's record.
 pr=""
 pr_number=""
 pr_branch=""
+pr_oid=""
 target_dir() {
   local found judge
   if [ -n "$pr" ] && [ -n "$pr_number" ]; then
@@ -71,6 +73,7 @@ record() { # record <result> <checks_exit> <merge_state> <checks_output> [review
     printf 'result=%s\n' "$1"
     [ -z "$pr_number" ] || printf 'number=%s\n' "$pr_number"
     [ -z "$pr_branch" ] || printf 'head_branch=%s\n' "$pr_branch"
+    [ -z "$pr_oid" ] || printf 'head_oid=%s\n' "$pr_oid"
     printf 'checks_exit=%s\n' "$2"
     printf 'merge_state=%s\n' "$3"
     printf 'review_decision=%s\n' "${5:-}"
@@ -114,9 +117,9 @@ merge_state="UNKNOWN"
 attempt=1
 while [ "$attempt" -le "$MERGE_STATE_ATTEMPTS" ]; do
   if [ -n "$pr" ]; then
-    view_out="$(gh pr view "$pr" --json mergeStateStatus,reviewDecision,statusCheckRollup,url,state,headRefName 2>/dev/null)"
+    view_out="$(gh pr view "$pr" --json mergeStateStatus,reviewDecision,statusCheckRollup,url,state,headRefName,headRefOid 2>/dev/null)"
   else
-    view_out="$(gh pr view --json mergeStateStatus,reviewDecision,statusCheckRollup,url,state,headRefName 2>/dev/null)"
+    view_out="$(gh pr view --json mergeStateStatus,reviewDecision,statusCheckRollup,url,state,headRefName,headRefOid 2>/dev/null)"
   fi
   view_exit=$?
 
@@ -130,6 +133,8 @@ while [ "$attempt" -le "$MERGE_STATE_ATTEMPTS" ]; do
   [ -z "$view_number" ] || pr_number="$view_number"
   view_branch="$(shipshape_json_get "$view_out" headRefName)"
   [ -z "$view_branch" ] || pr_branch="$view_branch"
+  view_oid="$(shipshape_json_get "$view_out" headRefOid)"
+  [ -z "$view_oid" ] || pr_oid="$view_oid"
   merge_state="$(shipshape_json_get "$view_out" mergeStateStatus)"
   review_decision="$(shipshape_json_get "$view_out" reviewDecision)"
   [ -n "$merge_state" ] || merge_state="UNKNOWN"
