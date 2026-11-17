@@ -246,16 +246,20 @@ deliver() {
         "could not mark agent $agent as reported; a later report from it will not be captured"
       return 0
     fi
-    # Another event claimed it a moment ago. Give its write a second to land
-    # before judging whether this report is one more.
+    # Another event claimed it a moment ago.
     pending="$claimed"
     reported="yes"
-    tries=0
-    while [ "$tries" -lt 10 ] && ! already_written "$kind" "$report"; do
-      sleep 0.1 2>/dev/null || break
-      tries=$((tries + 1))
-    done
   fi
+  # The agent has reported, or another event has just claimed it, and that
+  # event's write may not have landed: a claim comes before its write, and an
+  # event that found the .reported marker may have found it in between. Give
+  # it a second before judging whether this report is one more. A report that
+  # really is one more waits that second, which costs nothing anyone waits on.
+  tries=0
+  while [ "$tries" -lt 10 ] && ! already_written "$kind" "$report"; do
+    sleep 0.1 2>/dev/null || sleep 1
+    tries=$((tries + 1))
+  done
   if already_written "$kind" "$report"; then
     shipshape_trace review-capture "marked agent $agent's report is already written; nothing more to write"
     return 0
@@ -289,7 +293,9 @@ hold() {
 # anything else is dropped, and nothing is printed.
 pending_kind() {
   local kind
-  kind="$(cat "$pending" 2>/dev/null)"
+  # A marker that cannot be read was renamed by another event for the same
+  # agent a moment ago (both carry the same report), so it is left alone.
+  kind="$(cat "$pending" 2>/dev/null)" || return 0
   case "$kind" in
     review|conformance) printf '%s\n' "$kind" ;;
     *) rm -f "$pending" ;;
@@ -405,6 +411,10 @@ handback_from_transcript() {
   fi
   wait="${SHIPSHAPE_HANDBACK_WAIT:-50}"
   case "$wait" in ''|*[!0-9]*) wait=50 ;; esac
+  # An agent that has reported owes nothing, so a short wait will do: the
+  # hand-back that follows a written report lands in the transcript about 0.1s
+  # after the stop's hooks start (measured on 2.1.325).
+  [ -z "$reported" ] || [ "$wait" -le 10 ] || wait=10
   limit=$(((wait + 9) / 10))
   started=$SECONDS
   while :; do

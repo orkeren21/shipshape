@@ -134,7 +134,7 @@ assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh")" 'pending
   "review-capture keeps its launch markers in pending-capture/, in the session's scratch folder"
 assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh")" 'printf '"'"'%s\n'"'"' "$kind" > "$pending_dir/$agent"' \
   "and each marker holds the kind it was launched as, which read-handoff reads as review"
-assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh")" 'mv -f -- "$pending" "$pending.reported"' \
+assert_contains "$(cat "$SHIPSHAPE_REPO_ROOT/hooks/review-capture.sh")" 'claimed="$pending.reported"' \
   "and a marker whose report is written is renamed .reported, which read-handoff leaves out of the unreported launches"
 assert_contains "$review_flat" "Fix them; the reviews that follow are capped (step 4 below)." \
   "the blocking rule points at the cap, which limits reviews, not fixes"

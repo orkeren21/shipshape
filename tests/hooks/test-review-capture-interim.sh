@@ -171,6 +171,46 @@ assert_not_contains "$(trace)" "could not mark agent" "and no trace says the mar
 assert_file "$scratch/pending-capture/$agent.reported" "the reviewer is marked reported"
 rm -f "$work/subagents/agent-$agent.jsonl"
 
+# The interleaving that race can also take: the other event has claimed the
+# marker but not yet written, and this one finds the .reported marker. It
+# waits for that report rather than writing a second.
+reset
+FRESH=1 launch "$agent"
+mv "$scratch/pending-capture/$agent" "$scratch/pending-capture/$agent.reported"
+(
+  sleep 0.4
+  printf '%s' "$YES" > "$scratch/review-20990101T000000Z-00.md"
+  touch -r "$scratch/pending-capture/$agent.reported" "$scratch/review-20990101T000000Z-00.md"
+) &
+handback_with "$agent" "$YES"
+wait
+assert_eq "1" "$(count)" "an event that finds a claim before its write lands writes no second report"
+assert_contains "$(trace)" "already written" "it says the report is already written"
+assert_not_contains "$(trace)" "reported again" "and does not say the agent reported again"
+
+# A claim whose write fails puts the marker back, so a later event can still
+# capture the report.
+reset
+FRESH=1 launch "$agent"
+chmod a-w "$scratch"
+handback_with "$agent" "$YES"
+chmod u+w "$scratch"
+assert_eq "0" "$(count)" "a report that cannot be written is not written"
+assert_file "$scratch/pending-capture/$agent" "the reviewer is out again"
+assert_eq "$launched_now" "$(mtime "$scratch/pending-capture/$agent")" "with its launch time"
+assert_no_file "$scratch/pending-capture/$agent.reported" "and is not marked reported"
+handback_with "$agent" "$YES"
+assert_eq "1" "$(count)" "the next hand-back is written"
+
+# A reported agent's empty stop that finds no hand-back waits at most a second.
+reset
+FRESH=1 launch "$agent"
+handback_with "$agent" "$YES"
+started=$SECONDS
+silent_stop "$agent"
+[ $((SECONDS - started)) -le 3 ] || fail "a reported agent's empty stop waited $((SECONDS - started))s for a hand-back it does not owe"
+assert_eq "1" "$(count)" "and writes nothing"
+
 # The second field reviewer paused twice; each stop overwrites the held text.
 reset
 agent="a5b90152cfdd0d972"
